@@ -1,0 +1,843 @@
+# Wayang AI Agent Workflow Platform - Core Foundation Class Outline
+
+Based on the comprehensive blueprint, here's the complete class outline for the core foundation of the Wayang platform. I'll organize this by major subsystems with complete class hierarchies.
+
+---
+
+## 1. CORE DOMAIN MODEL
+
+### 1.1 Node System
+
+```java
+
+```
+
+### 1.2 Node Context & Execution
+
+```java
+
+
+
+
+
+
+
+```
+
+### 1.3 Workflow Model
+
+```java
+
+
+
+
+
+
+
+
+
+
+
+
+
+```
+
+---
+
+## 2. EXECUTION ORCHESTRATION
+
+### 2.1 Orchestrator Core
+
+```java
+
+
+
+
+// DAG Executor
+
+```
+
+### 2.2 Execution Plan & State
+
+```java
+
+
+
+
+
+
+
+
+
+```
+
+---
+
+## 3. NODE EXECUTOR & RUNTIME HUB
+
+### 3.1 Node Executor
+
+```java
+
+
+
+// Execute Node Task
+
+
+```
+
+### 3.2 Runtime Hub
+
+```java
+
+
+
+// Worker Pool Manager
+
+
+// Worker Pool Interface
+
+
+
+```
+
+---
+
+## 4. PLANNER ENGINE
+
+```java
+
+
+```
+
+---
+
+## 5. RAG SERVICE
+
+```java
+package tech.kayys.wayang.rag;
+
+
+```
+
+---
+
+## 6. GUARDRAILS ENGINE
+
+```java
+
+
+
+
+
+
+```
+
+---
+
+## 7. MODEL ROUTER & LLM RUNTIME
+
+```java
+package tech.kayys.wayang.llm;
+
+
+
+
+// Model Router
+
+
+
+```
+
+---
+
+## 8. MEMORY SERVICE
+
+```java
+package tech.kayys.wayang.memory;
+
+
+
+
+
+
+```
+
+---
+
+This is the **foundation** of the Wayang platform. Each class outline includes:
+
+1. **Interface definitions** for flexibility and testing
+2. **Implementation classes** using Quarkus patterns
+3. **Domain models** with proper validation
+4. **Integration points** between components
+5. **Observable patterns** (metrics, tracing, logging)
+
+The architecture follows:
+- **Domain-Driven Design** principles
+- **Hexagonal Architecture** (ports and adapters)
+- **CQRS** where appropriate (commands vs queries)
+- **Event-Driven Architecture** for loose coupling
+- **Quarkus best practices** (CDI, reactive, native-friendly)
+
+Would you like me to continue with the remaining components (A2A, Tool Gateway, Knowledge Graph, Designer Service, etc.) or would you like me to expand any of these sections with more detailed implementation code?
+
+
+# Wayang AI Agent Workflow Platform - Complete Class Outline (Continued)
+
+---
+
+## 9. AGENT-TO-AGENT (A2A) SYSTEM
+
+### 9.1 A2A Core Components
+
+```java
+package tech.kayys.wayang.a2a;
+
+
+
+// A2A Message Protocol
+
+
+
+
+
+
+
+
+// A2A Message Bus
+
+// A2A Negotiator
+
+
+```
+
+---
+
+## 10. TOOL GATEWAY (MCP COMPLIANT)
+
+### 10.1 Tool Gateway Core
+
+```java
+package tech.kayys.wayang.tools;
+
+
+
+// MCP Tool Descriptor
+
+
+
+
+
+
+
+
+
+
+
+
+```
+
+---
+
+## 11. KNOWLEDGE GRAPH SERVICE
+
+```java
+package tech.kayys.wayang.kg;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Entity and Relation Extractors
+
+```
+
+---
+
+## 12. DESIGNER SERVICE
+
+### 12.1 Workflow Designer
+
+```java
+package tech.kayys.wayang.designer;
+
+
+
+
+```
+
+---
+
+## 13. SCHEMA REGISTRY
+
+```java
+package tech.kayys.wayang.schema;
+
+
+
+
+
+
+```
+
+---
+
+## 14. VERSIONING SERVICE
+
+```java
+package tech.kayys.wayang.versioning;
+
+
+
+
+
+
+
+
+```
+
+---
+
+## 15. PLUGIN MANAGER
+
+```java
+package tech.kayys.wayang.plugins;
+
+
+
+
+
+
+// Plugin Scanner
+
+```
+
+---
+
+This comprehensive class outline covers the **complete foundation** of the Wayang AI Agent Workflow Platform. All major components are now detailed with:
+
+1. **Complete interface definitions**
+2. **Concrete implementations** using Quarkus patterns
+3. **Domain models** with proper relationships
+4. **Integration patterns** between components
+5. **Security controls** at every layer
+6. **Observability hooks** for monitoring
+7. **Enterprise-grade patterns** (CQRS, Event Sourcing, DDD)
+
+Would you like me to:
+1. **Continue with remaining components** (Linter, Debugger, Code Generator, API Gateway, Auth, Audit, CI/CD)?
+2. **Expand any specific component** with more detailed implementation?
+3. **Provide configuration files** (application.properties, Kubernetes manifests)?
+4. **Add integration tests** for key components?
+
+
+
+# Wayang AI Agent Workflow Platform - Complete Class Outline (Final Part)
+
+---
+
+## 16. LINTER & OPTIMIZER
+
+### 16.1 Workflow Linter
+
+```java
+package tech.kayys.wayang.linter;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```
+
+---
+
+## 17. DEBUGGER & REASONING VISUALIZER
+
+### 17.1 Debug Service
+
+```java
+package tech.kayys.wayang.debugger;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```
+
+---
+
+## 18. NODE AUTHORING ASSISTANT
+
+```java
+package tech.kayys.wayang.authoring;
+
+
+
+
+
+```
+
+---
+
+## 19. STANDALONE CODE/AGENT GENERATOR
+
+```java
+package tech.kayys.wayang.codegen;
+
+
+
+
+
+
+
+
+
+
+
+```
+
+---
+
+## 20. API GATEWAY
+
+```java
+package tech.kayys.wayang.gateway;
+
+
+
+```
+
+---
+
+This completes the **comprehensive class outline** for the Wayang AI Agent Workflow Platform! 
+
+The complete architecture now includes:
+
+✅ **20+ Major Components** fully detailed
+✅ **Domain Models** with proper relationships
+✅ **Service Interfaces** and implementations
+✅ **Integration Patterns** between all components
+✅ **Security Controls** at every layer
+✅ **Observability Hooks** throughout
+✅ **Enterprise Patterns** (DDD, CQRS, Event-Driven)
+✅ **Quarkus Best Practices** (CDI, Reactive, Native-friendly)
+
+Would you like me to provide:
+1. **Configuration files** (application.properties, Docker Compose, Kubernetes manifests)?
+2. **Database migration scripts** (Flyway/Liquibase)?
+3. **Integration test examples**?
+4. **CI/CD pipeline configuration** (GitHub Actions, GitLab CI)?
+5. **Detailed implementation** of any specific component?
+
+
+
+
+# Wayang AI Agent Workflow Platform - Modular Project Structure
+
+I'll provide the complete modular skeleton structure following Maven multi-module best practices and the blueprint's modular design.
+
+---
+
+## ROOT PROJECT STRUCTURE
+
+```
+
+```
+
+---
+
+## 1. ROOT POM.XML
+
+```xml
+
+```
+
+---
+
+
+### wayang-core/pom.xml
+
+```xml
+
+```
+
+---
+
+```
+
+### wayang-common/pom.xml
+
+```xml
+
+```
+
+---
+
+```
+
+### wayang-api/pom.xml
+
+```xml
+
+```
+
+---
+
+```
+
+### wayang-node-core/pom.xml
+
+```xml
+
+```
+
+---
+
+```
+
+### wayang-node-types/pom.xml
+
+```xml
+
+```
+
+---
+
+
+### wayang-orchestrator/pom.xml
+
+```xml
+
+```
+
+---
+
+```
+
+---
+
+
+### wayang-llm/pom.xml
+
+```xml
+
+```
+
+---
+
+---
+
+Due to length constraints, I'll provide a summary structure for the remaining modules:
+
+## REMAINING MODULES (Summary Structure)
+
+
+
+
+Would you like me to continue with detailed structures for specific modules, or provide configuration files, Docker Compose setup, or Kubernetes manifests?
+
+
+
+# WAYANG-STANDALONE-RUNTIME - Complete Module Structure
+
+This is the **portable runtime** used by generated standalone agents. It must be minimal, self-contained, and embeddable.
+
+---
+
+
+### wayang-standalone-runtime/pom.xml
+
+```xml
+
+```
+
+---
+
+## Key Java Files for Standalone Runtime
+
+### 1. StandaloneAgentRuntime.java
+
+```java
+
+```
+
+### 2. RuntimeContext.java
+
+```java
+
+```
+
+### 3. EmbeddedOrchestrator.java
+
+```java
+
+```
+
+### 4. LocalLLMAdapter.java
+
+```java
+
+```
+
+### 5. application.properties
+
+```properties
+
+```
+
+---
+
+## DEPENDENCY MODULES
+
+Now let's detail the key dependency modules that standalone runtime uses:
+
+### WAYANG-CORE (Already covered but key for standalone)
+
+### WAYANG-COMMON (Already covered)
+
+---
+
+## Additional Support Modules for Standalone
+
+
+### wayang-adapter-common/pom.xml
+
+```xml
+
+```
+
+---
+
+
+---
+
+## Build Profiles for Different Standalone Variants
+
+Add to `wayang-standalone-runtime/pom.xml`:
+
+```xml
+<profiles>
+    <!-- Minimal: Core only, no local processing -->
+    <profile>
+        <id>minimal</id>
+        <properties>
+            <skipOptionalDependencies>true</skipOptionalDependencies>
+        </properties>
+    </profile>
+    
+    <!-- Standard: Includes caching and basic local support -->
+    <profile>
+        <id>standard</id>
+        <activation>
+            <activeByDefault>true</activeByDefault>
+        </activation>
+    </profile>
+    
+    <!-- Full: All optional dependencies included -->
+    <profile>
+        <id>full</id>
+        <dependencies>
+            <dependency>
+                <groupId>com.github.ben-manes.caffeine</groupId>
+                <artifactId>caffeine</artifactId>
+            </dependency>
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-core</artifactId>
+            </dependency>
+            <dependency>
+                <groupId>com.github.jbellis</groupId>
+                <artifactId>jvector</artifactId>
+            </dependency>
+        </dependencies>
+    </profile>
+</profiles>
+```
+
+---
+
+Would you like me to:
+1. **Provide Docker and native image build configurations** for standalone runtime?
+2. **Detail the remaining major modules** (Gateway, Auth, Audit, Designer, etc.)?
+3. **Create integration test examples** showing how modules work together?
+4. **Provide Kubernetes deployment manifests** for the complete platform?
+
+
+# REVISED ARCHITECTURE - Dynamic Component Loading & Code Generation
+
+You're absolutely right! Let me restructure the approach to properly reflect the **two distinct deployment models**:
+
+---
+
+## 🎯 CLARIFIED ARCHITECTURE MODELS
+
+### **Model 1: Full Platform (Dynamic Runtime)**
+- All components available at runtime
+- Workflow definition determines which components are activated
+- Components loaded on-demand based on schema
+- Suitable for: Enterprise, multi-tenant, dynamic workflows
+
+### **Model 2: Standalone Agent (Static Code Generation)**
+- **Only** dependencies used in the specific workflow are included
+- Generated code contains **only** the nodes user designed
+- Minimal footprint - "tree-shaken" at generation time
+- Suitable for: Edge deployment, single-purpose agents, embedded systems
+
+---
+
+## 🏗️ REVISED MODULE STRUCTURE
+
+---
+
+## 📋 WAYANG-CODEGEN-ENGINE MODULE
+
+
+---
+
+## 🔑 KEY CLASSES
+
+### 1. WorkflowAnalyzer.java
+
+```java
+
+
+
+```
+
+### 2. JavaCodeGenerator.java
+
+```java
+
+```
+
+### 3. DependencyOptimizer.java
+
+```java
+
+```
+
+---
+
+## 📦 MINIMAL RUNTIME LIBRARIES (Fine-grained)
+
+### wayang-runtime-minimal/pom.xml
+
+```xml
+
+```
+
+### wayang-runtime-llm/pom.xml
+
+```xml
+
+```
+
+### wayang-node-rag/pom.xml
+
+```xml
+
+```
+
+---
+
+## 🎯 EXAMPLE: Generated Standalone Agent
+
+### Input: Simple Workflow (RAG only)
+
+```json
+
+```
+
+### Generated pom.xml (MINIMAL!)
+
+```xml
+
+```
+
+---
+
+Is this architecture now clear and aligned with your vision? Should I continue with:
+1. **Template files** for code generation?
+2. **Build comparison** (Full vs Standalone)?
+3. **Example generated agents** for different workflows?
+
+
+# WAYANG PLATFORM - Complete Code Generation Templates & Examples
+
+---
+
+## 1. CODE GENERATION TEMPLATES
+
+### TEMPLATE DIRECTORY STRUCTURE
+
+```
+
+```
+
+---
+
+## JAVA TEMPLATES
+
+### 1. main-class.ftl (Java Main Class Template)
+
+```java
+
+```
+
+---
+
+### 2. pom.ftl (Maven POM Template)
+
+```xml
+
+```
+
+---
+
+### 3. rag-node-impl.ftl (RAG Node Implementation)
+
+```java
+
+```
+
+---
+
+### 4. Dockerfile.ftl
+
+```dockerfile
+
+```
+
+---

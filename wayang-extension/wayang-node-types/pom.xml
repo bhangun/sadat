@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>tech.kayys.wayang</groupId>
+        <artifactId>wayang-platform-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>wayang-node-types</artifactId>
+    <name>Wayang Node Types</name>
+    <description>Built-in node implementations</description>
+
+    <dependencies>
+        <!-- Core -->
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-node-core</artifactId>
+        </dependency>
+        
+        <!-- Quarkus -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-arc</artifactId>
+        </dependency>
+    </dependencies>
+</project>

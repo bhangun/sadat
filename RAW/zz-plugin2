@@ -1,0 +1,759 @@
+package io.wayang.plugin.enhancement;
+
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.jboss.logging.Logger;
+
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * ENHANCEMENT 1: AI-Powered Plugin Recommendation System
+ * 
+ * Uses ML to recommend plugins based on:
+ * - User workflow patterns
+ * - Similar plugin usage
+ * - Performance metrics
+ * - Community ratings
+ */
+
+@ApplicationScoped
+public class PluginRecommendationService {
+
+    private static final Logger LOG = Logger.getLogger(PluginRecommendationService.class);
+
+    @Inject
+    PluginUsageAnalytics usageAnalytics;
+
+    @Inject
+    LLMService llmService;
+
+    @Inject
+    VectorSearchService vectorSearch;
+
+    /**
+     * Get personalized plugin recommendations
+     */
+    public Uni<List<PluginRecommendation>> getRecommendations(
+            String userId,
+            WorkflowContext context,
+            int limit) {
+        
+        // Analyze user's current workflow
+        return usageAnalytics.getUserProfile(userId)
+            .onItem().transformToUni(profile -> {
+                
+                // Build recommendation request
+                String prompt = buildRecommendationPrompt(profile, context);
+                
+                // Get LLM suggestions
+                return llmService.generateRecommendations(prompt)
+                    .onItem().transformToUni(suggestions -> {
+                        
+                        // Enhance with vector similarity search
+                        return vectorSearch.findSimilarPlugins(
+                            context.getDescription(),
+                            limit * 2
+                        ).onItem().transform(similarPlugins -> 
+                            mergeAndRankRecommendations(
+                                suggestions, 
+                                similarPlugins, 
+                                profile
+                            )
+                        );
+                    });
+            });
+    }
+
+    /**
+     * Collaborative filtering based recommendations
+     */
+    public Uni<List<PluginRecommendation>> getCollaborativeRecommendations(
+            String userId,
+            int limit) {
+        
+        return usageAnalytics.findSimilarUsers(userId, 10)
+            .onItem().transformToUni(similarUsers -> {
+                
+                // Aggregate plugins used by similar users
+                Map<String, Double> pluginScores = new HashMap<>();
+                
+                for (UserProfile similar : similarUsers) {
+                    for (PluginUsage usage : similar.getPluginUsages()) {
+                        String pluginId = usage.getPluginId();
+                        double score = pluginScores.getOrDefault(pluginId, 0.0);
+                        
+                        // Weight by similarity and usage frequency
+                        score += similar.getSimilarityScore() * usage.getFrequency();
+                        pluginScores.put(pluginId, score);
+                    }
+                }
+                
+                // Convert to recommendations
+                return Uni.createFrom().item(
+                    pluginScores.entrySet().stream()
+                        .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                        .limit(limit)
+                        .map(entry -> PluginRecommendation.builder()
+                            .pluginId(entry.getKey())
+                            .score(entry.getValue())
+                            .reason("Users similar to you frequently use this plugin")
+                            .build())
+                        .toList()
+                );
+            });
+    }
+
+    private String buildRecommendationPrompt(
+            UserProfile profile, 
+            WorkflowContext context) {
+        
+        return String.format("""
+            User Profile:
+            - Role: %s
+            - Experience Level: %s
+            - Frequently Used Plugins: %s
+            - Domain: %s
+            
+            Current Workflow:
+            - Goal: %s
+            - Required Capabilities: %s
+            - Constraints: %s
+            
+            Task: Recommend 5 plugins that would help achieve this goal.
+            Consider the user's experience level and domain expertise.
+            Provide reasoning for each recommendation.
+            
+            Format:
+            - Plugin ID
+            - Confidence Score (0-1)
+            - Reasoning
+            """,
+            profile.getRole(),
+            profile.getExperienceLevel(),
+            String.join(", ", profile.getFrequentPlugins()),
+            profile.getDomain(),
+            context.getGoal(),
+            String.join(", ", context.getRequiredCapabilities()),
+            context.getConstraints()
+        );
+    }
+
+    private List<PluginRecommendation> mergeAndRankRecommendations(
+            List<PluginRecommendation> llmSuggestions,
+            List<PluginRecommendation> similarPlugins,
+            UserProfile profile) {
+        
+        // Combine and deduplicate
+        Map<String, PluginRecommendation> combined = new HashMap<>();
+        
+        // Add LLM suggestions with higher weight
+        for (PluginRecommendation rec : llmSuggestions) {
+            combined.put(rec.getPluginId(), rec.withScore(rec.getScore() * 1.5));
+        }
+        
+        // Add similar plugins
+        for (PluginRecommendation rec : similarPlugins) {
+            combined.merge(
+                rec.getPluginId(),
+                rec,
+                (existing, newRec) -> existing.withScore(
+                    existing.getScore() + newRec.getScore() * 0.5
+                )
+            );
+        }
+        
+        // Boost plugins matching user's domain
+        for (PluginRecommendation rec : combined.values()) {
+            if (rec.getDomain() != null && 
+                rec.getDomain().equals(profile.getDomain())) {
+                rec.setScore(rec.getScore() * 1.2);
+            }
+        }
+        
+        // Sort by score and return top N
+        return combined.values().stream()
+            .sorted(Comparator.comparing(PluginRecommendation::getScore).reversed())
+            .limit(10)
+            .toList();
+    }
+}
+
+/**
+ * ENHANCEMENT 2: Automated Plugin Testing & Quality Gates
+ * 
+ * Automatically tests plugins before approval:
+ * - Performance benchmarking
+ * - Security testing
+ * - Integration testing
+ * - Chaos engineering
+ */
+
+@ApplicationScoped
+public class AutomatedPluginTestingService {
+
+    private static final Logger LOG = Logger.getLogger(AutomatedPluginTestingService.class);
+
+    @Inject
+    PluginLoaderService loaderService;
+
+    @Inject
+    PerformanceBenchmarkService benchmarkService;
+
+    @Inject
+    SecurityTestingService securityTesting;
+
+    @Inject
+    ChaosEngineeringService chaosService;
+
+    /**
+     * Run comprehensive test suite on plugin
+     */
+    public Uni<TestReport> runTestSuite(
+            String pluginId, 
+            String version,
+            TestConfiguration config) {
+        
+        LOG.infof("Starting test suite for plugin: %s version %s", pluginId, version);
+
+        TestReport report = new TestReport(pluginId, version);
+
+        return loadPlugin(pluginId, version)
+            .onItem().transformToUni(plugin -> 
+                // Run tests in parallel
+                Uni.combine().all().unis(
+                    runPerformanceTests(plugin, config.getPerformanceTests()),
+                    runSecurityTests(plugin, config.getSecurityTests()),
+                    runIntegrationTests(plugin, config.getIntegrationTests()),
+                    runChaosTests(plugin, config.getChaosTests())
+                ).asTuple()
+            )
+            .onItem().transform(results -> {
+                report.setPerformanceResults(results.getItem1());
+                report.setSecurityResults(results.getItem2());
+                report.setIntegrationResults(results.getItem3());
+                report.setChaosResults(results.getItem4());
+                
+                // Calculate overall score
+                report.calculateOverallScore();
+                
+                // Determine if plugin passes quality gates
+                report.setPassesQualityGates(
+                    evaluateQualityGates(report, config.getQualityGates())
+                );
+                
+                return report;
+            })
+            .onItem().transformToUni(finalReport -> 
+                // Store test results
+                persistTestReport(finalReport)
+                    .replaceWith(finalReport)
+            );
+    }
+
+    /**
+     * Performance benchmarking
+     */
+    private Uni<PerformanceTestResults> runPerformanceTests(
+            LoadedPlugin plugin,
+            List<PerformanceTest> tests) {
+        
+        PerformanceTestResults results = new PerformanceTestResults();
+
+        return Uni.combine().all().unis(
+            // Throughput test
+            benchmarkService.measureThroughput(plugin, 1000),
+            
+            // Latency test (p50, p95, p99)
+            benchmarkService.measureLatency(plugin, 10000),
+            
+            // Memory usage
+            benchmarkService.measureMemory(plugin, 5000),
+            
+            // CPU usage
+            benchmarkService.measureCpu(plugin, 5000)
+        ).asTuple()
+        .onItem().transform(metrics -> {
+            results.setThroughput(metrics.getItem1());
+            results.setLatency(metrics.getItem2());
+            results.setMemoryUsage(metrics.getItem3());
+            results.setCpuUsage(metrics.getItem4());
+            
+            // Check against SLOs
+            results.setMeetsSLO(
+                metrics.getItem2().getP99() < 1000 && // p99 < 1s
+                metrics.getItem3().getMaxMb() < 512    // max 512MB
+            );
+            
+            return results;
+        });
+    }
+
+    /**
+     * Security testing
+     */
+    private Uni<SecurityTestResults> runSecurityTests(
+            LoadedPlugin plugin,
+            List<SecurityTest> tests) {
+        
+        return Uni.combine().all().unis(
+            // SQL injection test
+            securityTesting.testSqlInjection(plugin),
+            
+            // XSS test
+            securityTesting.testXss(plugin),
+            
+            // Path traversal test
+            securityTesting.testPathTraversal(plugin),
+            
+            // Secret exposure test
+            securityTesting.testSecretExposure(plugin),
+            
+            // OWASP Top 10
+            securityTesting.runOwaspTests(plugin)
+        ).asTuple()
+        .onItem().transform(testResults -> {
+            SecurityTestResults results = new SecurityTestResults();
+            results.setSqlInjectionVulnerable(testResults.getItem1());
+            results.setXssVulnerable(testResults.getItem2());
+            results.setPathTraversalVulnerable(testResults.getItem3());
+            results.setSecretsExposed(testResults.getItem4());
+            results.setOwaspResults(testResults.getItem5());
+            
+            results.setSecurityScore(calculateSecurityScore(results));
+            results.setPassesSecurity(results.getSecurityScore() >= 90);
+            
+            return results;
+        });
+    }
+
+    /**
+     * Chaos engineering tests
+     */
+    private Uni<ChaosTestResults> runChaosTests(
+            LoadedPlugin plugin,
+            List<ChaosTest> tests) {
+        
+        return Uni.combine().all().unis(
+            // Network latency injection
+            chaosService.testWithNetworkLatency(plugin, 500),
+            
+            // Packet loss
+            chaosService.testWithPacketLoss(plugin, 0.1),
+            
+            // CPU throttling
+            chaosService.testWithCpuThrottle(plugin, 0.5),
+            
+            // Memory pressure
+            chaosService.testWithMemoryPressure(plugin, 0.8),
+            
+            // Dependency failure
+            chaosService.testWithDependencyFailure(plugin)
+        ).asTuple()
+        .onItem().transform(chaosResults -> {
+            ChaosTestResults results = new ChaosTestResults();
+            results.setHandlesNetworkLatency(chaosResults.getItem1());
+            results.setHandlesPacketLoss(chaosResults.getItem2());
+            results.setHandlesCpuThrottle(chaosResults.getItem3());
+            results.setHandlesMemoryPressure(chaosResults.getItem4());
+            results.setHandlesDependencyFailure(chaosResults.getItem5());
+            
+            results.setResilienceScore(calculateResilienceScore(results));
+            return results;
+        });
+    }
+
+    /**
+     * Evaluate quality gates
+     */
+    private boolean evaluateQualityGates(
+            TestReport report, 
+            QualityGates gates) {
+        
+        boolean passesPerformance = report.getPerformanceResults().getMeetsSLO();
+        boolean passesSecurity = report.getSecurityResults().getPassesSecurity();
+        boolean passesResilience = report.getChaosResults().getResilienceScore() >= 
+            gates.getMinResilienceScore();
+        
+        return passesPerformance && passesSecurity && passesResilience;
+    }
+
+    private double calculateSecurityScore(SecurityTestResults results) {
+        double score = 100.0;
+        if (results.getSqlInjectionVulnerable()) score -= 30;
+        if (results.getXssVulnerable()) score -= 20;
+        if (results.getPathTraversalVulnerable()) score -= 25;
+        if (results.getSecretsExposed()) score -= 25;
+        return Math.max(0, score);
+    }
+
+    private double calculateResilienceScore(ChaosTestResults results) {
+        int passed = 0;
+        if (results.getHandlesNetworkLatency()) passed++;
+        if (results.getHandlesPacketLoss()) passed++;
+        if (results.getHandlesCpuThrottle()) passed++;
+        if (results.getHandlesMemoryPressure()) passed++;
+        if (results.getHandlesDependencyFailure()) passed++;
+        return (passed / 5.0) * 100;
+    }
+
+    private Uni<LoadedPlugin> loadPlugin(String pluginId, String version) {
+        return loaderService.loadPlugin(pluginId, version, LoadOptions.builder().build())
+            .onItem().transform(result -> {
+                if (result.isSuccess()) {
+                    return result.getResult();
+                } else {
+                    throw new PluginLoadException("Failed to load plugin for testing");
+                }
+            });
+    }
+
+    private Uni<Void> persistTestReport(TestReport report) {
+        // Store in database for historical analysis
+        return Uni.createFrom().voidItem();
+    }
+}
+
+/**
+ * ENHANCEMENT 3: Plugin Marketplace with Ratings & Reviews
+ * 
+ * Community-driven marketplace features:
+ * - Star ratings
+ * - User reviews
+ * - Usage statistics
+ * - Trending plugins
+ */
+
+@ApplicationScoped
+public class PluginMarketplaceService {
+
+    private static final Logger LOG = Logger.getLogger(PluginMarketplaceService.class);
+
+    @Inject
+    PluginRepository pluginRepository;
+
+    @Inject
+    ReviewRepository reviewRepository;
+
+    @Inject
+    UsageStatsService usageStats;
+
+    @Inject
+    ContentModerationService moderationService;
+
+    /**
+     * Get marketplace listing with ratings
+     */
+    public Uni<MarketplaceListing> getMarketplaceListing(
+            String pluginId,
+            String version) {
+        
+        return pluginRepository.findByIdAndVersion(pluginId, version)
+            .onItem().transformToUni(plugin -> 
+                Uni.combine().all().unis(
+                    getAverageRating(pluginId),
+                    getReviewCount(pluginId),
+                    getDownloadCount(pluginId),
+                    getRecentReviews(pluginId, 5),
+                    getTrendingScore(pluginId)
+                ).asTuple()
+                .onItem().transform(data -> {
+                    MarketplaceListing listing = new MarketplaceListing();
+                    listing.setPlugin(plugin);
+                    listing.setAverageRating(data.getItem1());
+                    listing.setReviewCount(data.getItem2());
+                    listing.setDownloadCount(data.getItem3());
+                    listing.setRecentReviews(data.getItem4());
+                    listing.setTrendingScore(data.getItem5());
+                    listing.setPopularityRank(
+                        calculatePopularityRank(data.getItem3(), data.getItem1())
+                    );
+                    return listing;
+                })
+            );
+    }
+
+    /**
+     * Submit plugin review
+     */
+    public Uni<Review> submitReview(
+            String userId,
+            String pluginId,
+            String version,
+            ReviewSubmission submission) {
+        
+        // Validate user has actually used the plugin
+        return usageStats.hasUserUsedPlugin(userId, pluginId)
+            .onItem().transformToUni(hasUsed -> {
+                if (!hasUsed) {
+                    return Uni.createFrom().failure(
+                        new IllegalStateException("Must use plugin before reviewing")
+                    );
+                }
+                
+                // Moderate content
+                return moderationService.moderateContent(submission.getComment())
+                    .onItem().transformToUni(moderationResult -> {
+                        if (!moderationResult.isApproved()) {
+                            return Uni.createFrom().failure(
+                                new ContentViolationException(
+                                    "Review contains inappropriate content"
+                                )
+                            );
+                        }
+                        
+                        // Create review
+                        Review review = Review.builder()
+                            .id(UUID.randomUUID())
+                            .userId(userId)
+                            .pluginId(pluginId)
+                            .version(version)
+                            .rating(submission.getRating())
+                            .title(submission.getTitle())
+                            .comment(submission.getComment())
+                            .helpful(0)
+                            .notHelpful(0)
+                            .verified(true) // User has used the plugin
+                            .createdAt(Instant.now())
+                            .build();
+                        
+                        return reviewRepository.persist(review);
+                    });
+            });
+    }
+
+    /**
+     * Get trending plugins
+     */
+    public Uni<List<TrendingPlugin>> getTrendingPlugins(int limit) {
+        
+        // Calculate trending score based on:
+        // - Recent downloads (weight: 0.4)
+        // - Rating velocity (weight: 0.3)
+        // - Usage growth (weight: 0.3)
+        
+        return usageStats.getRecentDownloads(7) // last 7 days
+            .onItem().transformToUni(downloads -> 
+                Uni.combine().all().unis(
+                    getRatingVelocity(7),
+                    getUsageGrowth(7, 30) // 7 days vs 30 days
+                ).asTuple()
+                .onItem().transform(metrics -> {
+                    Map<String, Double> trendingScores = new HashMap<>();
+                    
+                    // Combine metrics
+                    for (String pluginId : downloads.keySet()) {
+                        double downloadScore = normalize(
+                            downloads.get(pluginId), 
+                            Collections.max(downloads.values())
+                        );
+                        
+                        double ratingScore = metrics.getItem1()
+                            .getOrDefault(pluginId, 0.0);
+                        
+                        double growthScore = metrics.getItem2()
+                            .getOrDefault(pluginId, 0.0);
+                        
+                        double trendingScore = 
+                            downloadScore * 0.4 +
+                            ratingScore * 0.3 +
+                            growthScore * 0.3;
+                        
+                        trendingScores.put(pluginId, trendingScore);
+                    }
+                    
+                    return trendingScores.entrySet().stream()
+                        .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                        .limit(limit)
+                        .map(entry -> TrendingPlugin.builder()
+                            .pluginId(entry.getKey())
+                            .trendingScore(entry.getValue())
+                            .build())
+                        .toList();
+                })
+            );
+    }
+
+    /**
+     * Get personalized marketplace feed
+     */
+    public Uni<List<MarketplaceListing>> getPersonalizedFeed(
+            String userId,
+            int page,
+            int size) {
+        
+        return usageStats.getUserInterests(userId)
+            .onItem().transformToUni(interests -> {
+                
+                // Build personalized query
+                MarketplaceQuery query = MarketplaceQuery.builder()
+                    .categories(interests.getCategories())
+                    .minRating(3.5)
+                    .sortBy("relevance")
+                    .page(page)
+                    .size(size)
+                    .build();
+                
+                return searchMarketplace(query)
+                    .onItem().transformToUni(results -> 
+                        // Enrich with personalization scores
+                        Uni.combine().all().unis(
+                            results.stream()
+                                .map(listing -> 
+                                    calculatePersonalizationScore(userId, listing)
+                                        .onItem().transform(score -> {
+                                            listing.setPersonalizationScore(score);
+                                            return listing;
+                                        })
+                                )
+                                .toList()
+                        ).asTuple()
+                        .onItem().transform(enriched -> 
+                            enriched.stream()
+                                .sorted(Comparator.comparing(
+                                    MarketplaceListing::getPersonalizationScore
+                                ).reversed())
+                                .toList()
+                        )
+                    );
+            });
+    }
+
+    private Uni<Double> getAverageRating(String pluginId) {
+        return reviewRepository.getAverageRating(pluginId);
+    }
+
+    private Uni<Integer> getReviewCount(String pluginId) {
+        return reviewRepository.countByPlugin(pluginId);
+    }
+
+    private Uni<Integer> getDownloadCount(String pluginId) {
+        return usageStats.getTotalDownloads(pluginId);
+    }
+
+    private Uni<List<Review>> getRecentReviews(String pluginId, int limit) {
+        return reviewRepository.findRecentByPlugin(pluginId, limit);
+    }
+
+    private Uni<Double> getTrendingScore(String pluginId) {
+        return usageStats.calculateTrendingScore(pluginId);
+    }
+
+    private int calculatePopularityRank(int downloads, double rating) {
+        return (int) (downloads * rating / 5.0);
+    }
+
+    private double normalize(int value, int max) {
+        return max > 0 ? (double) value / max : 0;
+    }
+
+    private Uni<Map<String, Double>> getRatingVelocity(int days) {
+        return reviewRepository.getRatingVelocity(days);
+    }
+
+    private Uni<Map<String, Double>> getUsageGrowth(int recentDays, int compareDays) {
+        return usageStats.getGrowthRate(recentDays, compareDays);
+    }
+
+    private Uni<List<MarketplaceListing>> searchMarketplace(MarketplaceQuery query) {
+        return Uni.createFrom().item(Collections.emptyList());
+    }
+
+    private Uni<Double> calculatePersonalizationScore(
+            String userId, 
+            MarketplaceListing listing) {
+        return Uni.createFrom().item(0.5);
+    }
+}
+
+/**
+ * ENHANCEMENT 4: Intelligent Plugin Versioning & Upgrade Assistant
+ * 
+ * Smart version management:
+ * - Breaking change detection
+ * - Automatic migration scripts
+ * - Compatibility checking
+ * - Rollback support
+ */
+
+@ApplicationScoped
+public class PluginVersioningService {
+
+    private static final Logger LOG = Logger.getLogger(PluginVersioningService.class);
+
+    @Inject
+    PluginRepository pluginRepository;
+
+    @Inject
+    SchemaComparatorService schemaComparator;
+
+    @Inject
+    MigrationGeneratorService migrationGenerator;
+
+    /**
+     * Analyze version compatibility
+     */
+    public Uni<CompatibilityReport> analyzeCompatibility(
+            String pluginId,
+            String fromVersion,
+            String toVersion) {
+        
+        return Uni.combine().all().unis(
+            pluginRepository.findByIdAndVersion(pluginId, fromVersion),
+            pluginRepository.findByIdAndVersion(pluginId, toVersion)
+        ).asTuple()
+        .onItem().transformToUni(plugins -> {
+            PluginEntity oldPlugin = plugins.getItem1();
+            PluginEntity newPlugin = plugins.getItem2();
+            
+            CompatibilityReport report = new CompatibilityReport();
+            report.setFromVersion(fromVersion);
+            report.setToVersion(toVersion);
+            
+            // Compare schemas
+            return schemaComparator.compareSchemas(
+                oldPlugin.toDescriptor(),
+                newPlugin.toDescriptor()
+            ).onItem().transformToUni(schemaDiff -> {
+                report.setSchemaChanges(schemaDiff);
+                report.setBreakingChanges(schemaDiff.getBreakingChanges());
+                report.setCompatible(schemaDiff.getBreakingChanges().isEmpty());
+                
+                // Generate migration if needed
+                if (!schemaDiff.getBreakingChanges().isEmpty()) {
+                    return migrationGenerator.generateMigration(schemaDiff)
+                        .onItem().transform(migration -> {
+                            report.setMigrationScript(migration);
+                            report.setAutoMigratable(migration.isAutoExecutable());
+                            return report;
+                        });
+                }
+                
+                return Uni.createFrom().item(report);
+            });
+        });
+    }
+
+    /**
+     * Perform automated upgrade with migration
+     */
+    public Uni<UpgradeResult> upgradePlugin(
+            String workflowId,
+            String pluginId,
+            String targetVersion,
+            UpgradeOptions options) {
+        
+        LOG.infof("Upgrading plugin %s to version %s in workflow %s",
+            pluginId, targetVersion, workflowId);
+
+        return getCurrentVersion(workflowId, pluginId)
+            .onItem().transformToUni(currentVersion -> 
+                analyzeCompatibility(pluginId, currentVersion, targetVersion)
+                    .onItem().transformToUni(compatibility -> {
+                        
+                        if (!compatibility.isCompatible() && 
+                            !compatibility.isAutoMigratable()) {
+                            return Uni.createFrom().failure(
+                                new IncompatibleVersionException(

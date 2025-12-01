@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>tech.kayys.wayang</groupId>
+        <artifactId>wayang-platform-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>wayang-runtime-minimal</artifactId>
+    <name>Wayang Runtime Minimal</name>
+    <description>Absolute minimum runtime - ALWAYS included</description>
+
+    <dependencies>
+        <!-- Core domain models - REQUIRED -->
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-core</artifactId>
+        </dependency>
+        
+        <!-- JSON only - REQUIRED -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        
+        <!-- Logging only - REQUIRED -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+        </dependency>
+        
+        <!-- NO OTHER DEPENDENCIES -->
+    </dependencies>
+</project>

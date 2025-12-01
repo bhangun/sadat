@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>tech.kayys.wayang</groupId>
+        <artifactId>wayang-platform-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>wayang-node-rag</artifactId>
+    <name>Wayang Node RAG</name>
+    <description>RAG node implementation - ONLY if user uses RAG node</description>
+
+    <dependencies>
+        <!-- Minimal runtime -->
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-runtime-minimal</artifactId>
+        </dependency>
+        
+        <!-- RAG runtime -->
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-runtime-rag</artifactId>
+        </dependency>
+        
+        <!-- Vector library - minimal -->
+        <dependency>
+            <groupId>com.github.jbellis</groupId>
+            <artifactId>jvector</artifactId>
+        </dependency>
+    </dependencies>
+</project>

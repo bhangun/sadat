@@ -1,0 +1,10 @@
+
+public enum LintCategory {
+    TYPE_MISMATCH,
+    DEAD_CODE,
+    PERFORMANCE,
+    SECURITY,
+    BEST_PRACTICE,
+    COST_OPTIMIZATION,
+    COMPLEXITY
+}

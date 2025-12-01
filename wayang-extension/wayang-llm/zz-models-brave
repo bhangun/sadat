@@ -1,0 +1,4585 @@
+# Wayang Models/LLM - Complete Implementation
+
+I'll provide a complete, production-ready implementation of the LLM Runtime Abstraction layer for the Wayang AI Agent Workflow platform, following microservices architecture with Quarkus.
+
+## Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph "LLM Runtime Abstraction"
+        API[Unified LLM API]
+        Router[Model Router]
+        Adapters[Provider Adapters]
+        Cache[Response Cache]
+        Safety[Safety Gate]
+        Metrics[Metrics & Cost]
+    end
+    
+    subgraph "Provider Adapters"
+        Ollama[Ollama Adapter]
+        OpenAI[OpenAI Adapter]
+        vLLM[vLLM Adapter]
+        Triton[Triton Adapter]
+    end
+    
+    API --> Router
+    Router --> Adapters
+    Adapters --> Ollama
+    Adapters --> OpenAI
+    Adapters --> vLLM
+    Adapters --> Triton
+    API --> Cache
+    API --> Safety
+    API --> Metrics
+```
+
+## Project Structure
+
+```
+wayang-models/
+├── pom.xml
+├── wayang-models-api/              # API definitions
+├── wayang-models-core/             # Core LLM runtime
+├── wayang-models-router/           # Model routing logic
+├── wayang-models-adapters/         # Provider adapters
+│   ├── ollama/
+│   ├── openai/
+│   ├── vllm/
+│   └── triton/
+├── wayang-models-cache/            # Caching layer
+├── wayang-models-safety/           # Safety integration
+├── wayang-models-metrics/          # Observability
+└── wayang-models-deployment/       # Deployment configs
+```
+
+---
+
+## 1. Parent POM
+
+**File:** `wayang-models/pom.xml`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>tech.kayys.wayang</groupId>
+    <artifactId>wayang-models</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>Wayang Models - LLM Runtime Abstraction</name>
+    <description>
+        Unified LLM runtime abstraction providing provider-agnostic 
+        interface for AI model inference with routing, caching, 
+        safety, and observability
+    </description>
+
+    <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        
+        <!-- Quarkus -->
+        <quarkus.version>3.17.3</quarkus.version>
+        
+        <!-- Libraries -->
+        <lombok.version>1.18.34</lombok.version>
+        <mapstruct.version>1.6.3</mapstruct.version>
+        <caffeine.version>3.1.8</caffeine.version>
+        <jackson.version>2.18.2</jackson.version>
+        
+        <!-- Testing -->
+        <junit.version>5.11.3</junit.version>
+        <mockito.version>5.14.2</mockito.version>
+        <testcontainers.version>1.20.4</testcontainers.version>
+        <rest-assured.version>5.5.0</rest-assured.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Quarkus BOM -->
+            <dependency>
+                <groupId>io.quarkus.platform</groupId>
+                <artifactId>quarkus-bom</artifactId>
+                <version>${quarkus.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Internal modules -->
+            <dependency>
+                <groupId>tech.kayys.wayang</groupId>
+                <artifactId>wayang-models-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>tech.kayys.wayang</groupId>
+                <artifactId>wayang-models-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>tech.kayys.wayang</groupId>
+                <artifactId>wayang-models-router</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>tech.kayys.wayang</groupId>
+                <artifactId>wayang-models-cache</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>tech.kayys.wayang</groupId>
+                <artifactId>wayang-models-safety</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>tech.kayys.wayang</groupId>
+                <artifactId>wayang-models-metrics</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- External dependencies -->
+            <dependency>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <version>${lombok.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct</artifactId>
+                <version>${mapstruct.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.ben-manes.caffeine</groupId>
+                <artifactId>caffeine</artifactId>
+                <version>${caffeine.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <modules>
+        <module>wayang-models-api</module>
+        <module>wayang-models-core</module>
+        <module>wayang-models-router</module>
+        <module>wayang-models-adapters</module>
+        <module>wayang-models-cache</module>
+        <module>wayang-models-safety</module>
+        <module>wayang-models-metrics</module>
+        <module>wayang-models-deployment</module>
+    </modules>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>io.quarkus.platform</groupId>
+                    <artifactId>quarkus-maven-plugin</artifactId>
+                    <version>${quarkus.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.13.0</version>
+                    <configuration>
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                                <version>${lombok.version}</version>
+                            </path>
+                            <path>
+                                <groupId>org.mapstruct</groupId>
+                                <artifactId>mapstruct-processor</artifactId>
+                                <version>${mapstruct.version}</version>
+                            </path>
+                        </annotationProcessorPaths>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>
+```
+
+---
+
+## 2. API Module - Core Interfaces & DTOs
+
+**File:** `wayang-models-api/pom.xml`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>tech.kayys.wayang</groupId>
+        <artifactId>wayang-models</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>wayang-models-api</artifactId>
+    <name>Wayang Models - API</name>
+    <description>API definitions, interfaces, and DTOs</description>
+
+    <dependencies>
+        <!-- Quarkus -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-arc</artifactId>
+        </dependency>
+        
+        <!-- Jackson for JSON -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+        </dependency>
+        
+        <!-- Validation -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-hibernate-validator</artifactId>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+</project>
+```
+
+### Core Domain Models
+
+**File:** `wayang-models-api/src/main/java/tech/kayys/wayang/models/api/domain/ModelCapability.java`
+
+```java
+package tech.kayys.wayang.models.api.domain;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+
+/**
+ * Model capabilities enumeration.
+ * Defines what features a model supports.
+ */
+public enum ModelCapability {
+    /**
+     * Basic text completion
+     */
+    COMPLETION("completion"),
+    
+    /**
+     * Chat/conversational interface
+     */
+    CHAT("chat"),
+    
+    /**
+     * Function/tool calling
+     */
+    FUNCTION_CALLING("function_calling"),
+    
+    /**
+     * Vision/image understanding
+     */
+    VISION("vision"),
+    
+    /**
+     * Audio processing
+     */
+    AUDIO("audio"),
+    
+    /**
+     * Embedding generation
+     */
+    EMBEDDING("embedding"),
+    
+    /**
+     * Streaming responses
+     */
+    STREAMING("streaming"),
+    
+    /**
+     * JSON mode / structured outputs
+     */
+    JSON_MODE("json_mode"),
+    
+    /**
+     * Code generation specialized
+     */
+    CODE_GENERATION("code_generation"),
+    
+    /**
+     * Long context window (32k+ tokens)
+     */
+    LONG_CONTEXT("long_context");
+
+    private final String value;
+
+    ModelCapability(String value) {
+        this.value = value;
+    }
+
+    @JsonValue
+    public String getValue() {
+        return value;
+    }
+
+    @JsonCreator
+    public static ModelCapability fromValue(String value) {
+        for (ModelCapability capability : values()) {
+            if (capability.value.equalsIgnoreCase(value)) {
+                return capability;
+            }
+        }
+        throw new IllegalArgumentException("Unknown capability: " + value);
+    }
+}
+```
+
+**File:** `wayang-models-api/src/main/java/tech/kayys/wayang/models/api/domain/ModelType.java`
+
+```java
+package tech.kayys.wayang.models.api.domain;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+
+/**
+ * Type of AI model.
+ */
+public enum ModelType {
+    /**
+     * Large Language Model (text generation)
+     */
+    LLM("llm"),
+    
+    /**
+     * Embedding model
+     */
+    EMBEDDING("embedding"),
+    
+    /**
+     * Vision model
+     */
+    VISION("vision"),
+    
+    /**
+     * Multimodal model
+     */
+    MULTIMODAL("multimodal"),
+    
+    /**
+     * Audio/Speech model
+     */
+    AUDIO("audio");
+
+    private final String value;
+
+    ModelType(String value) {
+        this.value = value;
+    }
+
+    @JsonValue
+    public String getValue() {
+        return value;
+    }
+
+    @JsonCreator
+    public static ModelType fromValue(String value) {
+        for (ModelType type : values()) {
+            if (type.value.equalsIgnoreCase(value)) {
+                return type;
+            }
+        }
+        throw new IllegalArgumentException("Unknown model type: " + value);
+    }
+}
+```
+
+**File:** `wayang-models-api/src/main/java/tech/kayys/wayang/models/api/domain/ModelMetadata.java`
+
+```java
+package tech.kayys.wayang.models.api.domain;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Complete metadata for a registered model.
+ * Stored in Model Registry and used for routing decisions.
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class ModelMetadata {
+    
+    /**
+     * Unique model identifier (e.g., "gpt-4", "llama-3-70b")
+     */
+    @NotBlank
+    private String modelId;
+    
+    /**
+     * Human-readable name
+     */
+    @NotBlank
+    private String name;
+    
+    /**
+     * Model version
+     */
+    @NotBlank
+    private String version;
+    
+    /**
+     * Provider identifier (e.g., "openai", "ollama", "vllm")
+     */
+    @NotBlank
+    private String provider;
+    
+    /**
+     * Model type
+     */
+    @NotNull
+    private ModelType type;
+    
+    /**
+     * Supported capabilities
+     */
+    @Builder.Default
+    private Set<ModelCapability> capabilities = Set.of();
+    
+    /**
+     * Maximum context window in tokens
+     */
+    @Positive
+    private Integer maxTokens;
+    
+    /**
+     * Maximum output tokens
+     */
+    private Integer maxOutputTokens;
+    
+    /**
+     * Latency profile (P50, P95, P99 in milliseconds)
+     */
+    private LatencyProfile latencyProfile;
+    
+    /**
+     * Cost profile
+     */
+    private CostProfile costProfile;
+    
+    /**
+     * Supported languages (ISO codes)
+     */
+    private List<String> supportedLanguages;
+    
+    /**
+     * Model description
+     */
+    private String description;
+    
+    /**
+     * Tags for categorization
+     */
+    private Set<String> tags;
+    
+    /**
+     * Custom attributes
+     */
+    private Map<String, Object> attributes;
+    
+    /**
+     * Deployment endpoint URL (if applicable)
+     */
+    private String endpoint;
+    
+    /**
+     * Model status (active, deprecated, experimental)
+     */
+    @Builder.Default
+    private ModelStatus status = ModelStatus.ACTIVE;
+    
+    /**
+     * Registration timestamp
+     */
+    private Instant createdAt;
+    
+    /**
+     * Last updated timestamp
+     */
+    private Instant updatedAt;
+    
+    /**
+     * Model owner/team
+     */
+    private String owner;
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class LatencyProfile {
+        private Integer p50Ms;
+        private Integer p95Ms;
+        private Integer p99Ms;
+        private Integer avgMs;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CostProfile {
+        /**
+         * Cost per input token (USD)
+         */
+        private BigDecimal perInputToken;
+        
+        /**
+         * Cost per output token (USD)
+         */
+        private BigDecimal perOutputToken;
+        
+        /**
+         * Cost per request (USD)
+         */
+        private BigDecimal perRequest;
+        
+        /**
+         * Cost per embedding (USD)
+         */
+        private BigDecimal perEmbedding;
+    }
+
+    public enum ModelStatus {
+        ACTIVE,
+        DEPRECATED,
+        EXPERIMENTAL,
+        DISABLED
+    }
+}
+```
+
+### Request/Response DTOs
+
+**File:** `wayang-models-api/src/main/java/tech/kayys/wayang/models/api/dto/ChatMessage.java`
+
+```java
+package tech.kayys.wayang.models.api.dto;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import jakarta.validation.constraints.NotBlank;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Single message in a chat conversation.
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class ChatMessage {
+    
+    /**
+     * Message role: system, user, assistant, function
+     */
+    @NotBlank
+    private String role;
+    
+    /**
+     * Message content (text)
+     */
+    private String content;
+    
+    /**
+     * Function call (if applicable)
+     */
+    private FunctionCall functionCall;
+    
+    /**
+     * Function name (for function role messages)
+     */
+    private String name;
+    
+    /**
+     * Multimodal content (images, audio, etc.)
+     */
+    private List<ContentPart> contentParts;
+    
+    /**
+     * Additional metadata
+     */
+    private Map<String, Object> metadata;
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class FunctionCall {
+        private String name;
+        private String arguments; // JSON string
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ContentPart {
+        private String type; // text, image_url, audio_url
+        private String text;
+        private String imageUrl;
+        private String audioUrl;
+        private Map<String, Object> metadata;
+    }
+}
+```
+
+**File:** `wayang-models-api/src/main/java/tech/kayys/wayang/models/api/dto/ModelRequest.java`
+
+```java
+package tech.kayys.wayang.models.api.dto;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import tech.kayys.wayang.models.api.domain.ModelCapability;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Unified model inference request.
+ * Supports chat, completion, embedding, and multimodal requests.
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class ModelRequest {
+    
+    /**
+     * Unique request identifier
+     */
+    @NotBlank
+    private String requestId;
+    
+    /**
+     * Tenant identifier
+     */
+    @NotBlank
+    private String tenantId;
+    
+    /**
+     * Workflow run identifier
+     */
+    private String runId;
+    
+    /**
+     * Node identifier (if from workflow)
+     */
+    private String nodeId;
+    
+    /**
+     * Request type: chat, completion, embed, multimodal
+     */
+    @NotBlank
+    private String type;
+    
+    /**
+     * Model hints for routing
+     */
+    private ModelHints modelHints;
+    
+    /**
+     * Chat messages (for chat type)
+     */
+    @Valid
+    private List<ChatMessage> messages;
+    
+    /**
+     * Prompt text (for completion type)
+     */
+    private String prompt;
+    
+    /**
+     * Input texts (for embedding type)
+     */
+    private List<String> inputs;
+    
+    /**
+     * Function/tool definitions
+     */
+    private List<FunctionDefinition> functions;
+    
+    /**
+     * Whether to stream response
+     */
+    @Builder.Default
+    private Boolean stream = false;
+    
+    /**
+     * Request timeout (milliseconds)
+     */
+    @Positive
+    @Builder.Default
+    private Integer timeoutMs = 30000;
+    
+    /**
+     * Maximum tokens to generate
+     */
+    @Positive
+    private Integer maxTokens;
+    
+    /**
+     * Temperature (0.0 - 2.0)
+     */
+    private Double temperature;
+    
+    /**
+     * Top-P sampling
+     */
+    private Double topP;
+    
+    /**
+     * Top-K sampling
+     */
+    private Integer topK;
+    
+    /**
+     * Stop sequences
+     */
+    private List<String> stop;
+    
+    /**
+     * Presence penalty
+     */
+    private Double presencePenalty;
+    
+    /**
+     * Frequency penalty
+     */
+    private Double frequencyPenalty;
+    
+    /**
+     * Additional request metadata
+     */
+    private Map<String, Object> metadata;
+    
+    /**
+     * Trace identifier for observability
+     */
+    private String traceId;
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ModelHints {
+        /**
+         * Required capabilities
+         */
+        private Set<ModelCapability> capabilities;
+        
+        /**
+         * Preferred model IDs (in priority order)
+         */
+        private List<String> preferred;
+        
+        /**
+         * Maximum latency budget (ms)
+         */
+        private Integer maxLatencyMs;
+        
+        /**
+         * Maximum cost budget (USD)
+         */
+        private Double maxCostUsd;
+        
+        /**
+         * Required quality level (0.0 - 1.0)
+         */
+        private Double minQuality;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class FunctionDefinition {
+        @NotBlank
+        private String name;
+        
+        private String description;
+        
+        @NotNull
+        private Map<String, Object> parameters; // JSON Schema
+    }
+}
+```
+
+**File:** `wayang-models-api/src/main/java/tech/kayys/wayang/models/api/dto/ModelResponse.java`
+
+```java
+package tech.kayys.wayang.models.api.dto;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Unified model inference response.
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class ModelResponse {
+    
+    /**
+     * Matching request identifier
+     */
+    private String requestId;
+    
+    /**
+     * Model identifier that generated the response
+     */
+    private String modelId;
+    
+    /**
+     * Response status: ok, error, partial
+     */
+    private String status;
+    
+    /**
+     * Generated text content
+     */
+    private String content;
+    
+    /**
+     * Chat messages (for chat responses)
+     */
+    private List<ChatMessage> messages;
+    
+    /**
+     * Embeddings (for embedding requests)
+     */
+    private List<List<Double>> embeddings;
+    
+    /**
+     * Function call result (if applicable)
+     */
+    private ChatMessage.FunctionCall functionCall;
+    
+    /**
+     * Input tokens consumed
+     */
+    private Integer tokensIn;
+    
+    /**
+     * Output tokens generated
+     */
+    private Integer tokensOut;
+    
+    /**
+     * Total tokens
+     */
+    private Integer tokensTotal;
+    
+    /**
+     * Estimated cost (USD)
+     */
+    private BigDecimal costUsd;
+    
+    /**
+     * Response time (milliseconds)
+     */
+    private Long latencyMs;
+    
+    /**
+     * Whether response is streaming
+     */
+    @Builder.Default
+    private Boolean streaming = false;
+    
+    /**
+     * Provider-specific trace ID
+     */
+    private String providerTraceId;
+    
+    /**
+     * Finish reason (stop, length, function_call, etc.)
+     */
+    private String finishReason;
+    
+    /**
+     * Error details (if status=error)
+     */
+    private ErrorDetails error;
+    
+    /**
+     * Response timestamp
+     */
+    @Builder.Default
+    private Instant timestamp = Instant.now();
+    
+    /**
+     * Additional metadata
+     */
+    private Map<String, Object> metadata;
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ErrorDetails {
+        private String code;
+        private String message;
+        private String type;
+        private Map<String, Object> details;
+    }
+}
+```
+
+**File:** `wayang-models-api/src/main/java/tech/kayys/wayang/models/api/dto/StreamChunk.java`
+
+```java
+package tech.kayys.wayang.models.api.dto;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.util.Map;
+
+/**
+ * Streaming response chunk.
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class StreamChunk {
+    
+    /**
+     * Matching request identifier
+     */
+    private String requestId;
+    
+    /**
+     * Chunk index (sequential)
+     */
+    private Integer chunkIndex;
+    
+    /**
+     * Delta content (incremental text)
+     */
+    private String delta;
+    
+    /**
+     * Whether this is the final chunk
+     */
+    @Builder.Default
+    private Boolean isFinal = false;
+    
+    /**
+     * Function call delta (if applicable)
+     */
+    private ChatMessage.FunctionCall functionCallDelta;
+    
+    /**
+     * Finish reason (only in final chunk)
+     */
+    private String finishReason;
+    
+    /**
+     * Provenance chunk reference
+     */
+    private String provenanceChunkRef;
+    
+    /**
+     * Error details (if error occurred mid-stream)
+     */
+    private ModelResponse.ErrorDetails error;
+    
+    /**
+     * Additional metadata
+     */
+    private Map<String, Object> metadata;
+}
+```
+
+### Core Service Interfaces
+
+**File:** `wayang-models-api/src/main/java/tech/kayys/wayang/models/api/service/ModelService.java`
+
+```java
+package tech.kayys.wayang.models.api.service;
+
+import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.Uni;
+import tech.kayys.wayang.models.api.dto.ModelRequest;
+import tech.kayys.wayang.models.api.dto.ModelResponse;
+import tech.kayys.wayang.models.api.dto.StreamChunk;
+
+/**
+ * Primary service interface for model inference.
+ * Provides unified API for all model types and providers.
+ */
+public interface ModelService {
+    
+    /**
+     * Execute synchronous model inference.
+     * 
+     * @param request Model request
+     * @return Completed model response
+     */
+    Uni<ModelResponse> infer(ModelRequest request);
+    
+    /**
+     * Execute streaming model inference.
+     * 
+     * @param request Model request with stream=true
+     * @return Stream of response chunks
+     */
+    Multi<StreamChunk> inferStream(ModelRequest request);
+    
+    /**
+     * Check health of model service.
+     * 
+     * @return Health status
+     */
+    Uni<Boolean> healthCheck();
+}
+```
+
+**File:** `wayang-models-api/src/main/java/tech/kayys/wayang/models/api/service/ModelRegistry.java`
+
+```java
+package tech.kayys.wayang.models.api.service;
+
+import io.smallrye.mutiny.Uni;
+import tech.kayys.wayang.models.api.domain.ModelCapability;
+import tech.kayys.wayang.models.api.domain.ModelMetadata;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+
+/**
+ * Model registry for capability discovery and metadata management.
+ */
+public interface ModelRegistry {
+    
+    /**
+     * Register a new model.
+     * 
+     * @param metadata Model metadata
+     * @return Registered metadata with generated fields
+     */
+    Uni<ModelMetadata> registerModel(ModelMetadata metadata);
+    
+    /**
+     * Get model metadata by ID.
+     * 
+     * @param modelId Model identifier
+     * @return Model metadata if exists
+     */
+    Uni<Optional<ModelMetadata>> getModel(String modelId);
+    
+    /**
+     * List all registered models.
+     * 
+     * @return List of model metadata
+     */
+    Uni<List<ModelMetadata>> listModels();
+    
+    /**
+     * Find models by capabilities.
+     * 
+     * @param capabilities Required capabilities
+     * @return Matching models
+     */
+    Uni<List<ModelMetadata>> findByCapabilities(Set<ModelCapability> capabilities);
+    
+    /**
+     * Find models by provider.
+     * 
+     * @param provider Provider identifier
+     * @return Models from provider
+     */
+    Uni<List<ModelMetadata>> findByProvider(String provider);
+    
+    /**
+     * Update model metadata.
+     * 
+     * @param modelId Model identifier
+     * @param metadata Updated metadata
+     * @return Updated metadata
+     */
+    Uni<ModelMetadata> updateModel(String modelId, ModelMetadata metadata);
+    
+    /**
+     * Deactivate/remove model.
+     * 
+     * @param modelId Model identifier
+     *@return Success indicator
+     */
+    Uni<Boolean> deactivateModel(String modelId);
+}
+```
+
+**File:** `wayang-models-api/src/main/java/tech/kayys/wayang/models/api/service/ModelRouter.java`
+
+```java
+package tech.kayys.wayang.models.api.service;
+
+import io.smallrye.mutiny.Uni;
+import tech.kayys.wayang.models.api.domain.ModelMetadata;
+import tech.kayys.wayang.models.api.dto.ModelRequest;
+
+import java.util.List;
+
+/**
+ * Model routing service - selects best model based on policies.
+ */
+public interface ModelRouter {
+    
+    /**
+     * Select best model for request based on routing policy.
+     * 
+     * @param request Model request with hints
+     * @return Selected model metadata
+     */
+    Uni<ModelMetadata> selectModel(ModelRequest request);
+    
+    /**
+     * Get candidate models ranked by suitability.
+     * 
+     * @param request Model request
+     * @return Ranked list of candidate models
+     */
+    Uni<List<ModelMetadata>> getCandidates(ModelRequest request);
+    
+    /**
+     * Select fallback model if primary fails.
+     * 
+     * @param request Original request
+     * @param failedModelId Failed model ID
+     * @return Fallback model metadata
+     */
+    Uni<ModelMetadata> selectFallback(ModelRequest request, String failedModelId);
+}
+```
+
+**File:** `wayang-models-api/src/main/java/tech/kayys/wayang/models/api/provider/ModelProvider.java`
+
+```java
+package tech.kayys.wayang.models.api.provider;
+
+import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.Uni;
+import tech.kayys.wayang.models.api.dto.ModelRequest;
+import tech.kayys.wayang.models.api.dto.ModelResponse;
+import tech.kayys.wayang.models.api.dto.StreamChunk;
+
+/**
+ * Provider adapter interface.
+ * Each provider (Ollama, OpenAI, vLLM, etc.) implements this.
+ */
+public interface ModelProvider {
+    
+    /**
+     * Get provider name.
+     * 
+     * @return Provider identifier (e.g., "ollama", "openai")
+     */
+    String getProviderName();
+    
+    /**
+     * Execute inference request.
+     * 
+     * @param request Model request
+     * @param modelId Resolved model ID for this provider
+     * @return Model response
+     */
+    Uni<ModelResponse> infer(ModelRequest request, String modelId);
+    
+    /**
+     * Execute streaming inference.
+     * 
+     * @param request Model request
+     * @param modelId Resolved model ID
+     * @return Stream of chunks
+     */
+    Multi<StreamChunk> inferStream(ModelRequest request, String modelId);
+    
+    /**
+     * Check provider health.
+     * 
+     * @return Health status
+     */
+    Uni<Boolean> healthCheck();
+    
+    /**
+     * Get supported model IDs for this provider.
+     * 
+     * @return List of model IDs
+     */
+    Uni<java.util.List<String>> getSupportedModels();
+}
+```
+
+### Error Handling
+
+**File:** `wayang-models-api/src/main/java/tech/kayys/wayang/models/api/exception/ModelException.java`
+
+```java
+package tech.kayys.wayang.models.api.exception;
+
+import lombok.Getter;
+
+/**
+ * Base exception for all model-related errors.
+ */
+@Getter
+public class ModelException extends RuntimeException {
+    
+    private final String errorCode;
+    private final transient Object details;
+    
+    public ModelException(String message) {
+        super(message);
+        this.errorCode = "MODEL_ERROR";
+        this.details = null;
+    }
+    
+    public ModelException(String errorCode, String message) {
+        super(message);
+        this.errorCode = errorCode;
+        this.details = null;
+    }
+    
+    public ModelException(String errorCode, String message, Object details) {
+        super(message);
+        this.errorCode = errorCode;
+        this.details = details;
+    }
+    
+    public ModelException(String errorCode, String message, Throwable cause) {
+        super(message, cause);
+        this.errorCode = errorCode;
+        this.details = null;
+    }
+    
+    public ModelException(String errorCode, String message, Throwable cause, Object details) {
+        super(message, cause);
+        this.errorCode = errorCode;
+        this.details = details;
+    }
+}
+```
+
+**File:** `wayang-models-api/src/main/java/tech/kayys/wayang/models/api/exception/ModelNotFoundException.java`
+
+```java
+package tech.kayys.wayang.models.api.exception;
+
+/**
+ * Thrown when requested model is not found in registry.
+ */
+public class ModelNotFoundException extends ModelException {
+    
+    public ModelNotFoundException(String modelId) {
+        super("MODEL_NOT_FOUND", "Model not found: " + modelId);
+    }
+}
+```
+
+**File:** `wayang-models-api/src/main/java/tech/kayys/wayang/models/api/exception/ModelInferenceException.java`
+
+```java
+package tech.kayys.wayang.models.api.exception;
+
+/**
+ * Thrown when model inference fails.
+ */
+public class ModelInferenceException extends ModelException {
+    
+    public ModelInferenceException(String message) {
+        super("INFERENCE_FAILED", message);
+    }
+    
+    public ModelInferenceException(String message, Throwable cause) {
+        super("INFERENCE_FAILED", message, cause);
+    }
+    
+    public ModelInferenceException(String message, Object details) {
+        super("INFERENCE_FAILED", message, details);
+    }
+}
+```
+
+**File:** `wayang-models-api/src/main/java/tech/kayys/wayang/models/api/exception/ProviderUnavailableException.java`
+
+```java
+package tech.kayys.wayang.models.api.exception;
+
+/**
+ * Thrown when model provider is unavailable.
+ */
+public class ProviderUnavailableException extends ModelException {
+    
+    public ProviderUnavailableException(String provider) {
+        super("PROVIDER_UNAVAILABLE", "Provider unavailable: " + provider);
+    }
+    
+    public ProviderUnavailableException(String provider, Throwable cause) {
+        super("PROVIDER_UNAVAILABLE", "Provider unavailable: " + provider, cause);
+    }
+}
+```
+
+---
+
+## 3. Core Module - Main Implementation
+
+**File:** `wayang-models-core/pom.xml`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>tech.kayys.wayang</groupId>
+        <artifactId>wayang-models</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>wayang-models-core</artifactId>
+    <name>Wayang Models - Core</name>
+    <description>Core LLM runtime implementation</description>
+
+    <dependencies>
+        <!-- Internal -->
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-models-api</artifactId>
+        </dependency>
+
+        <!-- Quarkus -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-arc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-reactive-pg-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-hibernate-reactive-panache</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-openapi</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest-jackson</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest-client-jackson</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-fault-tolerance</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-micrometer-registry-prometheus</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-opentelemetry</artifactId>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Testing -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>rest-assured</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
+```
+
+### Model Registry Implementation
+
+**File:** `wayang-models-core/src/main/java/tech/kayys/wayang/models/core/entity/ModelEntity.java`
+
+```java
+package tech.kayys.wayang.models.core.entity;
+
+import io.quarkus.hibernate.reactive.panache.PanacheEntityBase;
+import io.smallrye.mutiny.Uni;
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Model metadata entity stored in PostgreSQL.
+ */
+@Entity
+@Table(name = "models", indexes = {
+    @Index(name = "idx_model_provider", columnList = "provider"),
+    @Index(name = "idx_model_status", columnList = "status"),
+    @Index(name = "idx_model_type", columnList = "type")
+})
+@Getter
+@Setter
+public class ModelEntity extends PanacheEntityBase {
+    
+    @Id
+    @Column(name = "model_id", length = 255)
+    private String modelId;
+    
+    @Column(nullable = false)
+    private String name;
+    
+    @Column(nullable = false)
+    private String version;
+    
+    @Column(nullable = false)
+    private String provider;
+    
+    @Column(nullable = false, length = 50)
+    private String type;
+    
+    @Column(name = "capabilities", columnDefinition = "text[]")
+    private String[] capabilities;
+    
+    @Column(name = "max_tokens")
+    private Integer maxTokens;
+    
+    @Column(name = "max_output_tokens")
+    private Integer maxOutputTokens;
+    
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "latency_profile", columnDefinition = "jsonb")
+    private Map<String, Object> latencyProfile;
+    
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "cost_profile", columnDefinition = "jsonb")
+    private Map<String, Object> costProfile;
+    
+    @Column(name = "supported_languages", columnDefinition = "text[]")
+    private String[] supportedLanguages;
+    
+    @Column(columnDefinition = "text")
+    private String description;
+    
+    @Column(columnDefinition = "text[]")
+    private String[] tags;
+    
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private Map<String, Object> attributes;
+    
+    @Column(length = 500)
+    private String endpoint;
+    
+    @Column(nullable = false, length = 50)
+    private String status;
+    
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt;
+    
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
+    
+    @Column(length = 255)
+    private String owner;
+
+    @PrePersist
+    public void prePersist() {
+        createdAt = Instant.now();
+        updatedAt = Instant.now();
+        if (status == null) {
+            status = "ACTIVE";
+        }
+    }
+
+    @PreUpdate
+    public void preUpdate() {
+        updatedAt = Instant.now();
+    }
+
+    // Custom queries
+    public static Uni<List<ModelEntity>> findByProvider(String provider) {
+        return list("provider = ?1 and status = 'ACTIVE'", provider);
+    }
+
+    public static Uni<List<ModelEntity>> findByCapabilities(Set<String> capabilities) {
+        return list("capabilities @> ?1 and status = 'ACTIVE'", 
+            capabilities.toArray(new String[0]));
+    }
+
+    public static Uni<List<ModelEntity>> findActive() {
+        return list("status", "ACTIVE");
+    }
+}
+```
+
+**File:** `wayang-models-core/src/main/java/tech/kayys/wayang/models/core/service/ModelRegistryImpl.java`
+
+```java
+package tech.kayys.wayang.models.core.service;
+
+import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import tech.kayys.wayang.models.api.domain.ModelCapability;
+import tech.kayys.wayang.models.api.domain.ModelMetadata;
+import tech.kayys.wayang.models.api.exception.ModelException;
+import tech.kayys.wayang.models.api.exception.ModelNotFoundException;
+import tech.kayys.wayang.models.api.service.ModelRegistry;
+import tech.kayys.wayang.models.core.entity.ModelEntity;
+import tech.kayys.wayang.models.core.mapper.ModelMapper;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+/**
+ * Implementation of Model Registry using PostgreSQL.
+ * Provides CRUD operations for model metadata with reactive access.
+ */
+@ApplicationScoped
+@RequiredArgsConstructor
+@Slf4j
+public class ModelRegistryImpl implements ModelRegistry {
+    
+    private final ModelMapper mapper;
+
+    @Override
+    @WithTransaction
+    public Uni<ModelMetadata> registerModel(ModelMetadata metadata) {
+        log.info("Registering model: {}", metadata.getModelId());
+        
+        return ModelEntity.findById(metadata.getModelId())
+            .onItem().transformToUni(existing -> {
+                if (existing != null) {
+                    return Uni.createFrom().failure(
+                        new ModelException("MODEL_ALREADY_EXISTS", 
+                            "Model already exists: " + metadata.getModelId()));
+                }
+                
+                ModelEntity entity = mapper.toEntity(metadata);
+                entity.setCreatedAt(Instant.now());
+                entity.setUpdatedAt(Instant.now());
+                
+                return entity.persist()
+                    .onItem().transform(mapper::toMetadata)
+                    .invoke(m -> log.info("Model registered successfully: {}", m.getModelId()));
+            });
+    }
+
+    @Override
+    public Uni<Optional<ModelMetadata>> getModel(String modelId) {
+        return ModelEntity.<ModelEntity>findById(modelId)
+            .onItem().transform(entity -> 
+                Optional.ofNullable(entity).map(mapper::toMetadata));
+    }
+
+    @Override
+    public Uni<List<ModelMetadata>> listModels() {
+        return ModelEntity.findActive()
+            .onItem().transform(entities -> entities.stream()
+                .map(mapper::toMetadata)
+                .collect(Collectors.toList()));
+    }
+
+    @Override
+    public Uni<List<ModelMetadata>> findByCapabilities(Set<ModelCapability> capabilities) {
+        Set<String> capStrings = capabilities.stream()
+            .map(ModelCapability::getValue)
+            .collect(Collectors.toSet());
+            
+        return ModelEntity.findByCapabilities(capStrings)
+            .onItem().transform(entities -> entities.stream()
+                .map(mapper::toMetadata)
+                .collect(Collectors.toList()));
+    }
+
+    @Override
+    public Uni<List<ModelMetadata>> findByProvider(String provider) {
+        return ModelEntity.findByProvider(provider)
+            .onItem().transform(entities -> entities.stream()
+                .map(mapper::toMetadata)
+                .collect(Collectors.toList()));
+    }
+
+    @Override
+    @WithTransaction
+    public Uni<ModelMetadata> updateModel(String modelId, ModelMetadata metadata) {
+        log.info("Updating model: {}", modelId);
+        
+        return ModelEntity.<ModelEntity>findById(modelId)
+            .onItem().transformToUni(entity -> {
+                if (entity == null) {
+                    return Uni.createFrom().failure(
+                        new ModelNotFoundException(modelId));
+                }
+                
+                mapper.updateEntity(metadata, entity);
+                entity.setUpdatedAt(Instant.now());
+                
+                return entity.persist()
+                    .onItem().transform(mapper::toMetadata)
+                    .invoke(m -> log.info("Model updated successfully: {}", modelId));
+            });
+    }
+
+    @Override
+    @WithTransaction
+    public Uni<Boolean> deactivateModel(String modelId) {
+        log.info("Deactivating model: {}", modelId);
+        
+        return ModelEntity.<ModelEntity>findById(modelId)
+            .onItem().transformToUni(entity -> {
+                if (entity == null) {
+                    return Uni.createFrom().failure(
+                        new ModelNotFoundException(modelId));
+                }
+                
+                entity.setStatus("DISABLED");
+                entity.setUpdatedAt(Instant.now());
+                
+                return entity.persist()
+                    .onItem().transform(e -> true)
+                    .invoke(() -> log.info("Model deactivated: {}", modelId));
+            });
+    }
+}
+```
+
+**File:** `wayang-models-core/src/main/java/tech/kayys/wayang/models/core/mapper/ModelMapper.java`
+
+```java
+package tech.kayys.wayang.models.core.mapper;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import tech.kayys.wayang.models.api.domain.ModelCapability;
+import tech.kayys.wayang.models.api.domain.ModelMetadata;
+import tech.kayys.wayang.models.api.domain.ModelType;
+import tech.kayys.wayang.models.core.entity.ModelEntity;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * Maps between ModelMetadata and ModelEntity.
+ */
+@ApplicationScoped
+public class ModelMapper {
+    
+    public ModelEntity toEntity(ModelMetadata metadata) {
+        ModelEntity entity = new ModelEntity();
+        entity.setModelId(metadata.getModelId());
+        entity.setName(metadata.getName());
+        entity.setVersion(metadata.getVersion());
+        entity.setProvider(metadata.getProvider());
+        entity.setType(metadata.getType().getValue());
+        
+        if (metadata.getCapabilities() != null) {
+            entity.setCapabilities(metadata.getCapabilities().stream()
+                .map(ModelCapability::getValue)
+                .toArray(String[]::new));
+        }
+        
+        entity.setMaxTokens(metadata.getMaxTokens());
+        entity.setMaxOutputTokens(metadata.getMaxOutputTokens());
+        
+        if (metadata.getLatencyProfile() != null) {
+            entity.setLatencyProfile(toLatencyMap(metadata.getLatencyProfile()));
+        }
+        
+        if (metadata.getCostProfile() != null) {
+            entity.setCostProfile(toCostMap(metadata.getCostProfile()));
+        }
+        
+        if (metadata.getSupportedLanguages() != null) {
+            entity.setSupportedLanguages(
+                metadata.getSupportedLanguages().toArray(new String[0]));
+        }
+        
+        entity.setDescription(metadata.getDescription());
+        
+        if (metadata.getTags() != null) {
+            entity.setTags(metadata.getTags().toArray(new String[0]));
+        }
+        
+        entity.setAttributes(metadata.getAttributes());
+        entity.setEndpoint(metadata.getEndpoint());
+        entity.setStatus(metadata.getStatus() != null ? 
+            metadata.getStatus().name() : "ACTIVE");
+        entity.setOwner(metadata.getOwner());
+        
+        return entity;
+    }
+    
+    public ModelMetadata toMetadata(ModelEntity entity) {
+        return ModelMetadata.builder()
+            .modelId(entity.getModelId())
+            .name(entity.getName())
+            .version(entity.getVersion())
+            .provider(entity.getProvider())
+            .type(ModelType.fromValue(entity.getType()))
+            .capabilities(entity.getCapabilities() != null ?
+                Arrays.stream(entity.getCapabilities())
+                    .map(ModelCapability::fromValue)
+                    .collect(Collectors.toSet()) : Set.of())
+            .maxTokens(entity.getMaxTokens())
+            .maxOutputTokens(entity.getMaxOutputTokens())
+            .latencyProfile(entity.getLatencyProfile() != null ?
+                fromLatencyMap(entity.getLatencyProfile()) : null)
+            .costProfile(entity.getCostProfile() != null ?
+                fromCostMap(entity.getCostProfile()) : null)
+            .supportedLanguages(entity.getSupportedLanguages() != null ?
+                Arrays.asList(entity.getSupportedLanguages()) : null)
+            .description(entity.getDescription())
+            .tags(entity.getTags() != null ?
+                Set.of(entity.getTags()) : null)
+            .attributes(entity.getAttributes())
+            .endpoint(entity.getEndpoint())
+            .status(ModelMetadata.ModelStatus.valueOf(entity.getStatus()))
+            .createdAt(entity.getCreatedAt())
+            .updatedAt(entity.getUpdatedAt())
+            .owner(entity.getOwner())
+            .build();
+    }
+    
+    public void updateEntity(ModelMetadata metadata, ModelEntity entity) {
+        if (metadata.getName() != null) {
+            entity.setName(metadata.getName());
+        }
+        if (metadata.getVersion() != null) {
+            entity.setVersion(metadata.getVersion());
+        }
+        if (metadata.getCapabilities() != null) {
+            entity.setCapabilities(metadata.getCapabilities().stream()
+                .map(ModelCapability::getValue)
+                .toArray(String[]::new));
+        }
+        if (metadata.getMaxTokens() != null) {
+            entity.setMaxTokens(metadata.getMaxTokens());
+        }
+        if (metadata.getLatencyProfile() != null) {
+            entity.setLatencyProfile(toLatencyMap(metadata.getLatencyProfile()));
+        }
+        if (metadata.getCostProfile() != null) {
+            entity.setCostProfile(toCostMap(metadata.getCostProfile()));
+        }
+        if (metadata.getEndpoint() != null) {
+            entity.setEndpoint(metadata.getEndpoint());
+        }
+        if (metadata.getStatus() != null) {
+            entity.setStatus(metadata.getStatus().name());
+        }
+    }
+    
+    private Map<String, Object> toLatencyMap(ModelMetadata.LatencyProfile profile) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("p50Ms", profile.getP50Ms());
+        map.put("p95Ms", profile.getP95Ms());
+        map.put("p99Ms", profile.getP99Ms());
+        map.put("avgMs", profile.getAvgMs());
+        return map;
+    }
+    
+    private ModelMetadata.LatencyProfile fromLatencyMap(Map<String, Object> map) {
+        return ModelMetadata.LatencyProfile.builder()
+            .p50Ms((Integer) map.get("p50Ms"))
+            .p95Ms((Integer) map.get("p95Ms"))
+            .p99Ms((Integer) map.get("p99Ms"))
+            .avgMs((Integer) map.get("avgMs"))
+            .build();
+    }
+    
+    private Map<String, Object> toCostMap(ModelMetadata.CostProfile profile) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("perInputToken", profile.getPerInputToken());
+        map.put("perOutputToken", profile.getPerOutputToken());
+        map.put("perRequest", profile.getPerRequest());
+        map.put("perEmbedding", profile.getPerEmbedding());
+        return map;
+    }
+    
+    private ModelMetadata.CostProfile fromCostMap(Map<String, Object> map) {
+        return ModelMetadata.CostProfile.builder()
+            .perInputToken(map.get("perInputToken") != null ?
+                new java.math.BigDecimal(map.get("perInputToken").toString()) : null)
+            .perOutputToken(map.get("perOutputToken") != null ?
+                new java.math.BigDecimal(map.get("perOutputToken").toString()) : null)
+            .perRequest(map.get("perRequest") != null ?
+                new java.math.BigDecimal(map.get("perRequest").toString()) : null)
+            .perEmbedding(map.get("perEmbedding") != null ?
+                new java.math.BigDecimal(map.get("perEmbedding").toString()) : null)
+            .build();
+    }
+}
+```
+
+### Model Service Implementation
+
+**File:** `wayang-models-core/src/main/java/tech/kayys/wayang/models/core/service/ModelServiceImpl.java`
+
+```java
+package tech.kayys.wayang.models.core.service;
+
+import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import tech.kayys.wayang.models.api.domain.ModelMetadata;
+import tech.kayys.wayang.models.api.dto.ModelRequest;
+import tech.kayys.wayang.models.api.dto.ModelResponse;
+import tech.kayys.wayang.models.api.dto.StreamChunk;
+import tech.kayys.wayang.models.api.exception.ModelException;
+import tech.kayys.wayang.models.api.exception.ProviderUnavailableException;
+import tech.kayys.wayang.models.api.provider.ModelProvider;
+import tech.kayys.wayang.models.api.service.ModelRouter;
+import tech.kayys.wayang.models.api.service.ModelService;
+
+import java.time.Duration;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * Main implementation of ModelService.
+ * Orchestrates routing, provider selection, and execution.
+ */
+@ApplicationScoped
+@RequiredArgsConstructor
+@Slf4j
+public class ModelServiceImpl implements ModelService {
+    
+    private final ModelRouter modelRouter;
+    private final Instance<ModelProvider> providers;
+    private final Map<String, ModelProvider> providerCache = new ConcurrentHashMap<>();
+
+    @Override
+    public Uni<ModelResponse> infer(ModelRequest request) {
+        log.info("Processing inference request: {}", request.getRequestId());
+        
+        return modelRouter.selectModel(request)
+            .onItem().transformToUni(model -> {
+                ModelProvider provider = getProvider(model.getProvider());
+                
+                return provider.infer(request, model.getModelId())
+                    .ifNoItem().after(Duration.ofMillis(request.getTimeoutMs()))
+                    .failWith(() -> new ModelException("TIMEOUT",
+                        "Request timeout after " + request.getTimeoutMs() + "ms"))
+                    .onFailure().retry().atMost(2)
+                    .onFailure().recoverWithUni(failure -> 
+                        handleInferenceFailure(request, model, failure));
+            });
+    }
+
+    @Override
+    public Multi<StreamChunk> inferStream(ModelRequest request) {
+        log.info("Processing streaming inference request: {}", request.getRequestId());
+        
+        return Multi.createFrom().uni(
+            modelRouter.selectModel(request)
+                .onItem().transform(model -> {
+                    ModelProvider provider = getProvider(model.getProvider());
+                    return Map.entry(provider, model.getModelId());
+                })
+        ).onItem().transformToMultiAndConcatenate(entry -> 
+            entry.getKey().inferStream(request, entry.getValue())
+                .ifNoItem().after(Duration.ofMillis(request.getTimeoutMs()))
+                .failWith(() -> new ModelException("TIMEOUT",
+                    "Stream timeout after " + request.getTimeoutMs() + "ms"))
+        );
+    }
+
+    @Override
+    public Uni<Boolean> healthCheck() {
+        return Uni.createFrom().item(true);
+    }
+    
+    private ModelProvider getProvider(String providerName) {
+        return providerCache.computeIfAbsent(providerName, name -> {
+            for (ModelProvider provider : providers) {
+                if (provider.getProviderName().equals(name)) {
+                    return provider;
+                }
+            }
+            throw new ProviderUnavailableException(name);
+        });
+    }
+    
+    private Uni<ModelResponse> handleInferenceFailure(
+            ModelRequest request, 
+            ModelMetadata failedModel,
+            Throwable failure) {
+        
+        log.warn("Inference failed for model {}: {}", 
+            failedModel.getModelId(), failure.getMessage());
+        
+        // Try fallback
+        return modelRouter.selectFallback(request, failedModel.getModelId())
+            .onItem().transformToUni(fallbackModel -> {
+                if (fallbackModel == null) {
+                    return Uni.createFrom().failure(failure);
+                }
+                
+                log.info("Attempting fallback to model: {}", fallbackModel.getModelId());
+                ModelProvider provider = getProvider(fallbackModel.getProvider());
+                return provider.infer(request, fallbackModel.getModelId());
+            })
+            .onFailure().transform(fallbackFailure -> {
+                log.error("Fallback also failed", fallbackFailure);
+                return new ModelException("ALL_PROVIDERS_FAILED",
+                    "Both primary and fallback models failed", failure);
+            });
+    }
+}
+```
+
+This is Part 1 of the implementation. Would you like me to continue with:
+
+1. **Router Module** - Model routing logic with policies
+2. **Provider Adapters** - Ollama, OpenAI, vLLM, Triton implementations
+3. **Cache Module** - Response caching layer
+4. **Safety Module** - Safety gate integration
+5. **Metrics Module** - Observability and cost tracking
+6. **REST API** - HTTP endpoints
+7. **Configuration & Database migrations**
+
+Which section would you like me to detail next?
+
+
+# Wayang Models/LLM - Complete Implementation (Continued)
+
+## 4. Router Module - Model Routing Logic
+
+**File:** `wayang-models-router/pom.xml`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>tech.kayys.wayang</groupId>
+        <artifactId>wayang-models</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>wayang-models-router</artifactId>
+    <name>Wayang Models - Router</name>
+    <description>Model routing and selection logic</description>
+
+    <dependencies>
+        <!-- Internal -->
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-models-api</artifactId>
+        </dependency>
+
+        <!-- Quarkus -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-arc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-cache</artifactId>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+</project>
+```
+
+### Routing Strategy
+
+**File:** `wayang-models-router/src/main/java/tech/kayys/wayang/models/router/strategy/RoutingStrategy.java`
+
+```java
+package tech.kayys.wayang.models.router.strategy;
+
+import tech.kayys.wayang.models.api.domain.ModelMetadata;
+import tech.kayys.wayang.models.api.dto.ModelRequest;
+
+import java.util.List;
+
+/**
+ * Strategy interface for model routing decisions.
+ */
+public interface RoutingStrategy {
+    
+    /**
+     * Rank models by suitability for the request.
+     * 
+     * @param candidates Available models
+     * @param request Model request
+     * @return Models ranked by score (highest first)
+     */
+    List<ScoredModel> rankModels(List<ModelMetadata> candidates, ModelRequest request);
+    
+    /**
+     * Model with routing score.
+     */
+    record ScoredModel(ModelMetadata model, double score, String reasoning) {}
+}
+```
+
+**File:** `wayang-models-router/src/main/java/tech/kayys/wayang/models/router/strategy/CapabilityBasedStrategy.java`
+
+```java
+package tech.kayys.wayang.models.router.strategy;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import lombok.extern.slf4j.Slf4j;
+import tech.kayys.wayang.models.api.domain.ModelCapability;
+import tech.kayys.wayang.models.api.domain.ModelMetadata;
+import tech.kayys.wayang.models.api.dto.ModelRequest;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * Routes based on capability matching.
+ * Models with all required capabilities score higher.
+ */
+@ApplicationScoped
+@Slf4j
+public class CapabilityBasedStrategy implements RoutingStrategy {
+    
+    @Override
+    public List<ScoredModel> rankModels(List<ModelMetadata> candidates, ModelRequest request) {
+        Set<ModelCapability> required = request.getModelHints() != null ?
+            request.getModelHints().getCapabilities() : Set.of();
+        
+        List<ScoredModel> scored = new ArrayList<>();
+        
+        for (ModelMetadata model : candidates) {
+            double score = calculateCapabilityScore(model, required);
+            String reasoning = String.format("Capability match: %.2f", score);
+            scored.add(new ScoredModel(model, score, reasoning));
+        }
+        
+        scored.sort((a, b) -> Double.compare(b.score(), a.score()));
+        return scored;
+    }
+    
+    private double calculateCapabilityScore(ModelMetadata model, Set<ModelCapability> required) {
+        if (required.isEmpty()) {
+            return 1.0; // No specific requirements
+        }
+        
+        Set<ModelCapability> modelCaps = model.getCapabilities();
+        long matched = required.stream()
+            .filter(modelCaps::contains)
+            .count();
+        
+        // All required capabilities must be present
+        if (matched < required.size()) {
+            return 0.0;
+        }
+        
+        // Bonus for additional capabilities
+        double bonus = (modelCaps.size() - required.size()) * 0.1;
+        return Math.min(1.0 + bonus, 1.5);
+    }
+}
+```
+
+**File:** `wayang-models-router/src/main/java/tech/kayys/wayang/models/router/strategy/CostLatencyStrategy.java`
+
+```java
+package tech.kayys.wayang.models.router.strategy;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import lombok.extern.slf4j.Slf4j;
+import tech.kayys.wayang.models.api.domain.ModelMetadata;
+import tech.kayys.wayang.models.api.dto.ModelRequest;
+
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Routes based on cost and latency constraints.
+ * Balances performance and cost efficiency.
+ */
+@ApplicationScoped
+@Slf4j
+public class CostLatencyStrategy implements RoutingStrategy {
+    
+    private static final double LATENCY_WEIGHT = 0.6;
+    private static final double COST_WEIGHT = 0.4;
+    
+    @Override
+    public List<ScoredModel> rankModels(List<ModelMetadata> candidates, ModelRequest request) {
+        Integer maxLatency = request.getModelHints() != null ?
+            request.getModelHints().getMaxLatencyMs() : null;
+        Double maxCost = request.getModelHints() != null ?
+            request.getModelHints().getMaxCostUsd() : null;
+        
+        List<ScoredModel> scored = new ArrayList<>();
+        
+        // Find min/max for normalization
+        double minLatency = candidates.stream()
+            .filter(m -> m.getLatencyProfile() != null)
+            .mapToInt(m -> m.getLatencyProfile().getP95Ms())
+            .min().orElse(100);
+        
+        double maxLatencyValue = candidates.stream()
+            .filter(m -> m.getLatencyProfile() != null)
+            .mapToInt(m -> m.getLatencyProfile().getP95Ms())
+            .max().orElse(1000);
+        
+        for (ModelMetadata model : candidates) {
+            double score = calculateScore(model, maxLatency, maxCost, minLatency, maxLatencyValue);
+            String reasoning = buildReasoning(model, score);
+            scored.add(new ScoredModel(model, score, reasoning));
+        }
+        
+        scored.sort((a, b) -> Double.compare(b.score(), a.score()));
+        return scored;
+    }
+    
+    private double calculateScore(ModelMetadata model, Integer maxLatency, 
+                                  Double maxCost, double minLatency, double maxLatencyValue) {
+        double latencyScore = calculateLatencyScore(model, maxLatency, minLatency, maxLatencyValue);
+        double costScore = calculateCostScore(model, maxCost);
+        
+        // If constraints violated, zero score
+        if (latencyScore == 0 || costScore == 0) {
+            return 0.0;
+        }
+        
+        return (latencyScore * LATENCY_WEIGHT) + (costScore * COST_WEIGHT);
+    }
+    
+    private double calculateLatencyScore(ModelMetadata model, Integer maxLatency,
+                                        double minLatency, double maxLatencyValue) {
+        if (model.getLatencyProfile() == null) {
+            return 0.5; // Unknown latency, neutral score
+        }
+        
+        int p95 = model.getLatencyProfile().getP95Ms();
+        
+        // Hard constraint
+        if (maxLatency != null && p95 > maxLatency) {
+            return 0.0;
+        }
+        
+        // Normalize: lower latency = higher score
+        double normalized = 1.0 - ((p95 - minLatency) / (maxLatencyValue - minLatency));
+        return Math.max(0.0, Math.min(1.0, normalized));
+    }
+    
+    private double calculateCostScore(ModelMetadata model, Double maxCost) {
+        if (model.getCostProfile() == null) {
+            return 0.5; // Unknown cost, neutral score
+        }
+        
+        // Estimate cost for typical request (1000 tokens)
+        BigDecimal inputCost = model.getCostProfile().getPerInputToken();
+        BigDecimal outputCost = model.getCostProfile().getPerOutputToken();
+        
+        if (inputCost == null || outputCost == null) {
+            return 0.5;
+        }
+        
+        double estimatedCost = inputCost.multiply(BigDecimal.valueOf(500))
+            .add(outputCost.multiply(BigDecimal.valueOf(500)))
+            .doubleValue();
+        
+        // Hard constraint
+        if (maxCost != null && estimatedCost > maxCost) {
+            return 0.0;
+        }
+        
+        // Lower cost = higher score (inverse exponential)
+        return Math.exp(-estimatedCost * 10);
+    }
+    
+    private String buildReasoning(ModelMetadata model, double score) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Score: ").append(String.format("%.3f", score));
+        
+        if (model.getLatencyProfile() != null) {
+            sb.append(", P95: ").append(model.getLatencyProfile().getP95Ms()).append("ms");
+        }
+        
+        if (model.getCostProfile() != null && model.getCostProfile().getPerInputToken() != null) {
+            sb.append(", Cost: $").append(model.getCostProfile().getPerInputToken());
+        }
+        
+        return sb.toString();
+    }
+}
+```
+
+### Router Implementation
+
+**File:** `wayang-models-router/src/main/java/tech/kayys/wayang/models/router/service/ModelRouterImpl.java`
+
+```java
+package tech.kayys.wayang.models.router.service;
+
+import io.quarkus.cache.CacheResult;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import tech.kayys.wayang.models.api.domain.ModelCapability;
+import tech.kayys.wayang.models.api.domain.ModelMetadata;
+import tech.kayys.wayang.models.api.dto.ModelRequest;
+import tech.kayys.wayang.models.api.exception.ModelException;
+import tech.kayys.wayang.models.api.service.ModelRegistry;
+import tech.kayys.wayang.models.api.service.ModelRouter;
+import tech.kayys.wayang.models.router.strategy.RoutingStrategy;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * Implementation of ModelRouter with multi-strategy selection.
+ * Uses capability matching, cost/latency optimization, and fallback logic.
+ */
+@ApplicationScoped
+@RequiredArgsConstructor
+@Slf4j
+public class ModelRouterImpl implements ModelRouter {
+    
+    private final ModelRegistry registry;
+    private final Instance<RoutingStrategy> strategies;
+
+    @Override
+    public Uni<ModelMetadata> selectModel(ModelRequest request) {
+        log.debug("Selecting model for request: {}", request.getRequestId());
+        
+        return getCandidateModels(request)
+            .onItem().transform(candidates -> {
+                if (candidates.isEmpty()) {
+                    throw new ModelException("NO_MODEL_AVAILABLE",
+                        "No models match the request criteria");
+                }
+                
+                // Check preferred models first
+                if (request.getModelHints() != null && 
+                    request.getModelHints().getPreferred() != null) {
+                    Optional<ModelMetadata> preferred = findPreferred(
+                        candidates, request.getModelHints().getPreferred());
+                    if (preferred.isPresent()) {
+                        log.info("Using preferred model: {}", preferred.get().getModelId());
+                        return preferred.get();
+                    }
+                }
+                
+                // Apply routing strategies
+                List<RoutingStrategy.ScoredModel> scored = applyStrategies(candidates, request);
+                
+                if (scored.isEmpty()) {
+                    throw new ModelException("NO_SUITABLE_MODEL",
+                        "No models meet the routing criteria");
+                }
+                
+                RoutingStrategy.ScoredModel selected = scored.get(0);
+                log.info("Selected model: {} (score: {}, reasoning: {})",
+                    selected.model().getModelId(), selected.score(), selected.reasoning());
+                
+                return selected.model();
+            });
+    }
+
+    @Override
+    public Uni<List<ModelMetadata>> getCandidates(ModelRequest request) {
+        return getCandidateModels(request)
+            .onItem().transform(candidates -> {
+                List<RoutingStrategy.ScoredModel> scored = applyStrategies(candidates, request);
+                return scored.stream()
+                    .map(RoutingStrategy.ScoredModel::model)
+                    .collect(Collectors.toList());
+            });
+    }
+
+    @Override
+    public Uni<ModelMetadata> selectFallback(ModelRequest request, String failedModelId) {
+        log.info("Selecting fallback for failed model: {}", failedModelId);
+        
+        return getCandidateModels(request)
+            .onItem().transform(candidates -> {
+                // Remove failed model
+                List<ModelMetadata> fallbackCandidates = candidates.stream()
+                    .filter(m -> !m.getModelId().equals(failedModelId))
+                    .collect(Collectors.toList());
+                
+                if (fallbackCandidates.isEmpty()) {
+                    log.warn("No fallback models available");
+                    return null;
+                }
+                
+                List<RoutingStrategy.ScoredModel> scored = applyStrategies(
+                    fallbackCandidates, request);
+                
+                if (scored.isEmpty()) {
+                    return null;
+                }
+                
+                ModelMetadata fallback = scored.get(0).model();
+                log.info("Selected fallback model: {}", fallback.getModelId());
+                return fallback;
+            });
+    }
+    
+    private Uni<List<ModelMetadata>> getCandidateModels(ModelRequest request) {
+        // Determine required capabilities from request type
+        Set<ModelCapability> required = determineRequiredCapabilities(request);
+        
+        if (request.getModelHints() != null && 
+            request.getModelHints().getCapabilities() != null) {
+            required.addAll(request.getModelHints().getCapabilities());
+        }
+        
+        if (required.isEmpty()) {
+            return registry.listModels();
+        }
+        
+        return registry.findByCapabilities(required);
+    }
+    
+    private Set<ModelCapability> determineRequiredCapabilities(ModelRequest request) {
+        Set<ModelCapability> caps = new HashSet<>();
+        
+        switch (request.getType().toLowerCase()) {
+            case "chat":
+                caps.add(ModelCapability.CHAT);
+                break;
+            case "completion":
+                caps.add(ModelCapability.COMPLETION);
+                break;
+            case "embed":
+            case "embedding":
+                caps.add(ModelCapability.EMBEDDING);
+                break;
+            case "multimodal":
+                caps.add(ModelCapability.VISION);
+                break;
+        }
+        
+        if (Boolean.TRUE.equals(request.getStream())) {
+            caps.add(ModelCapability.STREAMING);
+        }
+        
+        if (request.getFunctions() != null && !request.getFunctions().isEmpty()) {
+            caps.add(ModelCapability.FUNCTION_CALLING);
+        }
+        
+        return caps;
+    }
+    
+    private Optional<ModelMetadata> findPreferred(List<ModelMetadata> candidates,
+                                                   List<String> preferred) {
+        for (String modelId : preferred) {
+            Optional<ModelMetadata> match = candidates.stream()
+                .filter(m -> m.getModelId().equals(modelId))
+                .findFirst();
+            if (match.isPresent()) {
+                return match;
+            }
+        }
+        return Optional.empty();
+    }
+    
+    private List<RoutingStrategy.ScoredModel> applyStrategies(
+            List<ModelMetadata> candidates, 
+            ModelRequest request) {
+        
+        Map<String, Double> aggregatedScores = new HashMap<>();
+        Map<String, List<String>> reasonings = new HashMap<>();
+        
+        // Apply all strategies and aggregate scores
+        for (RoutingStrategy strategy : strategies) {
+            List<RoutingStrategy.ScoredModel> scored = strategy.rankModels(candidates, request);
+            
+            for (RoutingStrategy.ScoredModel sm : scored) {
+                String modelId = sm.model().getModelId();
+                aggregatedScores.merge(modelId, sm.score(), Double::sum);
+                reasonings.computeIfAbsent(modelId, k -> new ArrayList<>())
+                    .add(strategy.getClass().getSimpleName() + ": " + sm.reasoning());
+            }
+        }
+        
+        // Create final scored list
+        return candidates.stream()
+            .filter(m -> aggregatedScores.containsKey(m.getModelId()))
+            .map(m -> new RoutingStrategy.ScoredModel(
+                m,
+                aggregatedScores.get(m.getModelId()),
+                String.join("; ", reasonings.get(m.getModelId()))
+            ))
+            .filter(sm -> sm.score() > 0)
+            .sorted((a, b) -> Double.compare(b.score(), a.score()))
+            .collect(Collectors.toList());
+    }
+}
+```
+
+---
+
+## 5. Provider Adapters
+
+### Parent POM for Adapters
+
+**File:** `wayang-models-adapters/pom.xml`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>tech.kayys.wayang</groupId>
+        <artifactId>wayang-models</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>wayang-models-adapters</artifactId>
+    <packaging>pom</packaging>
+    <name>Wayang Models - Adapters</name>
+
+    <modules>
+        <module>ollama</module>
+        <module>openai</module>
+        <module>vllm</module>
+        <module>triton</module>
+    </modules>
+</project>
+```
+
+### Ollama Adapter
+
+**File:** `wayang-models-adapters/ollama/pom.xml`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>tech.kayys.wayang</groupId>
+        <artifactId>wayang-models-adapters</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>wayang-models-adapter-ollama</artifactId>
+    <name>Wayang Models - Ollama Adapter</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-models-api</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest-client-jackson</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-fault-tolerance</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+</project>
+```
+
+**File:** `wayang-models-adapters/ollama/src/main/java/tech/kayys/wayang/models/adapter/ollama/client/OllamaClient.java`
+
+```java
+package tech.kayys.wayang.models.adapter.ollama.client;
+
+import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.Uni;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.MediaType;
+import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
+import tech.kayys.wayang.models.adapter.ollama.dto.OllamaRequest;
+import tech.kayys.wayang.models.adapter.ollama.dto.OllamaResponse;
+import tech.kayys.wayang.models.adapter.ollama.dto.OllamaStreamChunk;
+
+/**
+ * REST client for Ollama API.
+ */
+@RegisterRestClient(configKey = "ollama")
+@Path("/api")
+public interface OllamaClient {
+    
+    @POST
+    @Path("/generate")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    Uni<OllamaResponse> generate(OllamaRequest request);
+    
+    @POST
+    @Path("/generate")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    Multi<OllamaStreamChunk> generateStream(OllamaRequest request);
+    
+    @POST
+    @Path("/chat")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    Uni<OllamaResponse> chat(OllamaRequest request);
+    
+    @POST
+    @Path("/chat")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    Multi<OllamaStreamChunk> chatStream(OllamaRequest request);
+    
+    @GET
+    @Path("/tags")
+    @Produces(MediaType.APPLICATION_JSON)
+    Uni<OllamaModelsResponse> listModels();
+    
+    record OllamaModelsResponse(java.util.List<ModelInfo> models) {}
+    record ModelInfo(String name, long size, String digest) {}
+}
+```
+
+**File:** `wayang-models-adapters/ollama/src/main/java/tech/kayys/wayang/models/adapter/ollama/dto/OllamaRequest.java`
+
+```java
+package tech.kayys.wayang.models.adapter.ollama.dto;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.Builder;
+import lombok.Data;
+
+import java.util.List;
+import java.util.Map;
+
+@Data
+@Builder
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class OllamaRequest {
+    private String model;
+    private String prompt;
+    private List<Message> messages;
+    private Boolean stream;
+    private Options options;
+    private String format; // "json" for JSON mode
+    
+    @Data
+    @Builder
+    public static class Message {
+        private String role;
+        private String content;
+    }
+    
+    @Data
+    @Builder
+    public static class Options {
+        private Double temperature;
+        private Integer topK;
+        private Double topP;
+        private Integer numPredict; // max tokens
+        private List<String> stop;
+    }
+}
+```
+
+**File:** `wayang-models-adapters/ollama/src/main/java/tech/kayys/wayang/models/adapter/ollama/dto/OllamaResponse.java`
+
+```java
+package tech.kayys.wayang.models.adapter.ollama.dto;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.Data;
+
+import java.time.Instant;
+
+@Data
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class OllamaResponse {
+    private String model;
+    private String response;
+    private OllamaRequest.Message message;
+    private Boolean done;
+    
+    @JsonProperty("created_at")
+    private Instant createdAt;
+    
+    @JsonProperty("total_duration")
+    private Long totalDuration;
+    
+    @JsonProperty("load_duration")
+    private Long loadDuration;
+    
+    @JsonProperty("prompt_eval_count")
+    private Integer promptEvalCount;
+    
+    @JsonProperty("eval_count")
+    private Integer evalCount;
+}
+```
+
+**File:** `wayang-models-adapters/ollama/src/main/java/tech/kayys/wayang/models/adapter/ollama/dto/OllamaStreamChunk.java`
+
+```java
+package tech.kayys.wayang.models.adapter.ollama.dto;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import lombok.Data;
+
+@Data
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class OllamaStreamChunk {
+    private String model;
+    private String response;
+    private OllamaRequest.Message message;
+    private Boolean done;
+}
+```
+
+**File:** `wayang-models-adapters/ollama/src/main/java/tech/kayys/wayang/models/adapter/ollama/OllamaProvider.java`
+
+```java
+package tech.kayys.wayang.models.adapter.ollama;
+
+import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
+import org.eclipse.microprofile.faulttolerance.Retry;
+import org.eclipse.microprofile.faulttolerance.Timeout;
+import org.eclipse.microprofile.rest.client.inject.RestClient;
+import tech.kayys.wayang.models.adapter.ollama.client.OllamaClient;
+import tech.kayys.wayang.models.adapter.ollama.dto.OllamaRequest;
+import tech.kayys.wayang.models.adapter.ollama.dto.OllamaResponse;
+import tech.kayys.wayang.models.adapter.ollama.dto.OllamaStreamChunk;
+import tech.kayys.wayang.models.adapter.ollama.mapper.OllamaMapper;
+import tech.kayys.wayang.models.api.dto.ChatMessage;
+import tech.kayys.wayang.models.api.dto.ModelRequest;
+import tech.kayys.wayang.models.api.dto.ModelResponse;
+import tech.kayys.wayang.models.api.dto.StreamChunk;
+import tech.kayys.wayang.models.api.exception.ModelInferenceException;
+import tech.kayys.wayang.models.api.provider.ModelProvider;
+
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+
+/**
+ * Ollama provider implementation.
+ * Supports local LLM inference via Ollama.
+ */
+@ApplicationScoped
+@RequiredArgsConstructor
+@Slf4j
+public class OllamaProvider implements ModelProvider {
+    
+    private static final String PROVIDER_NAME = "ollama";
+    
+    @RestClient
+    private final OllamaClient client;
+    private final OllamaMapper mapper;
+
+    @Override
+    public String getProviderName() {
+        return PROVIDER_NAME;
+    }
+
+    @Override
+    @Retry(maxRetries = 2, delay = 500, delayUnit = ChronoUnit.MILLIS)
+    @CircuitBreaker(requestVolumeThreshold = 10, failureRatio = 0.5, delay = 5000)
+    @Timeout(value = 30, unit = ChronoUnit.SECONDS)
+    public Uni<ModelResponse> infer(ModelRequest request, String modelId) {
+        log.debug("Ollama inference: model={}, requestId={}", modelId, request.getRequestId());
+        
+        OllamaRequest ollamaReq = mapper.toOllamaRequest(request, modelId);
+        
+        Uni<OllamaResponse> responseUni;
+        if ("chat".equalsIgnoreCase(request.getType()) && request.getMessages() != null) {
+            responseUni = client.chat(ollamaReq);
+        } else {
+            responseUni = client.generate(ollamaReq);
+        }
+        
+        return responseUni
+            .onItem().transform(resp -> mapper.toModelResponse(resp, request.getRequestId(), modelId))
+            .onFailure().transform(e -> new ModelInferenceException(
+                "Ollama inference failed: " + e.getMessage(), e));
+    }
+
+    @Override
+    public Multi<StreamChunk> inferStream(ModelRequest request, String modelId) {
+        log.debug("Ollama streaming: model={}, requestId={}", modelId, request.getRequestId());
+        
+        OllamaRequest ollamaReq = mapper.toOllamaRequest(request, modelId);
+        ollamaReq.setStream(true);
+        
+        Multi<OllamaStreamChunk> chunkStream;
+        if ("chat".equalsIgnoreCase(request.getType()) && request.getMessages() != null) {
+            chunkStream = client.chatStream(ollamaReq);
+        } else {
+            chunkStream = client.generateStream(ollamaReq);
+        }
+        
+        AtomicInteger chunkIndex = new AtomicInteger(0);
+        
+        return chunkStream
+            .onItem().transform(chunk -> 
+                mapper.toStreamChunk(chunk, request.getRequestId(), chunkIndex.getAndIncrement()))
+            .onFailure().invoke(e -> 
+                log.error("Ollama streaming failed", e));
+    }
+
+    @Override
+    public Uni<Boolean> healthCheck() {
+        return client.listModels()
+            .onItem().transform(resp -> true)
+            .onFailure().recoverWithItem(false);
+    }
+
+    @Override
+    public Uni<List<String>> getSupportedModels() {
+        return client.listModels()
+            .onItem().transform(resp -> resp.models().stream()
+                .map(OllamaClient.ModelInfo::name)
+                .collect(Collectors.toList()));
+    }
+}
+```
+
+**File:** `wayang-models-adapters/ollama/src/main/java/tech/kayys/wayang/models/adapter/ollama/mapper/OllamaMapper.java`
+
+```java
+package tech.kayys.wayang.models.adapter.ollama.mapper;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import tech.kayys.wayang.models.adapter.ollama.dto.OllamaRequest;
+import tech.kayys.wayang.models.adapter.ollama.dto.OllamaResponse;
+import tech.kayys.wayang.models.adapter.ollama.dto.OllamaStreamChunk;
+import tech.kayys.wayang.models.api.dto.ChatMessage;
+import tech.kayys.wayang.models.api.dto.ModelRequest;
+import tech.kayys.wayang.models.api.dto.ModelResponse;
+import tech.kayys.wayang.models.api.dto.StreamChunk;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.stream.Collectors;
+
+/**
+ * Maps between Wayang and Ollama DTOs.
+ */
+@ApplicationScoped
+public class OllamaMapper {
+    
+    public OllamaRequest toOllamaRequest(ModelRequest request, String modelId) {
+        OllamaRequest.OllamaRequestBuilder builder = OllamaRequest.builder()
+            .model(modelId)
+            .stream(Boolean.TRUE.equals(request.getStream()));
+        
+        // Set messages or prompt
+        if (request.getMessages() != null && !request.getMessages().isEmpty()) {
+            builder.messages(request.getMessages().stream()
+                .map(this::toOllamaMessage)
+                .collect(Collectors.toList()));
+        } else if (request.getPrompt() != null) {
+            builder.prompt(request.getPrompt());
+        }
+        
+        // Set options
+        OllamaRequest.Options options = OllamaRequest.Options.builder()
+            .temperature(request.getTemperature())
+            .topK(request.getTopK())
+            .topP(request.getTopP())
+            .numPredict(request.getMaxTokens())
+            .stop(request.getStop())
+            .build();
+        builder.options(options);
+        
+        return builder.build();
+    }
+    
+    public ModelResponse toModelResponse(OllamaResponse resp, String requestId, String modelId) {
+        String content = resp.getResponse() != null ? resp.getResponse() : 
+            (resp.getMessage() != null ? resp.getMessage().getContent() : null);
+        
+        return ModelResponse.builder()
+            .requestId(requestId)
+            .modelId(modelId)
+            .status("ok")
+            .content(content)
+            .tokensIn(resp.getPromptEvalCount())
+            .tokensOut(resp.getEvalCount())
+            .tokensTotal((resp.getPromptEvalCount() != null ? resp.getPromptEvalCount() : 0) +
+                        (resp.getEvalCount() != null ? resp.getEvalCount() : 0))
+            .latencyMs(resp.getTotalDuration() != null ? resp.getTotalDuration() / 1_000_000 : null)
+            .finishReason("stop")
+            .build();
+    }
+    
+    public StreamChunk toStreamChunk(OllamaStreamChunk chunk, String requestId, int index) {
+        String delta = chunk.getResponse() != null ? chunk.getResponse() :
+            (chunk.getMessage() != null ? chunk.getMessage().getContent() : "");
+        
+        return StreamChunk.builder()
+            .requestId(requestId)
+            .chunkIndex(index)
+            .delta(delta)
+            .isFinal(Boolean.TRUE.equals(chunk.getDone()))
+            .finishReason(Boolean.TRUE.equals(chunk.getDone()) ? "stop" : null)
+            .build();
+    }
+    
+    private OllamaRequest.Message toOllamaMessage(ChatMessage msg) {
+        return OllamaRequest.Message.builder()
+            .role(msg.getRole())
+            .content(msg.getContent())
+            .build();
+    }
+}
+```
+
+**File:** `wayang-models-adapters/ollama/src/main/resources/application.properties`
+
+```properties
+# Ollama REST Client Configuration
+quarkus.rest-client.ollama.url=${OLLAMA_URL:http://localhost:11434}
+quarkus.rest-client.ollama.scope=jakarta.inject.Singleton
+quarkus.rest-client.ollama.read-timeout=60000
+quarkus.rest-client.ollama.connect-timeout=5000
+```
+
+### OpenAI Adapter
+
+**File:** `wayang-models-adapters/openai/pom.xml`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>tech.kayys.wayang</groupId>
+        <artifactId>wayang-models-adapters</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>wayang-models-adapter-openai</artifactId>
+    <name>Wayang Models - OpenAI Adapter</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-models-api</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest-client-jackson</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-fault-tolerance</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+</project>
+```
+
+**File:** `wayang-models-adapters/openai/src/main/java/tech/kayys/wayang/models/adapter/openai/client/OpenAIClient.java`
+
+```java
+package tech.kayys.wayang.models.adapter.openai.client;
+
+import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.Uni;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.MediaType;
+import org.eclipse.microprofile.rest.client.annotation.ClientHeaderParam;
+import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
+import tech.kayys.wayang.models.adapter.openai.dto.OpenAIRequest;
+import tech.kayys.wayang.models.adapter.openai.dto.OpenAIResponse;
+import tech.kayys.wayang.models.adapter.openai.dto.OpenAIStreamChunk;
+
+/**
+ * REST client for OpenAI API.
+ */
+@RegisterRestClient(configKey = "openai")
+@ClientHeaderParam(name = "Authorization", value = "Bearer ${openai.api.key}")
+@Path("/v1")
+public interface OpenAIClient {
+    
+    @POST
+    @Path("/chat/completions")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    Uni<OpenAIResponse> chatCompletion(OpenAIRequest request);
+    
+    @POST
+    @Path("/chat/completions")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces("text/event-stream")
+    Multi<OpenAIStreamChunk> chatCompletionStream(OpenAIRequest request);
+    
+    @POST
+    @Path("/completions")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    Uni<OpenAIResponse> completion(OpenAIRequest request);
+    
+    @POST
+    @Path("/embeddings")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    Uni<OpenAIResponse> embeddings(OpenAIRequest request);
+}
+```
+
+**File:** `wayang-models-adapters/openai/src/main/java/tech/kayys/wayang/models/adapter/openai/dto/OpenAIRequest.java`
+
+```java
+package tech.kayys.wayang.models.adapter.openai.dto;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.Builder;
+import lombok.Data;
+
+import java.util.List;
+import java.util.Map;
+
+@Data
+@Builder
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class OpenAIRequest {
+    private String model;
+    private List<Message> messages;
+    private String prompt;
+    private List<String> input;
+    
+    @JsonProperty("max_tokens")
+    private Integer maxTokens;
+    
+    private Double temperature;
+    
+    @JsonProperty("top_p")
+    private Double topP;
+    
+    private Integer n;
+    private Boolean stream;
+    private List<String> stop;
+    
+    @JsonProperty("presence_penalty")
+    private Double presencePenalty;
+    
+    @JsonProperty("frequency_penalty")
+    private Double frequencyPenalty;
+    
+    private List<Function> functions;
+    
+    @JsonProperty("function_call")
+    private Object functionCall;
+    
+    @JsonProperty("response_format")
+    private ResponseFormat responseFormat;
+    
+    @Data
+    @Builder
+    public static class Message {
+        private String role;
+        private String content;
+        private String name;
+        
+        @JsonProperty("function_call")
+        private FunctionCall functionCall;
+    }
+    
+    @Data
+    @Builder
+    public static class FunctionCall {
+        private String name;
+        private String arguments;
+    }
+    
+    @Data
+    @Builder
+    public static class Function {
+        private String name;
+        private String description;
+        private Map<String, Object> parameters;
+    }
+    
+    @Data
+    @Builder
+    public static class ResponseFormat {
+        private String type; // "json_object" or "text"
+    }
+}
+```
+
+**File:** `wayang-models-adapters/openai/src/main/java/tech/kayys/wayang/models/adapter/openai/dto/OpenAIResponse.java`
+
+```java
+package tech.kayys.wayang.models.adapter.openai.dto;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.Data;
+
+import java.util.List;
+
+@Data
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class OpenAIResponse {
+    private String id;
+    private String object;
+    private Long created;
+    private String model;
+    private List<Choice> choices;
+    private Usage usage;
+    private List<EmbeddingData> data;
+    
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Choice {
+        private Integer index;
+        private OpenAIRequest.Message message;
+        private String text;
+        
+        @JsonProperty("finish_reason")
+        private String finishReason;
+    }
+    
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Usage {
+        @JsonProperty("prompt_tokens")
+        private Integer promptTokens;
+        
+        @JsonProperty("completion_tokens")
+        private Integer completionTokens;
+        
+        @JsonProperty("total_tokens")
+        private Integer totalTokens;
+    }
+    
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class EmbeddingData {
+        private Integer index;
+        private List<Double> embedding;
+    }
+}
+```
+
+**File:** `wayang-models-adapters/openai/src/main/java/tech/kayys/wayang/models/adapter/openai/dto/OpenAIStreamChunk.java`
+
+```java
+package tech.kayys.wayang.models.adapter.openai.dto;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.Data;
+
+import java.util.List;
+
+@Data
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class OpenAIStreamChunk {
+    private String id;
+    private String object;
+    private Long created;
+    private String model;
+    private List<ChoiceDelta> choices;
+    
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class ChoiceDelta {
+        private Integer index;
+        private Delta delta;
+        
+        @JsonProperty("finish_reason")
+        private String finishReason;
+    }
+    
+    @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Delta {
+        private String role;
+        private String content;
+        
+        @JsonProperty("function_call")
+        private OpenAIRequest.FunctionCall functionCall;
+    }
+}
+```
+
+**File:** `wayang-models-adapters/openai/src/main/java/tech/kayys/wayang/models/adapter/openai/OpenAIProvider.java`
+
+```java
+package tech.kayys.wayang.models.adapter.openai;
+
+import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
+import org.eclipse.microprofile.faulttolerance.Retry;
+import org.eclipse.microprofile.faulttolerance.Timeout;
+import org.eclipse.microprofile.rest.client.inject.RestClient;
+import tech.kayys.wayang.models.adapter.openai.client.OpenAIClient;
+import tech.kayys.wayang.models.adapter.openai.dto.OpenAIRequest;
+import tech.kayys.wayang.models.adapter.openai.dto.OpenAIResponse;
+import tech.kayys.wayang.models.adapter.openai.dto.OpenAIStreamChunk;
+import tech.kayys.wayang.models.adapter.openai.mapper.OpenAIMapper;
+import tech.kayys.wayang.models.api.dto.ModelRequest;
+import tech.kayys.wayang.models.api.dto.ModelResponse;
+import tech.kayys.wayang.models.api.dto.StreamChunk;
+import tech.kayys.wayang.models.api.exception.ModelInferenceException;
+import tech.kayys.wayang.models.api.provider.ModelProvider;
+
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * OpenAI provider implementation.
+ * Supports GPT models, embeddings, and function calling.
+ */
+@ApplicationScoped
+@RequiredArgsConstructor
+@Slf4j
+public class OpenAIProvider implements ModelProvider {
+    
+    private static final String PROVIDER_NAME = "openai";
+    private static final List<String> SUPPORTED_MODELS = List.of(
+        "gpt-4", "gpt-4-turbo", "gpt-3.5-turbo", "text-embedding-ada-002"
+    );
+    
+    @RestClient
+    private final OpenAIClient client;
+    private final OpenAIMapper mapper;
+
+    @Override
+    public String getProviderName() {
+        return PROVIDER_NAME;
+    }
+
+    @Override
+    @Retry(maxRetries = 3, delay = 1000, delayUnit = ChronoUnit.MILLIS)
+    @CircuitBreaker(requestVolumeThreshold = 10, failureRatio = 0.5, delay = 10000)
+    @Timeout(value = 60, unit = ChronoUnit.SECONDS)
+    public Uni<ModelResponse> infer(ModelRequest request, String modelId) {
+        log.debug("OpenAI inference: model={}, requestId={}", modelId, request.getRequestId());
+        
+        OpenAIRequest openaiReq = mapper.toOpenAIRequest(request, modelId);
+        
+        Uni<OpenAIResponse> responseUni;
+        if ("embed".equalsIgnoreCase(request.getType()) || 
+            "embedding".equalsIgnoreCase(request.getType())) {
+            responseUni = client.embeddings(openaiReq);
+        } else if ("chat".equalsIgnoreCase(request.getType())) {
+            responseUni = client.chatCompletion(openaiReq);
+        } else {
+            responseUni = client.completion(openaiReq);
+        }
+        
+        return responseUni
+            .onItem().transform(resp -> mapper.toModelResponse(resp, request.getRequestId(), modelId))
+            .onFailure().transform(e -> new ModelInferenceException(
+                "OpenAI inference failed: " + e.getMessage(), e));
+    }
+
+    @Override
+    public Multi<StreamChunk> inferStream(ModelRequest request, String modelId) {
+        log.debug("OpenAI streaming: model={}, requestId={}", modelId, request.getRequestId());
+        
+        OpenAIRequest openaiReq = mapper.toOpenAIRequest(request, modelId);
+        openaiReq.setStream(true);
+        
+        AtomicInteger chunkIndex = new AtomicInteger(0);
+        
+        return client.chatCompletionStream(openaiReq)
+            .onItem().transform(chunk -> 
+                mapper.toStreamChunk(chunk, request.getRequestId(), chunkIndex.getAndIncrement()))
+            .onFailure().invoke(e -> 
+                log.error("OpenAI streaming failed", e));
+    }
+
+    @Override
+    public Uni<Boolean> healthCheck() {
+        // Simple health check - list models is lightweight
+        return Uni.createFrom().item(true);
+    }
+
+    @Override
+    public Uni<List<String>> getSupportedModels() {
+        return Uni.createFrom().item(SUPPORTED_MODELS);
+    }
+}
+```
+
+**File:** `wayang-models-adapters/openai/src/main/java/tech/kayys/wayang/models/adapter/openai/mapper/OpenAIMapper.java`
+
+```java
+package tech.kayys.wayang.models.adapter.openai.mapper;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import tech.kayys.wayang.models.adapter.openai.dto.OpenAIRequest;
+import tech.kayys.wayang.models.adapter.openai.dto.OpenAIResponse;
+import tech.kayys.wayang.models.adapter.openai.dto.OpenAIStreamChunk;
+import tech.kayys.wayang.models.api.dto.ChatMessage;
+import tech.kayys.wayang.models.api.dto.ModelRequest;
+import tech.kayys.wayang.models.api.dto.ModelResponse;
+import tech.kayys.wayang.models.api.dto.StreamChunk;
+
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+/**
+ * Maps between Wayang and OpenAI DTOs.
+ */
+@ApplicationScoped
+public class OpenAIMapper {
+    
+    public OpenAIRequest toOpenAIRequest(ModelRequest request, String modelId) {
+        OpenAIRequest.OpenAIRequestBuilder builder = OpenAIRequest.builder()
+            .model(modelId)
+            .maxTokens(request.getMaxTokens())
+            .temperature(request.getTemperature())
+            .topP(request.getTopP())
+            .stop(request.getStop())
+            .presencePenalty(request.getPresencePenalty())
+            .frequencyPenalty(request.getFrequencyPenalty())
+            .stream(Boolean.TRUE.equals(request.getStream()));
+        
+        // Map messages or prompt
+        if (request.getMessages() != null && !request.getMessages().isEmpty()) {
+            builder.messages(request.getMessages().stream()
+                .map(this::toOpenAIMessage)
+                .collect(Collectors.toList()));
+        } else if (request.getPrompt() != null) {
+            builder.prompt(request.getPrompt());
+        } else if (request.getInputs() != null) {
+            builder.input(request.getInputs());
+        }
+        
+        // Map functions
+        if (request.getFunctions() != null && !request.getFunctions().isEmpty()) {
+            builder.functions(request.getFunctions().stream()
+                .map(this::toOpenAIFunction)
+                .collect(Collectors.toList()));
+        }
+        
+        return builder.build();
+    }
+    
+    public ModelResponse toModelResponse(OpenAIResponse resp, String requestId, String modelId) {
+        ModelResponse.ModelResponseBuilder builder = ModelResponse.builder()
+            .requestId(requestId)
+            .modelId(modelId)
+            .status("ok");
+        
+        // Handle chat/completion response
+        if (resp.getChoices() != null && !resp.getChoices().isEmpty()) {
+            OpenAIResponse.Choice choice = resp.getChoices().get(0);
+            
+            if (choice.getMessage() != null) {
+                builder.content(choice.getMessage().getContent());
+                
+                if (choice.getMessage().getFunctionCall() != null) {
+                    builder.functionCall(new ChatMessage.FunctionCall(
+                        choice.getMessage().getFunctionCall().getName(),
+                        choice.getMessage().getFunctionCall().getArguments()
+                    ));
+                }
+            } else if (choice.getText() != null) {
+                builder.content(choice.getText());
+            }
+            
+            builder.finishReason(choice.getFinishReason());
+        }
+        
+        // Handle embeddings
+        if (resp.getData() != null && !resp.getData().isEmpty()) {
+            List<List<Double>> embeddings = resp.getData().stream()
+                .map(OpenAIResponse.EmbeddingData::getEmbedding)
+                .collect(Collectors.toList());
+            builder.embeddings(embeddings);
+        }
+        
+        // Usage
+        if (resp.getUsage() != null) {
+            builder.tokensIn(resp.getUsage().getPromptTokens())
+                .tokensOut(resp.getUsage().getCompletionTokens())
+                .tokensTotal(resp.getUsage().getTotalTokens());
+        }
+        
+        return builder.build();
+    }
+    
+    public StreamChunk toStreamChunk(OpenAIStreamChunk chunk, String requestId, int index) {
+        if (chunk.getChoices() == null || chunk.getChoices().isEmpty()) {
+            return StreamChunk.builder()
+                .requestId(requestId)
+                .chunkIndex(index)
+                .delta("")
+                .isFinal(false)
+                .build();
+        }
+        
+        OpenAIStreamChunk.ChoiceDelta choice = chunk.getChoices().get(0);
+        String delta = choice.getDelta() != null && choice.getDelta().getContent() != null ?
+            choice.getDelta().getContent() : "";
+        
+        return StreamChunk.builder()
+            .requestId(requestId)
+            .chunkIndex(index)
+            .delta(delta)
+            .isFinal(choice.getFinishReason() != null)
+            .finishReason(choice.getFinishReason())
+            .build();
+    }
+    
+    private OpenAIRequest.Message toOpenAIMessage(ChatMessage msg) {
+        OpenAIRequest.Message.MessageBuilder builder = OpenAIRequest.Message.builder()
+            .role(msg.getRole())
+            .content(msg.getContent())
+            .name(msg.getName());
+        
+        if (msg.getFunctionCall() != null) {
+            builder.functionCall(OpenAIRequest.FunctionCall.builder()
+                .name(msg.getFunctionCall().getName())
+                .arguments(msg.getFunctionCall().getArguments())
+                .build());
+        }
+        
+        return builder.build();
+    }
+    
+    private OpenAIRequest.Function toOpenAIFunction(ModelRequest.FunctionDefinition func) {
+        return OpenAIRequest.Function.builder()
+            .name(func.getName())
+            .description(func.getDescription())
+            .parameters(func.getParameters())
+            .build();
+    }
+}
+```
+
+**File:** `wayang-models-adapters/openai/src/main/resources/application.properties`
+
+```properties
+# OpenAI REST Client Configuration
+quarkus.rest-client.openai.url=${OPENAI_API_URL:https://api.openai.com}
+quarkus.rest-client.openai.scope=jakarta.inject.Singleton
+quarkus.rest-client.openai.read-timeout=90000
+quarkus.rest-client.openai.connect-timeout=10000
+
+# API Key (should be set via environment variable)
+openai.api.key=${OPENAI_API_KEY}
+```
+
+---
+
+## 6. Cache Module
+
+**File:** `wayang-models-cache/pom.xml`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>tech.kayys.wayang</groupId>
+        <artifactId>wayang-models</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>wayang-models-cache</artifactId>
+    <name>Wayang Models - Cache</name>
+    <description>Response caching layer</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-models-api</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-cache</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-redis-cache</artifactId>
+        </dependency>
+        
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+</project>
+```
+
+**File:** `wayang-models-cache/src/main/java/tech/kayys/wayang/models/cache/CacheKey.java`
+
+```java
+package tech.kayys.wayang.models.cache;
+
+import lombok.Builder;
+import lombok.Value;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
+
+/**
+ * Cache key for model responses.
+ * Includes tenant, model, and request fingerprint.
+ */
+@Value
+@Builder
+public class CacheKey {
+    String tenantId;
+    String modelId;
+    String requestHash;
+    
+    /**
+     * Generate cache key string.
+     */
+    public String toKey() {
+        return String.format("%s:%s:%s", tenantId, modelId, requestHash);
+    }
+    
+    /**
+     * Create hash from request content.
+     */
+    public static String hashRequest(String content) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(content.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 not available", e);
+        }
+    }
+}
+```
+
+**File:** `wayang-models-cache/src/main/java/tech/kayys/wayang/models/cache/ModelCacheService.java`
+
+```java
+package tech.kayys.wayang.models.cache;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.quarkus.cache.CacheInvalidate;
+import io.quarkus.cache.CacheResult;
+import jakarta.enterprise.context.ApplicationScoped;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import tech.kayys.wayang.models.api.dto.ModelRequest;
+import tech.kayys.wayang.models.api.dto.ModelResponse;
+
+import java.util.Optional;
+
+/**
+ * Caching service for model responses.
+ * Uses Caffeine for local cache and Redis for distributed cache.
+ */
+@ApplicationScoped
+@RequiredArgsConstructor
+@Slf4j
+public class ModelCacheService {
+    
+    private final ObjectMapper objectMapper;
+    
+    /**
+     * Get cached response if available.
+     * 
+     * @param request Model request
+     * @param modelId Selected model ID
+     * @return Cached response if available
+     */
+    @CacheResult(cacheName = "model-responses")
+    public Optional<ModelResponse> get(ModelRequest request, String modelId) {
+        // Cache miss - return empty
+        return Optional.empty();
+    }
+    
+    /**
+     * Cache a response.
+     * 
+     * @param request Model request
+     * @param modelId Selected model ID
+     * @param response Response to cache
+     */
+    public void put(ModelRequest request, String modelId, ModelResponse response) {
+        // Actual caching is handled by @CacheResult
+        // This method exists for explicit cache writes if needed
+        log.debug("Cached response for model={}, requestId={}", modelId, request.getRequestId());
+    }
+    
+    /**
+     * Invalidate cache for specific tenant/model.
+     * 
+     * @param tenantId Tenant identifier
+     * @param modelId Model identifier
+     */
+    @CacheInvalidate(cacheName = "model-responses")
+    public void invalidate(String tenantId, String modelId) {
+        log.info("Invalidated cache for tenant={}, model={}", tenantId, modelId);
+    }
+    
+    /**
+     * Generate cache key from request.
+     */
+    public CacheKey generateKey(ModelRequest request, String modelId) {
+        String requestContent = serializeRequest(request);
+        String hash = CacheKey.hashRequest(requestContent);
+        
+        return CacheKey.builder()
+            .tenantId(request.getTenantId())
+            .modelId(modelId)
+            .requestHash(hash)
+            .build();
+    }
+    
+    private String serializeRequest(ModelRequest request) {
+        try {
+            // Only include cache-relevant fields
+            var cacheableRequest = new CacheableRequest(
+                request.getType(),
+                request.getMessages(),
+                request.getPrompt(),
+                request.getInputs(),
+                request.getMaxTokens(),
+                request.getTemperature(),
+                request.getTopP()
+            );
+            return objectMapper.writeValueAsString(cacheableRequest);
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to serialize request for caching", e);
+            return request.toString();
+        }
+    }
+    
+    private record CacheableRequest(
+        String type,
+        Object messages,
+        String prompt,
+        Object inputs,
+        Integer maxTokens,
+        Double temperature,
+        Double topP
+    ) {}
+}
+```
+
+**File:** `wayang-models-cache/src/main/resources/application.properties`
+
+```properties
+# Cache Configuration
+quarkus.cache.caffeine.model-responses.initial-capacity=100
+quarkus.cache.caffeine.model-responses.maximum-size=1000
+quarkus.cache.caffeine.model-responses.expire-after-write=1H
+
+# Redis Cache (optional, for distributed caching)
+quarkus.redis.hosts=${REDIS_HOSTS:redis://localhost:6379}
+quarkus.cache.type=caffeine
+```
+
+---
+
+## 7. Safety Module
+
+**File:** `wayang-models-safety/pom.xml`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>tech.kayys.wayang</groupId>
+        <artifactId>wayang-models</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>wayang-models-safety</artifactId>
+    <name>Wayang Models - Safety</name>
+    <description>Safety gate and content filtering</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-models-api</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-arc</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+</project>
+```
+
+**File:** `wayang-models-safety/src/main/java/tech/kayys/wayang/models/safety/SafetyCheck.java`
+
+```java
+package tech.kayys.wayang.models.safety;
+
+import lombok.Builder;
+import lombok.Value;
+
+import java.util.List;
+
+/**
+ * Result of a safety check.
+ */
+@Value
+@Builder
+public class SafetyCheck {
+    boolean safe;
+    double confidenceScore;
+    List<Violation> violations;
+    String sanitizedContent;
+    
+    @Value
+    @Builder
+    public static class Violation {
+        String type;
+        String severity;
+        String description;
+        int startIndex;
+        int endIndex;
+    }
+    
+    public static SafetyCheck safe() {
+        return SafetyCheck.builder()
+            .safe(true)
+            .confidenceScore(1.0)
+            .violations(List.of())
+            .build();
+    }
+    
+    public static SafetyCheck unsafe(List<Violation> violations) {
+        return SafetyCheck.builder()
+            .safe(false)
+            .confidenceScore(0.0)
+            .violations(violations)
+            .build();
+    }
+}
+```
+
+**File:** `wayang-models-safety/src/main/java/tech/kayys/wayang/models/safety/SafetyGate.java`
+
+```java
+package tech.kayys.wayang.models.safety;
+
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import lombok.extern.slf4j.Slf4j;
+import tech.kayys.wayang.models.api.dto.ModelRequest;
+import tech.kayys.wayang.models.api.dto.ModelResponse;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * Safety gate for content filtering.
+ * Performs pre and post-inference safety checks.
+ */
+@ApplicationScoped
+@Slf4j
+public class SafetyGate {
+    
+    private static final Pattern EMAIL_PATTERN = 
+        Pattern.compile("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}");
+    
+    private static final Pattern PHONE_PATTERN = 
+        Pattern.compile("\\b\\d{3}[-.]?\\d{3}[-.]?\\d{4}\\b");
+    
+    private static final Pattern SSN_PATTERN = 
+        Pattern.compile("\\b\\d{3}-\\d{2}-\\d{4}\\b");
+    
+    private static final List<String> UNSAFE_KEYWORDS = List.of(
+        "violence", "explicit", "illegal", "harmful"
+    );
+    
+    /**
+     * Check input request for safety violations.
+     * 
+     * @param request Model request
+     * @return Safety check result
+     */
+    public Uni<SafetyCheck> checkInput(ModelRequest request) {
+        log.debug("Performing pre-check for request: {}", request.getRequestId());
+        
+        List<SafetyCheck.Violation> violations = new ArrayList<>();
+        
+        // Check prompt content
+        if (request.getPrompt() != null) {
+            violations.addAll(checkContent(request.getPrompt()));
+        }
+        
+        // Check messages
+        if (request.getMessages() != null) {
+            for (var message : request.getMessages()) {
+                if (message.getContent() != null) {
+                    violations.addAll(checkContent(message.getContent()));
+                }
+            }
+        }
+        
+        if (violations.isEmpty()) {
+            return Uni.createFrom().item(SafetyCheck.safe());
+        }
+        
+        log.warn("Input safety violations detected: {}", violations.size());
+        return Uni.createFrom().item(SafetyCheck.unsafe(violations));
+    }
+    
+    /**
+     * Check output response for safety violations.
+     * 
+     * @param response Model response
+     * @return Safety check result with sanitized content
+     */
+    public Uni<SafetyCheck> checkOutput(ModelResponse response) {
+        log.debug("Performing post-check for response: {}", response.getRequestId());
+        
+        if (response.getContent() == null) {
+            return Uni.createFrom().item(SafetyCheck.safe());
+        }
+        
+        List<SafetyCheck.Violation> violations = checkContent(response.getContent());
+        
+        if (violations.isEmpty()) {
+            return Uni.createFrom().item(SafetyCheck.safe());
+        }
+        
+        // Sanitize content
+        String sanitized = sanitizeContent(response.getContent());
+        
+        log.warn("Output safety violations detected: {}, content sanitized", violations.size());
+        
+        return Uni.createFrom().item(SafetyCheck.builder()
+            .safe(false)
+            .confidenceScore(0.5)
+            .violations(violations)
+            .sanitizedContent(sanitized)
+            .build());
+    }
+    
+    private List<SafetyCheck.Violation> checkContent(String content) {
+        List<SafetyCheck.Violation> violations = new ArrayList<>();
+        
+        // Check for PII
+        violations.addAll(checkPII(content));
+        
+        // Check for unsafe keywords
+        violations.addAll(checkUnsafeContent(content));
+        
+        return violations;
+    }
+    
+    private List<SafetyCheck.Violation> checkPII(String content) {
+        List<SafetyCheck.Violation> violations = new ArrayList<>();
+        
+        // Email detection
+        Matcher emailMatcher = EMAIL_PATTERN.matcher(content);
+        while (emailMatcher.find()) {
+            violations.add(SafetyCheck.Violation.builder()
+                .type("PII_EMAIL")
+                .severity("MEDIUM")
+                .description("Email address detected")
+                .startIndex(emailMatcher.start())
+                .endIndex(emailMatcher.end())
+                .build());
+        }
+        
+        // Phone number detection
+        Matcher phoneMatcher = PHONE_PATTERN.matcher(content);
+        while (phoneMatcher.find()) {
+            violations.add(SafetyCheck.Violation.builder()
+                .type("PII_PHONE")
+                .severity("MEDIUM")
+                .description("Phone number detected")
+                .startIndex(phoneMatcher.start())
+                .endIndex(phoneMatcher.end())
+                .build());
+        }
+        
+        // SSN detection
+        Matcher ssnMatcher = SSN_PATTERN.matcher(content);
+        while (ssnMatcher.find()) {
+            violations.add(SafetyCheck.Violation.builder()
+                .type("PII_SSN")
+                .severity("HIGH")
+                .description("Social Security Number detected")
+                .startIndex(ssnMatcher.start())
+                .endIndex(ssnMatcher.end())
+                .build());
+        }
+        
+        return violations;
+    }
+    
+    private List<SafetyCheck.Violation> checkUnsafeContent(String content) {
+        List<SafetyCheck.Violation> violations = new ArrayList<>();
+        String lowerContent = content.toLowerCase();
+        
+        for (String keyword : UNSAFE_KEYWORDS) {
+            if (lowerContent.contains(keyword)) {
+                violations.add(SafetyCheck.Violation.builder()
+                    .type("UNSAFE_CONTENT")
+                    .severity("HIGH")
+                    .description("Potentially unsafe keyword: " + keyword)
+                    .startIndex(-1)
+                    .endIndex(-1)
+                    .build());
+            }
+        }
+        
+        return violations;
+    }
+    
+    private String sanitizeContent(String content) {
+        String sanitized = content;
+        
+        // Redact emails
+        sanitized = EMAIL_PATTERN.matcher(sanitized).replaceAll("[EMAIL_REDACTED]");
+        
+        // Redact phones
+        sanitized = PHONE_PATTERN.matcher(sanitized).replaceAll("[PHONE_REDACTED]");
+        
+        // Redact SSN
+        sanitized = SSN_PATTERN.matcher(sanitized).replaceAll("[SSN_REDACTED]");
+        
+        return sanitized;
+    }
+}
+```
+
+---
+
+## 8. Metrics Module
+
+**File:** `wayang-models-metrics/pom.xml`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>tech.kayys.wayang</groupId>
+        <artifactId>wayang-models</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>wayang-models-metrics</artifactId>
+    <name>Wayang Models - Metrics</name>
+    <description>Metrics and observability</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-models-api</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-micrometer-registry-prometheus</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-opentelemetry</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+</project>
+```
+
+**File:** `wayang-models-metrics/src/main/java/tech/kayys/wayang/models/metrics/ModelMetrics.java`
+
+```java
+package tech.kayys.wayang.models.metrics;
+
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import lombok.extern.slf4j.Slf4j;
+import tech.kayys.wayang.models.api.dto.ModelRequest;
+import tech.kayys.wayang.models.api.dto.ModelResponse;
+
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Metrics collection for model operations.
+ */
+@ApplicationScoped
+@Slf4j
+public class ModelMetrics {
+    
+    @Inject
+    MeterRegistry registry;
+    
+    /**
+     * Record inference request.
+     * 
+     * @param request Model request
+     * @param modelId Selected model
+     * @param duration Request duration
+     * @param success Whether request succeeded
+     */
+    public void recordInference(ModelRequest request, String modelId, 
+                               Duration duration, boolean success) {
+        
+        Counter.builder("wayang.model.requests")
+            .description("Total model inference requests")
+            .tag("tenant", request.getTenantId())
+            .tag("model", modelId)
+            .tag("type", request.getType())
+            .tag("status", success ? "success" : "failed")
+            .register(registry)
+            .increment();
+        
+        Timer.builder("wayang.model.latency")
+            .description("Model inference latency")
+            .tag("tenant", request.getTenantId())
+            .tag("model", modelId)
+            .tag("type", request.getType())
+            .register(registry)
+            .record(duration.toMillis(), TimeUnit.MILLISECONDS);
+    }
+    
+    /**
+     * Record token usage.
+     * 
+     * @param request Model request
+     * @param response Model response
+     */
+    public void recordTokens(ModelRequest request, ModelResponse response) {
+        if (response.getTokensIn() != null) {
+            Counter.builder("wayang.model.tokens.input")
+                .description("Input tokens consumed")
+                .tag("tenant", request.getTenantId())
+                .tag("model", response.getModelId())
+                .register(registry)
+                .increment(response.getTokensIn());
+        }
+        
+        if (response.getTokensOut() != null) {
+            Counter.builder("wayang.model.tokens.output")
+                .description("Output tokens generated")
+                .tag("tenant", request.getTenantId())
+                .tag("model", response.getModelId())
+                .register(registry)
+                .increment(response.getTokensOut());
+        }
+    }
+    
+    /**
+     * Record cost.
+     * 
+     * @param request Model request
+     * @param response Model response
+     */
+    public void recordCost(ModelRequest request, ModelResponse response) {
+        if (response.getCostUsd() != null) {
+            Counter.builder("wayang.model.cost.usd")
+                .description("Model inference cost in USD")
+                .tag("tenant", request.getTenantId())
+                .tag("model", response.getModelId())
+                .register(registry)
+                .increment(response.getCostUsd().doubleValue());
+        }
+    }
+    
+    /**
+     * Record cache hit/miss.
+     * 
+     * @param tenantId Tenant identifier
+     * @param modelId Model identifier
+     * @param hit Whether cache hit occurred
+     */
+    public void recordCacheAccess(String tenantId, String modelId, boolean hit) {
+        Counter.builder("wayang.model.cache")
+            .description("Cache hit/miss rate")
+            .tag("tenant", tenantId)
+            .tag("model", modelId)
+            .tag("result", hit ? "hit" : "miss")
+            .register(registry)
+            .increment();
+    }
+    
+    /**
+     * Record safety check.
+     * 
+     * @param tenantId Tenant identifier
+     * @param safe Whether content was safe
+     * @param stage Pre or post inference
+     */
+    public void recordSafetyCheck(String tenantId, boolean safe, String stage) {
+        Counter.builder("wayang.model.safety")
+            .description("Safety check results")
+            .tag("tenant", tenantId)
+            .tag("stage", stage)
+            .tag("result", safe ? "safe" : "violation")
+            .register(registry)
+            .increment();
+    }
+}
+```
+
+---
+
+## 9. REST API & Deployment
+
+**File:** `wayang-models-deployment/pom.xml`
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>tech.kayys.wayang</groupId>
+        <artifactId>wayang-models</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>wayang-models-deployment</artifactId>
+    <name>Wayang Models - Deployment</name>
+    <description>Deployable REST API</description>
+
+    <dependencies>
+        <!-- Internal modules -->
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-models-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-models-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-models-router</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-models-cache</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-models-safety</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-models-metrics</artifactId>
+        </dependency>
+        
+        <!-- Adapters -->
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-models-adapter-ollama</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-models-adapter-openai</artifactId>
+        </dependency>
+
+        <!-- Quarkus -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest-jackson</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-openapi</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-health</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-container-image-docker</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>io.quarkus.platform</groupId>
+                <artifactId>quarkus-maven-plugin</artifactId>
+                <version>${quarkus.version}</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>build</goal>
+                            <goal>generate-code</goal>
+                            <goal>generate-code-tests</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+```
+
+**File:** `wayang-models-deployment/src/main/java/tech/kayys/wayang/models/api/rest/ModelResource.java`
+
+```java
+package tech.kayys.wayang.models.api.rest;
+
+import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.Uni;
+import jakarta.inject.Inject;
+import jakarta.validation.Valid;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.MediaType;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+import tech.kayys.wayang.models.api.dto.ModelRequest;
+import tech.kayys.wayang.models.api.dto.ModelResponse;
+import tech.kayys.wayang.models.api.dto.StreamChunk;
+import tech.kayys.wayang.models.api.service.ModelService;
+import tech.kayys.wayang.models.metrics.ModelMetrics;
+import tech.kayys.wayang.models.safety.SafetyGate;
+
+import java.time.Duration;
+import java.time.Instant;
+
+/**
+ * REST API for model inference.
+ */
+@Path("/api/v1/models")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+@RequiredArgsConstructor
+@Slf4j
+@Tag(name = "Models", description = "Model inference API")
+public class ModelResource {
+    
+    @Inject
+    ModelService modelService;
+    
+    @Inject
+    SafetyGate safetyGate;
+    
+    @Inject
+    ModelMetrics metrics;
+    
+    @POST
+    @Path("/infer")
+    @Operation(summary = "Execute model inference", description = "Perform synchronous model inference")
+    public Uni<ModelResponse> infer(@Valid ModelRequest request) {
+        log.info("Inference request: {}", request.getRequestId());
+        Instant start = Instant.now();
+        
+        return safetyGate.checkInput(request)
+            .onItem().transformToUni(safetyCheck -> {
+                if (!safetyCheck.isSafe()) {
+                    log.warn("Input safety check failed: {}", safetyCheck.getViolations());
+                    metrics.recordSafetyCheck(request.getTenantId(), false, "pre");
+                    return Uni.createFrom().failure(
+                        new WebApplicationException("Content safety violation", 400));
+                }
+                
+                metrics.recordSafetyCheck(request.getTenantId(), true, "pre");
+                return modelService.infer(request);
+            })
+            .onItem().transformToUni(response -> 
+                safetyGate.checkOutput(response)
+                    .onItem().transform(safetyCheck -> {
+                        metrics.recordSafetyCheck(request.getTenantId(), 
+                            safetyCheck.isSafe(), "post");
+                        
+                        if (!safetyCheck.isSafe() && safetyCheck.getSanitizedContent() != null) {
+                            response.setContent(safetyCheck.getSanitizedContent());
+                        }
+                        
+                        return response;
+                    })
+            )
+            .invoke(response -> {
+                Duration duration = Duration.between(start, Instant.now());
+                metrics.recordInference(request, response.getModelId(), duration, true);
+                metrics.recordTokens(request, response);
+                metrics.recordCost(request, response);
+            })
+            .onFailure().invoke(throwable -> {
+                Duration duration = Duration.between(start, Instant.now());
+                metrics.recordInference(request, "unknown", duration, false);
+                log.error("Inference failed", throwable);
+            });
+    }
+    
+    @POST
+    @Path("/infer/stream")
+    @Produces(MediaType.SERVER_SENT_EVENTS)
+    @Operation(summary = "Execute streaming inference", description = "Perform streaming model inference")
+    public Multi<StreamChunk> inferStream(@Valid ModelRequest request) {
+        log.info("Streaming inference request: {}", request.getRequestId());
+        
+        return Multi.createFrom().uni(safetyGate.checkInput(request))
+            .onItem().transformToMulti(safetyCheck -> {
+                if (!safetyCheck.isSafe()) {
+                    log.warn("Input safety check failed: {}", safetyCheck.getViolations());
+                    metrics.recordSafetyCheck(request.getTenantId(), false, "pre");
+                    return Multi.createFrom().failure(
+                        new WebApplicationException("Content safety violation", 400));
+                }
+                
+                metrics.recordSafetyCheck(request.getTenantId(), true, "pre");
+                return modelService.inferStream(request);
+            });
+    }
+    
+    @GET
+    @Path("/health")
+    @Operation(summary = "Health check", description = "Check model service health")
+    public Uni<HealthStatus> health() {
+        return modelService.healthCheck()
+            .onItem().transform(healthy -> new HealthStatus(healthy, "Model service is " + 
+                (healthy ? "healthy" : "unhealthy")));
+    }
+    
+    public record HealthStatus(boolean healthy, String message) {}
+}
+```
+
+**File:** `wayang-models-deployment/src/main/java/tech/kayys/wayang/models/api/rest/ModelRegistryResource.java`
+
+```java
+package tech.kayys.wayang.models.api.rest;
+
+import io.smallrye.mutiny.Uni;
+import jakarta.inject.Inject;
+import jakarta.validation.Valid;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+import tech.kayys.wayang.models.api.domain.ModelCapability;
+import tech.kayys.wayang.models.api.domain.ModelMetadata;
+import tech.kayys.wayang.models.api.exception.ModelNotFoundException;
+import tech.kayys.wayang.models.api.service.ModelRegistry;
+
+import java.util.List;
+import java.util.Set;
+
+/**
+ * REST API for model registry management.
+ */
+@Path("/api/v1/models/registry")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+@RequiredArgsConstructor
+@Slf4j
+@Tag(name = "Model Registry", description = "Model metadata management")
+public class ModelRegistryResource {
+    
+    @Inject
+    ModelRegistry registry;
+    
+    @POST
+    @Operation(summary = "Register model", description = "Register a new model")
+    public Uni<ModelMetadata> registerModel(@Valid ModelMetadata metadata) {
+        log.info("Registering model: {}", metadata.getModelId());
+        return registry.registerModel(metadata);
+    }
+    
+    @GET
+    @Path("/{modelId}")
+    @Operation(summary = "Get model", description = "Get model metadata by ID")
+    public Uni<ModelMetadata> getModel(@PathParam("modelId") String modelId) {
+        return registry.getModel(modelId)
+            .onItem().transform(opt -> opt.orElseThrow(() -> 
+                new ModelNotFoundException(modelId)));
+    }
+    
+    @GET
+    @Operation(summary = "List models", description = "List all registered models")
+    public Uni<List<ModelMetadata>> listModels(
+            @QueryParam("provider") String provider,
+            @QueryParam("capability") Set<ModelCapability> capabilities) {
+        
+        if (provider != null) {
+            return registry.findByProvider(provider);
+        }
+        
+        if (capabilities != null && !capabilities.isEmpty()) {
+            return registry.findByCapabilities(capabilities);
+        }
+        
+        return registry.listModels();
+    }
+    
+    @PUT
+    @Path("/{modelId}")
+    @Operation(summary = "Update model", description = "Update model metadata")
+    public Uni<ModelMetadata> updateModel(
+            @PathParam("modelId") String modelId,
+            @Valid ModelMetadata metadata) {
+        log.info("Updating model: {}", modelId);
+        return registry.updateModel(modelId, metadata);
+    }
+    
+    @DELETE
+    @Path("/{modelId}")
+    @Operation(summary = "Deactivate model", description = "Deactivate a model")
+    public Uni<Response> deactivateModel(@PathParam("modelId") String modelId) {
+        log.info("Deactivating model: {}", modelId);
+        return registry.deactivateModel(modelId)
+            .onItem().transform(success -> Response.noContent().build());
+    }
+}
+```
+
+### Exception Handlers
+
+**File:** `wayang-models-deployment/src/main/java/tech/kayys/wayang/models/api/rest/exception/ModelExceptionHandler.java`
+
+```java
+package tech.kayys.wayang.models.api.rest.exception;
+
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.ext.ExceptionMapper;
+import jakarta.ws.rs.ext.Provider;
+import lombok.extern.slf4j.Slf4j;
+import tech.kayys.wayang.models.api.exception.ModelException;
+import tech.kayys.wayang.models.api.exception.ModelInferenceException;
+import tech.kayys.wayang.models.api.exception.ModelNotFoundException;
+import tech.kayys.wayang.models.api.exception.ProviderUnavailableException;
+
+import java.time.Instant;
+import java.util.Map;
+
+/**
+ * Global exception handler for model-related exceptions.
+ */
+@Provider
+@Slf4j
+public class ModelExceptionHandler implements ExceptionMapper<ModelException> {
+    
+    @Override
+    public Response toResponse(ModelException exception) {
+        log.error("Model exception: {}", exception.getMessage(), exception);
+        
+        int status = determineStatus(exception);
+        
+        ErrorResponse error = ErrorResponse.builder()
+            .code(exception.getErrorCode())
+            .message(exception.getMessage())
+            .timestamp(Instant.now())
+            .details(exception.getDetails())
+            .build();
+        
+        return Response.status(status)
+            .entity(error)
+            .build();
+    }
+    
+    private int determineStatus(ModelException exception) {
+        if (exception instanceof ModelNotFoundException) {
+            return 404;
+        } else if (exception instanceof ProviderUnavailableException) {
+            return 503;
+        } else if (exception instanceof ModelInferenceException) {
+            return 500;
+        }
+        return

@@ -1,0 +1,9 @@
+public enum EventType {
+    NODE_STARTED,
+    NODE_COMPLETED,
+    NODE_FAILED,
+    TOOL_CALLED,
+    MODEL_CALLED,
+    GUARDRAIL_CHECK,
+    ERROR_OCCURRED
+}

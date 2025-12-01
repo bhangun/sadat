@@ -1,0 +1,3 @@
+enum CheckPhase {
+    PRE_EXECUTION, POST_EXECUTION
+}

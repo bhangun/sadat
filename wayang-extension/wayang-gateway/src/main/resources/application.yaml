@@ -1,0 +1,53 @@
+quarkus:
+  application:
+    name: wayang-gateway
+  
+  http:
+    port: 8080
+    cors:
+      ~: true
+      origins: "*"
+      methods: GET,POST,PUT,DELETE,OPTIONS
+      headers: "*"
+    
+  smallrye-jwt:
+    enabled: true
+    auth-mechanism: MP-JWT
+    public-key:
+      location: ${JWT_PUBLIC_KEY_URL:http://keycloak:8080/realms/wayang/protocol/openid-connect/certs}
+  
+  rest-client:
+    designer-api:
+      url: ${DESIGNER_URL:http://wayang-designer:8081}
+      scope: jakarta.inject.Singleton
+    orchestrator-api:
+      url: ${ORCHESTRATOR_URL:http://wayang-orchestrator:8082}
+      scope: jakarta.inject.Singleton
+    executor-api:
+      url: ${EXECUTOR_URL:http://wayang-executor:8083}
+      scope: jakarta.inject.Singleton
+  
+  cache:
+    caffeine:
+      rate-limit-buckets:
+        initial-capacity: 100
+        maximum-size: 10000
+        expire-after-write: 1H
+  
+  opentelemetry:
+    enabled: true
+    tracer:
+      exporter:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://jaeger:4317}
+
+mp:
+  jwt:
+    verify:
+      publickey:
+        location: ${JWT_PUBLIC_KEY_URL}
+      issuer: ${JWT_ISSUER:http://keycloak:8080/realms/wayang}
+
+# Logging
+quarkus.log.level: INFO
+quarkus.log.category."tech.kayys.wayang".level: DEBUG

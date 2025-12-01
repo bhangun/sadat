@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>tech.kayys.wayang</groupId>
+        <artifactId>wayang-platform-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>wayang-runtime-llm</artifactId>
+    <name>Wayang Runtime LLM</name>
+    <description>LLM support - OPTIONAL, only if workflow uses LLM</description>
+
+    <dependencies>
+        <!-- Minimal runtime - REQUIRED -->
+        <dependency>
+            <groupId>tech.kayys.wayang</groupId>
+            <artifactId>wayang-runtime-minimal</artifactId>
+        </dependency>
+        
+        <!-- HTTP client for LLM calls - REQUIRED -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp</artifactId>
+        </dependency>
+        
+        <!-- LangChain4j core - OPTIONAL -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-core</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+</project>

@@ -1,0 +1,21 @@
+<dependencies>
+    <!-- Base runtime - 2MB -->
+    <dependency>
+        <groupId>tech.kayys.wayang</groupId>
+        <artifactId>wayang-runtime-minimal</artifactId>
+    </dependency>
+    
+    <!-- RAG runtime - 3MB -->
+    <dependency>
+        <groupId>tech.kayys.wayang</groupId>
+        <artifactId>wayang-runtime-rag</artifactId>
+    </dependency>
+    
+    <!-- RAG node - 500KB -->
+    <dependency>
+        <groupId>tech.kayys.wayang</groupId>
+        <artifactId>wayang-node-rag</artifactId>
+    </dependency>
+    
+    <!-- Total: ~5.5MB vs 50MB+ for full platform! -->
+</dependencies>

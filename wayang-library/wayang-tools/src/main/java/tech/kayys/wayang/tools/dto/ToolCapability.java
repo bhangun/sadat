@@ -1,0 +1,7 @@
+enum ToolCapability {
+    NETWORK_ACCESS,
+    FILESYSTEM_ACCESS,
+    DATABASE_ACCESS,
+    GPU_REQUIRED,
+    EXPENSIVE
+}

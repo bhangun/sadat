@@ -1,0 +1,12 @@
+{
+  "name": "Simple RAG Agent",
+  "nodes": [
+    { "nodeId": "start", "nodeType": "START" },
+    { "nodeId": "rag1", "nodeType": "RAG", "config": { "index": "docs" } },
+    { "nodeId": "end", "nodeType": "END" }
+  ],
+  "edges": [
+    { "from": "start", "to": "rag1" },
+    { "from": "rag1", "to": "end" }
+  ]
+}

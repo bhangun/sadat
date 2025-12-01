@@ -1,0 +1,9 @@
+public enum A2APurpose {
+    DELEGATE,
+    VALIDATE,
+    ASK_FOR_DATA,
+    EVALUATE,
+    ESCALATE,
+    COLLABORATE,
+    COORDINATE
+}

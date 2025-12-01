@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>tech.kayys.wayang</groupId>
+    <artifactId>wayang-platform-parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>Wayang AI Agent Platform</name>
+    <description>Low-Code AI Agent Workflow Builder</description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        
+        <!-- Quarkus -->
+        <quarkus.version>3.6.0</quarkus.version>
+        
+        <!-- Libraries -->
+        <lombok.version>1.18.30</lombok.version>
+        <mapstruct.version>1.5.5.Final</mapstruct.version>
+        <jackson.version>2.15.3</jackson.version>
+        
+        <!-- Testing -->
+        <junit.version>5.10.0</junit.version>
+        <testcontainers.version>1.19.0</testcontainers.version>
+        
+        <!-- Database -->
+        <postgresql.version>42.6.0</postgresql.version>
+        <flyway.version>9.22.0</flyway.version>
+        
+        <!-- Observability -->
+        <micrometer.version>1.11.4</micrometer.version>
+        <opentelemetry.version>1.30.0</opentelemetry.version>
+    </properties>
+
+    <modules>
+        <!-- Core -->
+        <module>wayang-core</module>
+        <module>wayang-common</module>
+        <module>wayang-api</module>
+        
+        <!-- Node System -->
+        <module>wayang-node-core</module>
+        <module>wayang-node-types</module>
+        <module>wayang-node-registry</module>
+        
+        <!-- Execution -->
+        <module>wayang-orchestrator</module>
+        <module>wayang-planner</module>
+        <module>wayang-executor</module>
+        <module>wayang-runtime-hub</module>
+        
+        <!-- Knowledge & Data -->
+        <module>wayang-rag</module>
+        <module>wayang-memory</module>
+        <module>wayang-knowledge-graph</module>
+        
+        <!-- Intelligence -->
+        <module>wayang-llm</module>
+        <module>wayang-tools</module>
+        <module>wayang-guardrails</module>
+        
+        <!-- Collaboration -->
+        <module>wayang-a2a</module>
+        
+        <!-- Authoring -->
+        <module>wayang-designer</module>
+        <module>wayang-versioning</module>
+        <module>wayang-plugins</module>
+        <module>wayang-linter</module>
+        <module>wayang-debugger</module>
+        <module>wayang-authoring</module>
+        <module>wayang-codegen</module>
+        
+        <!-- Infrastructure -->
+        <module>wayang-gateway</module>
+        <module>wayang-auth</module>
+        <module>wayang-audit</module>
+        <module>wayang-observability</module>
+        <module>wayang-storage</module>
+        
+        <!-- Runtime -->
+        <module>wayang-standalone-runtime</module>
+        
+        <!-- Tests -->
+        <module>wayang-integration-tests</module>
+    </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Quarkus BOM -->
+            <dependency>
+                <groupId>io.quarkus.platform</groupId>
+                <artifactId>quarkus-bom</artifactId>
+                <version>${quarkus.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            
+            <!-- Internal modules -->
+            <dependency>
+                <groupId>tech.kayys.wayang</groupId>
+                <artifactId>wayang-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>tech.kayys.wayang</groupId>
+                <artifactId>wayang-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>tech.kayys.wayang</groupId>
+                <artifactId>wayang-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            
+            <!-- Lombok -->
+            <dependency>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <version>${lombok.version}</version>
+            </dependency>
+            
+            <!-- MapStruct -->
+            <dependency>
+                <groupId>org.mapstruct</groupId>
+                <artifactId>mapstruct</artifactId>
+                <version>${mapstruct.version}</version>
+            </dependency>
+            
+            <!-- Testing -->
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <version>${junit.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>io.quarkus</groupId>
+                    <artifactId>quarkus-maven-plugin</artifactId>
+                    <version>${quarkus.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.11.0</version>
+                    <configuration>
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                                <version>${lombok.version}</version>
+                            </path>
+                            <path>
+                                <groupId>org.mapstruct</groupId>
+                                <artifactId>mapstruct-processor</artifactId>
+                                <version>${mapstruct.version}</version>
+                            </path>
+                        </annotationProcessorPaths>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>
