@@ -1,0 +1,46 @@
+{
+    "$id": "https://kayys.tech/schema/v1/nodes/integration/translator.schema.json",
+    "allOf": [
+        {
+            "$ref": "./base.schema.json"
+        }
+    ],
+    "properties": {
+        "type": {
+            "const": "MessageTranslator"
+        },
+        "transformation": {
+            "type": "object",
+            "required": [
+                "type"
+            ],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "velocity",
+                        "freemarker",
+                        "groovy",
+                        "jq",
+                        "xslt",
+                        "jsonata",
+                        "cel"
+                    ]
+                },
+                "template": {
+                    "type": "string",
+                    "description": "Inline template or script"
+                },
+                "templateUri": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "External template file"
+                },
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        }
+    }
+}

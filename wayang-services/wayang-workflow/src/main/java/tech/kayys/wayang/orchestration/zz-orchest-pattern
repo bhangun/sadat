@@ -1,0 +1,439 @@
+package io.quarkus.ai.agent.examples;
+
+import io.quarkus.ai.agent.runtime.model.*;
+import io.quarkus.ai.agent.runtime.orchestration.OrchestrationEngine;
+import io.smallrye.mutiny.Uni;
+import jakarta.inject.Inject;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.MediaType;
+
+import java.util.*;
+
+/**
+ * Examples of using different orchestration patterns
+ */
+@Path("/examples/orchestration")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+public class OrchestrationExamples {
+
+    @Inject
+    OrchestrationEngine orchestrationEngine;
+
+    /**
+     * Example 1: ReAct Pattern - Problem Solving with Tools
+     */
+    @POST
+    @Path("/react")
+    public Uni<OrchestrationEngine.OrchestrationResult> reactExample(Map<String, Object> request) {
+        // Create agent with tools
+        AgentDefinition agent = createAgentWithTools();
+        
+        // Configure ReAct pattern
+        OrchestrationPattern pattern = new OrchestrationPattern();
+        pattern.setType(OrchestrationPattern.PatternType.REACT);
+        pattern.setConfig(Map.of(
+            "maxIterations", 5
+        ));
+        
+        // Input task
+        Map<String, Object> input = Map.of(
+            "task", "Find the current weather in New York and suggest appropriate clothing"
+        );
+        
+        return orchestrationEngine.execute(agent, input, pattern);
+    }
+
+    /**
+     * Example 2: Plan-Execute Pattern - Multi-Step Tasks
+     */
+    @POST
+    @Path("/plan-execute")
+    public Uni<OrchestrationEngine.OrchestrationResult> planExecuteExample(Map<String, Object> request) {
+        AgentDefinition agent = createAgentWithTools();
+        
+        OrchestrationPattern pattern = new OrchestrationPattern();
+        pattern.setType(OrchestrationPattern.PatternType.PLAN_EXECUTE);
+        
+        Map<String, Object> input = Map.of(
+            "task", "Research top 3 AI frameworks, compare their features, and write a summary"
+        );
+        
+        return orchestrationEngine.execute(agent, input, pattern);
+    }
+
+    /**
+     * Example 3: Reflection Pattern - Self-Improving Outputs
+     */
+    @POST
+    @Path("/reflection")
+    public Uni<OrchestrationEngine.OrchestrationResult> reflectionExample(Map<String, Object> request) {
+        AgentDefinition agent = createBasicAgent();
+        
+        OrchestrationPattern pattern = new OrchestrationPattern();
+        pattern.setType(OrchestrationPattern.PatternType.REFLECTION);
+        pattern.setConfig(Map.of(
+            "maxReflections", 3
+        ));
+        
+        Map<String, Object> input = Map.of(
+            "task", "Write a professional email introducing our new AI agent platform"
+        );
+        
+        return orchestrationEngine.execute(agent, input, pattern);
+    }
+
+    /**
+     * Example 4: Hierarchical Pattern - Manager + Workers
+     */
+    @POST
+    @Path("/hierarchical")
+    public Uni<OrchestrationEngine.OrchestrationResult> hierarchicalExample(Map<String, Object> request) {
+        AgentDefinition manager = createBasicAgent();
+        
+        OrchestrationPattern pattern = new OrchestrationPattern();
+        pattern.setType(OrchestrationPattern.PatternType.HIERARCHICAL);
+        pattern.setConfig(Map.of(
+            "workers", List.of(
+                Map.of(
+                    "role", "researcher",
+                    "capabilities", "Finding and analyzing information"
+                ),
+                Map.of(
+                    "role", "writer",
+                    "capabilities", "Creating well-structured content"
+                ),
+                Map.of(
+                    "role", "reviewer",
+                    "capabilities", "Checking quality and accuracy"
+                )
+            )
+        ));
+        
+        Map<String, Object> input = Map.of(
+            "task", "Create a comprehensive guide on building microservices with Quarkus"
+        );
+        
+        return orchestrationEngine.execute(manager, input, pattern);
+    }
+
+    /**
+     * Example 5: Router Pattern - Task Classification
+     */
+    @POST
+    @Path("/router")
+    public Uni<OrchestrationEngine.OrchestrationResult> routerExample(Map<String, Object> request) {
+        AgentDefinition router = createBasicAgent();
+        
+        OrchestrationPattern pattern = new OrchestrationPattern();
+        pattern.setType(OrchestrationPattern.PatternType.ROUTER);
+        pattern.setConfig(Map.of(
+            "routes", Map.of(
+                "technical", Map.of(
+                    "description", "Technical questions about programming, architecture, etc."
+                ),
+                "business", Map.of(
+                    "description", "Business strategy, market analysis, etc."
+                ),
+                "creative", Map.of(
+                    "description", "Creative writing, brainstorming, design ideas"
+                )
+            )
+        ));
+        
+        Map<String, Object> input = Map.of(
+            "task", request.get("task")
+        );
+        
+        return orchestrationEngine.execute(router, input, pattern);
+    }
+
+    /**
+     * Example 6: Sequential Pattern - Pipeline Processing
+     */
+    @POST
+    @Path("/sequential")
+    public Uni<OrchestrationEngine.OrchestrationResult> sequentialExample(Map<String, Object> request) {
+        AgentDefinition agent = createBasicAgent();
+        
+        OrchestrationPattern pattern = new OrchestrationPattern();
+        pattern.setType(OrchestrationPattern.PatternType.SEQUENTIAL);
+        pattern.setConfig(Map.of(
+            "sequence", List.of(
+                Map.of(
+                    "role", "outliner",
+                    "prompt", "Create an outline for: ${task}"
+                ),
+                Map.of(
+                    "role", "writer",
+                    "prompt", "Write detailed content based on this outline: ${result}"
+                ),
+                Map.of(
+                    "role", "editor",
+                    "prompt", "Edit and improve this content: ${result}"
+                ),
+                Map.of(
+                    "role", "formatter",
+                    "prompt", "Format this content in Markdown: ${result}"
+                )
+            )
+        ));
+        
+        Map<String, Object> input = Map.of(
+            "task", "Write a blog post about reactive programming in Java"
+        );
+        
+        return orchestrationEngine.execute(agent, input, pattern);
+    }
+
+    // Helper methods to create agents
+
+    private AgentDefinition createBasicAgent() {
+        AgentDefinition agent = new AgentDefinition();
+        agent.setId(UUID.randomUUID().toString());
+        agent.setName("Basic Agent");
+        agent.setType(AgentDefinition.AgentType.CONVERSATIONAL);
+        agent.setStatus(AgentDefinition.AgentStatus.ACTIVE);
+        
+        LLMConfig llmConfig = new LLMConfig();
+        llmConfig.setProvider(LLMConfig.Provider.OPENAI);
+        llmConfig.setModel("gpt-4");
+        llmConfig.setApiKey(System.getenv("OPENAI_API_KEY"));
+        
+        LLMConfig.Parameters params = new LLMConfig.Parameters();
+        params.setTemperature(0.7);
+        params.setMaxTokens(2000);
+        llmConfig.setParameters(params);
+        
+        agent.setLlmConfig(llmConfig);
+        
+        return agent;
+    }
+
+    private AgentDefinition createAgentWithTools() {
+        AgentDefinition agent = createBasicAgent();
+        
+        // Add weather tool
+        Tool weatherTool = new Tool();
+        weatherTool.setId("weather-tool");
+        weatherTool.setName("get_weather");
+        weatherTool.setType(Tool.ToolType.API);
+        weatherTool.setDescription("Get current weather for a location");
+        weatherTool.setEnabled(true);
+        
+        Tool.ToolConfig toolConfig = new Tool.ToolConfig();
+        toolConfig.setEndpoint("https://api.weather.com/v1/current");
+        toolConfig.setMethod("GET");
+        weatherTool.setConfig(toolConfig);
+        
+        // Add search tool
+        Tool searchTool = new Tool();
+        searchTool.setId("search-tool");
+        searchTool.setName("web_search");
+        searchTool.setType(Tool.ToolType.WEB_SEARCH);
+        searchTool.setDescription("Search the web for information");
+        searchTool.setEnabled(true);
+        
+        agent.setTools(List.of(weatherTool, searchTool));
+        
+        return agent;
+    }
+}
+
+/**
+ * Complete workflow example with all node types
+ */
+@Path("/examples/workflow")
+@Produces(MediaType.APPLICATION_JSON)
+public class CompleteWorkflowExample {
+
+    @Inject
+    io.quarkus.ai.agent.runtime.engine.WorkflowRuntimeEngine workflowEngine;
+
+    @Inject
+    io.quarkus.ai.agent.runtime.context.ExecutionContextManager contextManager;
+
+    @POST
+    @Path("/complex")
+    public Uni<io.quarkus.ai.agent.runtime.engine.WorkflowRuntimeEngine.ExecutionResult> 
+            complexWorkflowExample() {
+        
+        Workflow workflow = new Workflow();
+        workflow.setId(UUID.randomUUID().toString());
+        workflow.setName("Complex Customer Support Workflow");
+        
+        List<Workflow.Node> nodes = new ArrayList<>();
+        
+        // 1. START
+        Workflow.Node start = createNode("start-1", Workflow.Node.NodeType.START, "Start");
+        nodes.add(start);
+        
+        // 2. LLM - Classify Intent
+        Workflow.Node classifyIntent = createNode("llm-1", Workflow.Node.NodeType.LLM, "Classify Intent");
+        Workflow.Node.NodeConfig llmConfig = new Workflow.Node.NodeConfig();
+        llmConfig.setPrompt("Classify this customer query: ${query}");
+        classifyIntent.setConfig(llmConfig);
+        nodes.add(classifyIntent);
+        
+        // 3. CONDITION - Route based on intent
+        Workflow.Node condition = createNode("cond-1", Workflow.Node.NodeType.CONDITION, "Route");
+        nodes.add(condition);
+        
+        // 4. PARALLEL - Search KB + Check Status (for technical queries)
+        Workflow.Node parallel = createNode("para-1", Workflow.Node.NodeType.PARALLEL, "Parallel Search");
+        nodes.add(parallel);
+        
+        // 5. TOOL - Search Knowledge Base
+        Workflow.Node searchKB = createNode("tool-1", Workflow.Node.NodeType.TOOL, "Search KB");
+        nodes.add(searchKB);
+        
+        // 6. TOOL - Check System Status
+        Workflow.Node checkStatus = createNode("tool-2", Workflow.Node.NodeType.TOOL, "Check Status");
+        nodes.add(checkStatus);
+        
+        // 7. MERGE - Combine parallel results
+        Workflow.Node merge = createNode("merge-1", Workflow.Node.NodeType.MERGE, "Merge Results");
+        nodes.add(merge);
+        
+        // 8. LLM - Generate Response
+        Workflow.Node generateResponse = createNode("llm-2", Workflow.Node.NodeType.LLM, "Generate Response");
+        nodes.add(generateResponse);
+        
+        // 9. VALIDATOR - Check response quality
+        Workflow.Node validate = createNode("val-1", Workflow.Node.NodeType.VALIDATOR, "Validate");
+        Workflow.Node.NodeConfig valConfig = new Workflow.Node.NodeConfig();
+        Workflow.Node.NodeConfig.ValidationConfig validationConfig = 
+            new Workflow.Node.NodeConfig.ValidationConfig();
+        validationConfig.setSchema(Map.of("minLength", 50));
+        validationConfig.setOnFailure("retry");
+        valConfig.setValidationConfig(validationConfig);
+        validate.setConfig(valConfig);
+        nodes.add(validate);
+        
+        // 10. HUMAN_INPUT - Escalate if complex
+        Workflow.Node humanInput = createNode("human-1", Workflow.Node.NodeType.HUMAN_INPUT, "Escalate");
+        nodes.add(humanInput);
+        
+        // 11. TRANSFORM - Format response
+        Workflow.Node transform = createNode("trans-1", Workflow.Node.NodeType.TRANSFORM, "Format");
+        nodes.add(transform);
+        
+        // 12. WEBHOOK - Send to CRM
+        Workflow.Node webhook = createNode("hook-1", Workflow.Node.NodeType.WEBHOOK, "Update CRM");
+        nodes.add(webhook);
+        
+        // 13. DELAY - Wait before followup
+        Workflow.Node delay = createNode("delay-1", Workflow.Node.NodeType.DELAY, "Wait");
+        nodes.add(delay);
+        
+        // 14. END
+        Workflow.Node end = createNode("end-1", Workflow.Node.NodeType.END, "End");
+        nodes.add(end);
+        
+        workflow.setNodes(nodes);
+        
+        // Create edges (connections)
+        List<Workflow.Edge> edges = List.of(
+            createEdge("edge-1", "start-1", "llm-1"),
+            createEdge("edge-2", "llm-1", "cond-1"),
+            createEdge("edge-3", "cond-1", "para-1"),
+            createEdge("edge-4", "para-1", "tool-1"),
+            createEdge("edge-5", "para-1", "tool-2"),
+            createEdge("edge-6", "tool-1", "merge-1"),
+            createEdge("edge-7", "tool-2", "merge-1"),
+            createEdge("edge-8", "merge-1", "llm-2"),
+            createEdge("edge-9", "llm-2", "val-1"),
+            createEdge("edge-10", "val-1", "trans-1"),
+            createEdge("edge-11", "trans-1", "hook-1"),
+            createEdge("edge-12", "hook-1", "delay-1"),
+            createEdge("edge-13", "delay-1", "end-1")
+        );
+        workflow.setEdges(edges);
+        
+        // Execute
+        io.quarkus.ai.agent.runtime.context.ExecutionContext context = 
+            contextManager.createContext();
+        
+        Map<String, Object> input = Map.of(
+            "query", "My application keeps crashing when I try to upload files"
+        );
+        
+        return workflowEngine.executeWorkflow(workflow, input, context);
+    }
+
+    private Workflow.Node createNode(String id, Workflow.Node.NodeType type, String name) {
+        Workflow.Node node = new Workflow.Node();
+        node.setId(id);
+        node.setType(type);
+        node.setName(name);
+        node.setPosition(new Workflow.Node.Position());
+        return node;
+    }
+
+    private Workflow.Edge createEdge(String id, String source, String target) {
+        Workflow.Edge edge = new Workflow.Edge();
+        edge.setId(id);
+        edge.setSource(source);
+        edge.setTarget(target);
+        edge.setType(Workflow.Edge.EdgeType.DEFAULT);
+        return edge;
+    }
+}
+
+/**
+ * Memory usage examples
+ */
+@Path("/examples/memory")
+@Produces(MediaType.APPLICATION_JSON)
+public class MemoryExamples {
+
+    @Inject
+    io.quarkus.ai.agent.runtime.memory.MemoryService memoryService;
+
+    @Inject
+    io.quarkus.ai.agent.runtime.service.LLMService llmService;
+
+    /**
+     * Example: Conversational agent with memory
+     */
+    @POST
+    @Path("/conversational")
+    public Uni<Map<String, Object>> conversationalWithMemory(Map<String, Object> request) {
+        String sessionId = (String) request.get("sessionId");
+        String userMessage = (String) request.get("message");
+        
+        // Configure memory
+        MemoryConfig memoryConfig = new MemoryConfig();
+        memoryConfig.setType(MemoryConfig.MemoryType.BUFFER);
+        memoryConfig.setStorageBackend(MemoryConfig.StorageBackend.REDIS);
+        memoryConfig.setConfig(Map.of("maxMessages", 20));
+        
+        // Store user message
+        return memoryService.storeMessage(sessionId, "user", userMessage, memoryConfig)
+            .chain(() -> memoryService.formatHistory(sessionId, memoryConfig))
+            .chain(history -> {
+                // Create prompt with history
+                String prompt = history + "\nUser: " + userMessage + "\nAssistant:";
+                
+                // Call LLM
+                LLMConfig llmConfig = createLLMConfig();
+                io.quarkus.ai.agent.runtime.context.ExecutionContext context = 
+                    new io.quarkus.ai.agent.runtime.context.ExecutionContext();
+                
+                return llmService.complete(llmConfig, prompt, context);
+            })
+            .chain(response -> {
+                // Store assistant response
+                return memoryService.storeMessage(sessionId, "assistant", response, memoryConfig)
+                    .map(v -> Map.of("response", response));
+            });
+    }
+
+    private LLMConfig createLLMConfig() {
+        LLMConfig config = new LLMConfig();
+        config.setProvider(LLMConfig.Provider.OPENAI);
+        config.setModel("gpt-4");
+        config.setApiKey(System.getenv("OPENAI_API_KEY"));
+        return config;
+    }
+}

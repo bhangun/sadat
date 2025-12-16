@@ -1,0 +1,440 @@
+package io.quarkus.ai.agent.runtime.security;
+
+import jakarta.annotation.Priority;
+import jakarta.inject.Inject;
+import jakarta.ws.rs.Priorities;
+import jakarta.ws.rs.container.*;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.ext.Provider;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.jboss.logging.Logger;
+
+import java.lang.annotation.*;
+import java.util.*;
+
+/**
+ * API Key Authentication Annotation
+ */
+@Target({ElementType.TYPE, ElementType.METHOD})
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+public @interface ApiKeyAuth {
+    boolean required() default true;
+}
+
+/**
+ * API Key Authentication Filter
+ */
+@Provider
+@ApiKeyAuth
+@Priority(Priorities.AUTHENTICATION)
+public class ApiKeyAuthFilter implements ContainerRequestFilter {
+
+    private static final Logger LOG = Logger.getLogger(ApiKeyAuthFilter.class);
+    private static final String API_KEY_HEADER = "X-API-Key";
+
+    @ConfigProperty(name = "ai-agent.security.api-keys", defaultValue = "")
+    String apiKeys;
+
+    @ConfigProperty(name = "ai-agent.security.enabled", defaultValue = "true")
+    boolean securityEnabled;
+
+    @Override
+    public void filter(ContainerRequestContext requestContext) {
+        
+        if (!securityEnabled) {
+            return; // Security disabled for dev
+        }
+
+        String apiKey = requestContext.getHeaderString(API_KEY_HEADER);
+        
+        if (apiKey == null || apiKey.isEmpty()) {
+            LOG.warn("API key missing");
+            requestContext.abortWith(
+                Response.status(Response.Status.UNAUTHORIZED)
+                    .entity(Map.of("error", "API key required"))
+                    .build()
+            );
+            return;
+        }
+
+        // Validate API key
+        Set<String> validKeys = new HashSet<>(Arrays.asList(apiKeys.split(",")));
+        
+        if (!validKeys.contains(apiKey)) {
+            LOG.warnf("Invalid API key: %s", maskApiKey(apiKey));
+            requestContext.abortWith(
+                Response.status(Response.Status.UNAUTHORIZED)
+                    .entity(Map.of("error", "Invalid API key"))
+                    .build()
+            );
+        }
+    }
+
+    private String maskApiKey(String apiKey) {
+        if (apiKey.length() < 8) return "****";
+        return apiKey.substring(0, 4) + "****" + apiKey.substring(apiKey.length() - 4);
+    }
+}
+
+/**
+ * Rate Limiting Filter
+ */
+package io.quarkus.ai.agent.runtime.security;
+
+import io.github.bucket4j.*;
+import jakarta.annotation.Priority;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Priorities;
+import jakarta.ws.rs.container.*;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.ext.Provider;
+
+import java.time.Duration;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+@Provider
+@Priority(Priorities.USER)
+@Singleton
+public class RateLimitFilter implements ContainerRequestFilter {
+
+    private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
+
+    @Override
+    public void filter(ContainerRequestContext requestContext) {
+        
+        String apiKey = requestContext.getHeaderString("X-API-Key");
+        if (apiKey == null) {
+            apiKey = "anonymous";
+        }
+
+        Bucket bucket = buckets.computeIfAbsent(apiKey, k -> createBucket());
+
+        if (!bucket.tryConsume(1)) {
+            requestContext.abortWith(
+                Response.status(429) // Too Many Requests
+                    .entity(Map.of("error", "Rate limit exceeded"))
+                    .build()
+            );
+        }
+    }
+
+    private Bucket createBucket() {
+        Bandwidth limit = Bandwidth.builder()
+            .capacity(100)
+            .refillIntervally(100, Duration.ofMinutes(1))
+            .build();
+        
+        return Bucket.builder()
+            .addLimit(limit)
+            .build();
+    }
+}
+
+/**
+ * Input Validation Service
+ */
+package io.quarkus.ai.agent.runtime.validation;
+
+import io.quarkus.ai.agent.runtime.model.*;
+import jakarta.enterprise.context.ApplicationScoped;
+import org.jboss.logging.Logger;
+
+import java.util.*;
+import java.util.regex.Pattern;
+
+@ApplicationScoped
+public class ValidationService {
+
+    private static final Logger LOG = Logger.getLogger(ValidationService.class);
+    
+    // Security patterns
+    private static final Pattern SQL_INJECTION = Pattern.compile(
+        "('.+--)|(--)|(;\\s*(drop|delete|insert|update|create|alter))", 
+        Pattern.CASE_INSENSITIVE
+    );
+    
+    private static final Pattern XSS_PATTERN = Pattern.compile(
+        "<script|javascript:|onerror=|onclick=",
+        Pattern.CASE_INSENSITIVE
+    );
+
+    /**
+     * Validate and sanitize input
+     */
+    public ValidationResult validateInput(Map<String, Object> input) {
+        
+        List<String> errors = new ArrayList<>();
+
+        if (input == null) {
+            errors.add("Input cannot be null");
+            return new ValidationResult(false, errors);
+        }
+
+        // Check for SQL injection attempts
+        for (Map.Entry<String, Object> entry : input.entrySet()) {
+            if (entry.getValue() instanceof String) {
+                String value = (String) entry.getValue();
+                
+                if (SQL_INJECTION.matcher(value).find()) {
+                    errors.add("Potential SQL injection detected in: " + entry.getKey());
+                }
+                
+                if (XSS_PATTERN.matcher(value).find()) {
+                    errors.add("Potential XSS detected in: " + entry.getKey());
+                }
+            }
+        }
+
+        // Check size limits
+        if (input.size() > 100) {
+            errors.add("Too many input parameters (max 100)");
+        }
+
+        return new ValidationResult(errors.isEmpty(), errors);
+    }
+
+    /**
+     * Validate workflow definition
+     */
+    public ValidationResult validateWorkflow(Workflow workflow) {
+        
+        List<String> errors = new ArrayList<>();
+
+        // Check for cycles (except loop nodes)
+        if (hasCycle(workflow)) {
+            errors.add("Workflow contains invalid cycles");
+        }
+
+        // Check all edges have valid nodes
+        Set<String> nodeIds = new HashSet<>();
+        workflow.getNodes().forEach(n -> nodeIds.add(n.getId()));
+
+        for (Workflow.Edge edge : workflow.getEdges()) {
+            if (!nodeIds.contains(edge.getSource())) {
+                errors.add("Edge source node not found: " + edge.getSource());
+            }
+            if (!nodeIds.contains(edge.getTarget())) {
+                errors.add("Edge target node not found: " + edge.getTarget());
+            }
+        }
+
+        // Check for unreachable nodes
+        Set<String> reachable = findReachableNodes(workflow);
+        for (Workflow.Node node : workflow.getNodes()) {
+            if (!reachable.contains(node.getId()) && 
+                node.getType() != Workflow.Node.NodeType.START) {
+                LOG.warnf("Unreachable node: %s", node.getName());
+            }
+        }
+
+        return new ValidationResult(errors.isEmpty(), errors);
+    }
+
+    /**
+     * Sanitize string input
+     */
+    public String sanitize(String input) {
+        if (input == null) return null;
+        
+        // Remove potential harmful characters
+        return input.replaceAll("[<>\"'\\\\]", "")
+                   .trim();
+    }
+
+    private boolean hasCycle(Workflow workflow) {
+        // Simple cycle detection using DFS
+        Set<String> visited = new HashSet<>();
+        Set<String> recursionStack = new HashSet<>();
+
+        Map<String, List<String>> graph = buildGraph(workflow);
+
+        for (String nodeId : graph.keySet()) {
+            if (hasCycleDFS(nodeId, graph, visited, recursionStack)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private boolean hasCycleDFS(String node, Map<String, List<String>> graph,
+                               Set<String> visited, Set<String> stack) {
+        
+        if (stack.contains(node)) return true;
+        if (visited.contains(node)) return false;
+
+        visited.add(node);
+        stack.add(node);
+
+        List<String> neighbors = graph.getOrDefault(node, List.of());
+        for (String neighbor : neighbors) {
+            if (hasCycleDFS(neighbor, graph, visited, stack)) {
+                return true;
+            }
+        }
+
+        stack.remove(node);
+        return false;
+    }
+
+    private Map<String, List<String>> buildGraph(Workflow workflow) {
+        Map<String, List<String>> graph = new HashMap<>();
+        
+        for (Workflow.Edge edge : workflow.getEdges()) {
+            graph.computeIfAbsent(edge.getSource(), k -> new ArrayList<>())
+                 .add(edge.getTarget());
+        }
+        
+        return graph;
+    }
+
+    private Set<String> findReachableNodes(Workflow workflow) {
+        Set<String> reachable = new HashSet<>();
+        
+        // Find start node
+        String startNode = workflow.getNodes().stream()
+            .filter(n -> n.getType() == Workflow.Node.NodeType.START)
+            .map(Workflow.Node::getId)
+            .findFirst()
+            .orElse(null);
+
+        if (startNode == null) return reachable;
+
+        Map<String, List<String>> graph = buildGraph(workflow);
+        dfsReachable(startNode, graph, reachable);
+
+        return reachable;
+    }
+
+    private void dfsReachable(String node, Map<String, List<String>> graph, Set<String> reachable) {
+        if (reachable.contains(node)) return;
+        
+        reachable.add(node);
+        
+        List<String> neighbors = graph.getOrDefault(node, List.of());
+        for (String neighbor : neighbors) {
+            dfsReachable(neighbor, graph, reachable);
+        }
+    }
+
+    public static class ValidationResult {
+        private final boolean valid;
+        private final List<String> errors;
+
+        public ValidationResult(boolean valid, List<String> errors) {
+            this.valid = valid;
+            this.errors = errors;
+        }
+
+        public boolean isValid() { return valid; }
+        public List<String> getErrors() { return errors; }
+    }
+}
+
+/**
+ * Monitoring and Metrics Service
+ */
+package io.quarkus.ai.agent.runtime.monitoring;
+
+import io.micrometer.core.instrument.*;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.jboss.logging.Logger;
+
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
+
+@ApplicationScoped
+public class MetricsService {
+
+    private static final Logger LOG = Logger.getLogger(MetricsService.class);
+
+    @Inject
+    MeterRegistry registry;
+
+    private final ConcurrentHashMap<String, AtomicLong> counters = new ConcurrentHashMap<>();
+
+    /**
+     * Record workflow execution
+     */
+    public void recordExecution(String agentId, String workflowId, long durationMs, boolean success) {
+        
+        Timer.builder("workflow.execution.duration")
+            .tag("agent", agentId)
+            .tag("workflow", workflowId)
+            .tag("success", String.valueOf(success))
+            .register(registry)
+            .record(java.time.Duration.ofMillis(durationMs));
+
+        Counter.builder("workflow.execution.count")
+            .tag("agent", agentId)
+            .tag("success", String.valueOf(success))
+            .register(registry)
+            .increment();
+    }
+
+    /**
+     * Record LLM call
+     */
+    public void recordLLMCall(String provider, String model, long tokens, long durationMs) {
+        
+        Counter.builder("llm.calls.total")
+            .tag("provider", provider)
+            .tag("model", model)
+            .register(registry)
+            .increment();
+
+        Counter.builder("llm.tokens.total")
+            .tag("provider", provider)
+            .tag("model", model)
+            .register(registry)
+            .increment(tokens);
+
+        Timer.builder("llm.call.duration")
+            .tag("provider", provider)
+            .tag("model", model)
+            .register(registry)
+            .record(java.time.Duration.ofMillis(durationMs));
+    }
+
+    /**
+     * Record tool execution
+     */
+    public void recordToolExecution(String toolName, long durationMs, boolean success) {
+        
+        Counter.builder("tool.execution.count")
+            .tag("tool", toolName)
+            .tag("success", String.valueOf(success))
+            .register(registry)
+            .increment();
+
+        Timer.builder("tool.execution.duration")
+            .tag("tool", toolName)
+            .register(registry)
+            .record(java.time.Duration.ofMillis(durationMs));
+    }
+
+    /**
+     * Record error
+     */
+    public void recordError(String component, String errorType) {
+        
+        Counter.builder("errors.total")
+            .tag("component", component)
+            .tag("type", errorType)
+            .register(registry)
+            .increment();
+    }
+
+    /**
+     * Get current active executions
+     */
+    public Gauge registerActiveExecutions(String agentId, AtomicLong activeCount) {
+        
+        return Gauge.builder("workflow.active.count", activeCount, AtomicLong::get)
+            .tag("agent", agentId)
+            .register(registry);
+    }
+}

@@ -1,0 +1,1996 @@
+# Enterprise Multi-Format Inference Engine - Complete Architecture
+
+## Table of Contents
+1. [Architecture Overview](#architecture-overview)
+2. [Project Structure](#project-structure)
+3. [Core Components](#core-components)
+4. [Implementation Guide](#implementation-guide)
+5. [Deployment Strategies](#deployment-strategies)
+6. [Observability & Operations](#observability--operations)
+
+---
+
+## Architecture Overview
+
+### Design Principles
+
+**1. Hexagonal Architecture (Ports & Adapters)**
+- Core domain logic isolated from infrastructure concerns
+- Adapters for different model formats (GGUF, ONNX, Triton, etc.)
+- Easy to test and swap implementations
+
+**2. Multi-Tenancy First**
+- Tenant isolation at data, compute, and configuration levels
+- Resource quotas and fair scheduling per tenant
+- Secure tenant context propagation
+
+**3. Build-Time Optimization**
+- Maven profiles for CPU/GPU/TPU variants
+- Quarkus build-time pruning with `@IfBuildProperty`
+- GraalVM native image ready with reachability metadata
+
+**4. Cloud-Native & Kubernetes-Ready**
+- Health/readiness probes
+- Graceful shutdown and resource cleanup
+- Service mesh compatible (mTLS, traffic management)
+
+---
+
+## Project Structure
+
+```
+inference-platform/
+├── pom.xml                                    # Parent POM with profiles
+├── README.md
+├── ARCHITECTURE.md
+├── docker/
+│   ├── Dockerfile.jvm-cpu
+│   ├── Dockerfile.jvm-gpu
+│   ├── Dockerfile.native-cpu
+│   └── Dockerfile.native-gpu
+├── k8s/
+│   ├── base/                                  # Kustomize base
+│   ├── overlays/
+│   │   ├── dev/
+│   │   ├── staging/
+│   │   └── production/
+│   └── helm/                                  # Helm charts
+├── inference-api/                             # API contracts & DTOs
+│   ├── pom.xml
+│   └── src/main/java/
+│       └── com/enterprise/inference/api/
+│           ├── InferenceRequest.java
+│           ├── InferenceResponse.java
+│           ├── ModelMetadata.java
+│           └── TenantContext.java
+├── inference-core/                            # Domain logic & SPI
+│   ├── pom.xml
+│   └── src/main/java/
+│       └── com/enterprise/inference/core/
+│           ├── domain/
+│           │   ├── ModelManifest.java
+│           │   ├── ModelVersion.java
+│           │   ├── ResourceRequirements.java
+│           │   └── InferenceSession.java
+│           ├── ports/
+│           │   ├── inbound/
+│           │   │   ├── InferenceUseCase.java
+│           │   │   └── ModelManagementUseCase.java
+│           │   └── outbound/
+│           │       ├── ModelRunner.java        # Core SPI
+│           │       ├── ModelRepository.java
+│           │       ├── MetricsPublisher.java
+│           │       └── TenantResolver.java
+│           ├── service/
+│           │   ├── InferenceOrchestrator.java
+│           │   ├── ModelRouterService.java
+│           │   ├── SelectionPolicy.java
+│           │   └── FallbackStrategy.java
+│           └── exceptions/
+│               ├── ModelNotFoundException.java
+│               ├── InferenceException.java
+│               └── TenantQuotaExceededException.java
+├── inference-adapter-gguf/                    # llama.cpp adapter
+│   ├── pom.xml
+│   └── src/main/java/
+│       └── com/enterprise/inference/adapter/gguf/
+│           ├── LlamaCppRunner.java
+│           ├── GGUFModelLoader.java
+│           ├── FFMNativeBinding.java
+│           └── resources/
+│               └── META-INF/
+│                   └── native-image/
+│                       └── reflect-config.json
+├── inference-adapter-onnx/                    # ONNX Runtime adapter
+│   ├── pom.xml
+│   └── src/main/java/
+│       └── com/enterprise/inference/adapter/onnx/
+│           ├── OnnxRuntimeRunner.java
+│           ├── OnnxSessionManager.java
+│           ├── ExecutionProviderSelector.java
+│           └── TensorConverter.java
+├── inference-adapter-triton/                  # Triton Inference Server adapter
+│   ├── pom.xml
+│   └── src/main/java/
+│       └── com/enterprise/inference/adapter/triton/
+│           ├── TritonGrpcRunner.java
+│           ├── TritonHttpRunner.java
+│           ├── TritonClientPool.java
+│           └── proto/                         # Generated gRPC stubs
+├── inference-adapter-tpu/                     # Google Cloud TPU adapter
+│   ├── pom.xml
+│   └── src/main/java/
+│       └── com/enterprise/inference/adapter/tpu/
+│           └── TpuRunner.java
+├── inference-infrastructure/                  # Infrastructure adapters
+│   ├── pom.xml
+│   └── src/main/java/
+│       └── com/enterprise/inference/infrastructure/
+│           ├── persistence/
+│           │   ├── S3ModelRepository.java
+│           │   ├── MinIOModelRepository.java
+│           │   └── PostgresMetadataStore.java
+│           ├── messaging/
+│           │   ├── KafkaEventPublisher.java
+│           │   └── events/
+│           ├── security/
+│           │   ├── JwtTenantResolver.java
+│           │   ├── KeycloakIntegration.java
+│           │   └── TenantContextInterceptor.java
+│           └── observability/
+│               ├── PrometheusMetrics.java
+│               ├── OpenTelemetryTracing.java
+│               └── StructuredLogging.java
+├── inference-application/                     # Quarkus application assembly
+│   ├── pom.xml
+│   └── src/main/
+│       ├── java/
+│       │   └── com/enterprise/inference/application/
+│       │       ├── rest/
+│       │       │   ├── InferenceResource.java
+│       │       │   ├── ModelManagementResource.java
+│       │       │   ├── HealthResource.java
+│       │       │   └── filters/
+│       │       │       ├── TenantFilter.java
+│       │       │       └── RateLimitFilter.java
+│       │       ├── config/
+│       │       │   ├── InferenceConfig.java
+│       │       │   ├── TenantConfig.java
+│       │       │   └── RunnerConfig.java
+│       │       └── lifecycle/
+│       │           ├── StartupInitializer.java
+│       │           └── ShutdownHandler.java
+│       └── resources/
+│           ├── application.yml
+│           ├── application-dev.yml
+│           ├── application-prod.yml
+│           └── META-INF/
+│               └── microprofile-config.properties
+└── inference-tests/
+    ├── pom.xml
+    └── src/test/
+        ├── java/
+        │   ├── integration/
+        │   ├── performance/
+        │   └── e2e/
+        └── resources/
+            └── fixtures/
+```
+
+---
+
+## Core Components
+
+### 1. Core Domain Model
+
+```java
+// inference-core/src/main/java/com/enterprise/inference/core/domain/
+
+/**
+ * Immutable model manifest representing all metadata and artifacts
+ * for a specific model version.
+ */
+public record ModelManifest(
+    String modelId,
+    String name,
+    String version,
+    TenantId tenantId,
+    Map<ModelFormat, ArtifactLocation> artifacts,
+    List<SupportedDevice> supportedDevices,
+    ResourceRequirements resourceRequirements,
+    Map<String, Object> metadata,
+    Instant createdAt,
+    Instant updatedAt
+) {
+    public boolean supportsFormat(ModelFormat format) {
+        return artifacts.containsKey(format);
+    }
+    
+    public boolean supportsDevice(DeviceType deviceType) {
+        return supportedDevices.stream()
+            .anyMatch(d -> d.type() == deviceType);
+    }
+}
+
+/**
+ * Value object for tenant identification and isolation
+ */
+public record TenantId(String value) {
+    public TenantId {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("TenantId cannot be empty");
+        }
+    }
+}
+
+/**
+ * Resource requirements and constraints for model execution
+ */
+public record ResourceRequirements(
+    MemorySize minMemory,
+    MemorySize recommendedMemory,
+    MemorySize minVRAM,
+    Optional<Integer> minCores,
+    Optional<DiskSpace> diskSpace
+) {}
+
+/**
+ * Enumeration of supported model formats
+ */
+public enum ModelFormat {
+    GGUF("gguf", "llama.cpp"),
+    ONNX("onnx", "ONNX Runtime"),
+    TENSORRT("trt", "TensorRT"),
+    TORCHSCRIPT("pt", "TorchScript"),
+    TENSORFLOW_SAVED_MODEL("pb", "TensorFlow");
+    
+    private final String extension;
+    private final String runtime;
+    
+    ModelFormat(String extension, String runtime) {
+        this.extension = extension;
+        this.runtime = runtime;
+    }
+}
+
+/**
+ * Device type enumeration with capability flags
+ */
+public enum DeviceType {
+    CPU(false, false),
+    CUDA(true, false),
+    ROCM(true, false),
+    METAL(true, false),
+    TPU(false, true),
+    OPENVINO(true, false);
+    
+    private final boolean supportsGpu;
+    private final boolean supportsTpu;
+}
+```
+
+### 2. Core Port Definitions (SPI)
+
+```java
+// inference-core/src/main/java/com/enterprise/inference/core/ports/outbound/
+
+/**
+ * Core SPI for model execution backends.
+ * All adapters must implement this interface.
+ */
+public interface ModelRunner extends AutoCloseable {
+    
+    /**
+     * Initialize the runner with model manifest and configuration
+     * @param manifest Model metadata and artifact locations
+     * @param config Runner-specific configuration
+     * @param tenantContext Current tenant context for isolation
+     * @throws ModelLoadException if initialization fails
+     */
+    void initialize(
+        ModelManifest manifest, 
+        Map<String, Object> config,
+        TenantContext tenantContext
+    ) throws ModelLoadException;
+    
+    /**
+     * Execute synchronous inference
+     * @param request Inference request with inputs
+     * @param context Request context with timeout, priority, etc.
+     * @return Inference response with outputs
+     * @throws InferenceException if execution fails
+     */
+    InferenceResponse infer(
+        InferenceRequest request,
+        RequestContext context
+    ) throws InferenceException;
+    
+    /**
+     * Execute asynchronous inference with callback
+     * @param request Inference request
+     * @param context Request context
+     * @return CompletionStage for async processing
+     */
+    CompletionStage<InferenceResponse> inferAsync(
+        InferenceRequest request,
+        RequestContext context
+    );
+    
+    /**
+     * Health check for this runner instance
+     * @return Health status with diagnostics
+     */
+    HealthStatus health();
+    
+    /**
+     * Get current resource utilization metrics
+     * @return Resource usage snapshot
+     */
+    ResourceMetrics getMetrics();
+    
+    /**
+     * Warm up the model (optional optimization)
+     * @param sampleInputs Sample inputs for warming
+     */
+    default void warmup(List<InferenceRequest> sampleInputs) {
+        // Default no-op
+    }
+    
+    /**
+     * Get runner metadata
+     * @return Metadata about this runner implementation
+     */
+    RunnerMetadata metadata();
+    
+    /**
+     * Gracefully release resources
+     */
+    @Override
+    void close();
+}
+
+/**
+ * Runner metadata for selection and diagnostics
+ */
+public record RunnerMetadata(
+    String name,
+    String version,
+    List<ModelFormat> supportedFormats,
+    List<DeviceType> supportedDevices,
+    ExecutionMode executionMode,
+    Map<String, Object> capabilities
+) {}
+
+/**
+ * Repository for model artifacts and metadata
+ */
+public interface ModelRepository {
+    
+    /**
+     * Load model manifest by ID
+     */
+    Optional<ModelManifest> findById(String modelId, TenantId tenantId);
+    
+    /**
+     * List all models for tenant
+     */
+    List<ModelManifest> findByTenant(TenantId tenantId, Pageable pageable);
+    
+    /**
+     * Save or update model manifest
+     */
+    ModelManifest save(ModelManifest manifest);
+    
+    /**
+     * Download model artifact to local cache
+     */
+    Path downloadArtifact(
+        ModelManifest manifest, 
+        ModelFormat format
+    ) throws ArtifactDownloadException;
+    
+    /**
+     * Check if artifact is cached locally
+     */
+    boolean isCached(String modelId, ModelFormat format);
+    
+    /**
+     * Evict artifact from local cache
+     */
+    void evictCache(String modelId, ModelFormat format);
+}
+```
+
+### 3. Model Router & Selection Policy
+
+```java
+// inference-core/src/main/java/com/enterprise/inference/core/service/
+
+/**
+ * Orchestrates inference requests across multiple runners with
+ * intelligent routing, fallback, and load balancing.
+ */
+@ApplicationScoped
+public class InferenceOrchestrator {
+    
+    private final ModelRouterService router;
+    private final ModelRunnerFactory factory;
+    private final ModelRepository repository;
+    private final MetricsPublisher metrics;
+    private final CircuitBreaker circuitBreaker;
+    
+    @Inject
+    public InferenceOrchestrator(
+        ModelRouterService router,
+        ModelRunnerFactory factory,
+        ModelRepository repository,
+        MetricsPublisher metrics,
+        CircuitBreaker circuitBreaker
+    ) {
+        this.router = router;
+        this.factory = factory;
+        this.repository = repository;
+        this.metrics = metrics;
+        this.circuitBreaker = circuitBreaker;
+    }
+    
+    /**
+     * Execute inference with automatic runner selection and fallback
+     */
+    public InferenceResponse execute(
+        String modelId,
+        InferenceRequest request,
+        TenantContext tenantContext
+    ) {
+        var span = Span.current();
+        span.setAttribute("model.id", modelId);
+        span.setAttribute("tenant.id", tenantContext.tenantId().value());
+        
+        // Load model manifest
+        ModelManifest manifest = repository
+            .findById(modelId, tenantContext.tenantId())
+            .orElseThrow(() -> new ModelNotFoundException(modelId));
+        
+        // Build request context with timeout and priority
+        RequestContext ctx = RequestContext.builder()
+            .tenantContext(tenantContext)
+            .timeout(Duration.ofSeconds(30))
+            .priority(request.priority())
+            .preferredDevice(request.deviceHint())
+            .build();
+        
+        // Select and rank candidate runners
+        List<RunnerCandidate> candidates = router.selectRunners(
+            manifest, 
+            ctx
+        );
+        
+        InferenceException lastError = null;
+        
+        // Attempt inference with fallback
+        for (RunnerCandidate candidate : candidates) {
+            try {
+                return executeWithRunner(
+                    manifest, 
+                    candidate, 
+                    request, 
+                    ctx
+                );
+            } catch (InferenceException e) {
+                lastError = e;
+                metrics.recordFailure(
+                    candidate.runnerName(), 
+                    modelId, 
+                    e.getClass().getSimpleName()
+                );
+                
+                // Don't retry on quota or validation errors
+                if (e instanceof TenantQuotaExceededException ||
+                    e instanceof ValidationException) {
+                    throw e;
+                }
+                
+                span.addEvent("Runner failed, attempting fallback", 
+                    Attributes.of(
+                        AttributeKey.stringKey("runner"), candidate.runnerName(),
+                        AttributeKey.stringKey("error"), e.getMessage()
+                    ));
+            }
+        }
+        
+        throw new AllRunnersFailedException(
+            "All runners failed for model " + modelId, 
+            lastError
+        );
+    }
+    
+    private InferenceResponse executeWithRunner(
+        ModelManifest manifest,
+        RunnerCandidate candidate,
+        InferenceRequest request,
+        RequestContext ctx
+    ) {
+        var timer = metrics.startTimer();
+        
+        try {
+            // Get or create runner instance
+            ModelRunner runner = factory.getRunner(
+                manifest, 
+                candidate.runnerName(),
+                ctx.tenantContext()
+            );
+            
+            // Execute with circuit breaker protection
+            InferenceResponse response = circuitBreaker.call(
+                () -> runner.infer(request, ctx)
+            );
+            
+            metrics.recordSuccess(
+                candidate.runnerName(), 
+                manifest.modelId(), 
+                timer.stop()
+            );
+            
+            return response;
+            
+        } catch (Exception e) {
+            metrics.recordFailure(
+                candidate.runnerName(), 
+                manifest.modelId(), 
+                e.getClass().getSimpleName()
+            );
+            throw new InferenceException(
+                "Inference failed with runner: " + candidate.runnerName(), 
+                e
+            );
+        }
+    }
+}
+
+/**
+ * Selection policy implementation with scoring algorithm
+ */
+@ApplicationScoped
+public class SelectionPolicy {
+    
+    private final RuntimeMetricsCache metricsCache;
+    private final HardwareDetector hardwareDetector;
+    
+    /**
+     * Rank available runners based on multiple criteria
+     */
+    public List<RunnerCandidate> rankRunners(
+        ModelManifest manifest,
+        RequestContext context,
+        List<String> configuredRunners
+    ) {
+        List<RunnerCandidate> candidates = new ArrayList<>();
+        
+        // Get current hardware availability
+        HardwareCapabilities hw = hardwareDetector.detect();
+        
+        for (String runnerName : configuredRunners) {
+            RunnerMetadata runnerMeta = getRunnerMetadata(runnerName);
+            
+            // Filter by format compatibility
+            if (!hasCompatibleFormat(manifest, runnerMeta)) {
+                continue;
+            }
+            
+            // Filter by device availability
+            if (!isDeviceAvailable(runnerMeta, hw, context)) {
+                continue;
+            }
+            
+            // Calculate score
+            int score = calculateScore(
+                manifest, 
+                runnerMeta, 
+                context, 
+                hw
+            );
+            
+            candidates.add(new RunnerCandidate(
+                runnerName, 
+                score, 
+                runnerMeta
+            ));
+        }
+        
+        // Sort by score descending
+        candidates.sort(Comparator.comparing(
+            RunnerCandidate::score
+        ).reversed());
+        
+        return candidates;
+    }
+    
+    /**
+     * Multi-factor scoring algorithm
+     */
+    private int calculateScore(
+        ModelManifest manifest,
+        RunnerMetadata runner,
+        RequestContext context,
+        HardwareCapabilities hw
+    ) {
+        int score = 0;
+        
+        // Device preference match (highest weight)
+        if (context.preferredDevice().isPresent() &&
+            runner.supportedDevices().contains(
+                context.preferredDevice().get()
+            )) {
+            score += 50;
+        }
+        
+        // Format native support
+        if (runner.supportedFormats().contains(
+            manifest.artifacts().keySet().iterator().next()
+        )) {
+            score += 30;
+        }
+        
+        // Historical performance (P95 latency)
+        Optional<Duration> p95 = metricsCache.getP95Latency(
+            runner.name(), 
+            manifest.modelId()
+        );
+        if (p95.isPresent() && 
+            p95.get().compareTo(context.timeout()) < 0) {
+            score += 25;
+        }
+        
+        // Resource availability
+        if (hasAvailableResources(manifest, runner, hw)) {
+            score += 20;
+        }
+        
+        // Health status
+        if (metricsCache.isHealthy(runner.name())) {
+            score += 15;
+        }
+        
+        // Cost optimization (favor CPU over GPU if performance OK)
+        if (context.costSensitive() && 
+            runner.supportedDevices().contains(DeviceType.CPU)) {
+            score += 10;
+        }
+        
+        // Current load (avoid overloaded runners)
+        double currentLoad = metricsCache.getCurrentLoad(runner.name());
+        if (currentLoad < 0.7) {
+            score += 10;
+        } else if (currentLoad > 0.9) {
+            score -= 20;
+        }
+        
+        return score;
+    }
+}
+```
+
+### 4. Runner Factory with Warm Pool
+
+```java
+// inference-core/src/main/java/com/enterprise/inference/core/service/
+
+/**
+ * Factory for creating and managing runner instances with
+ * warm pool, lifecycle management, and tenant isolation.
+ */
+@ApplicationScoped
+public class ModelRunnerFactory {
+    
+    private static final int MAX_POOL_SIZE = 10;
+    private static final Duration IDLE_TIMEOUT = Duration.ofMinutes(15);
+    
+    @Inject
+    Instance<ModelRunner> runnerProviders;
+    
+    @Inject
+    ModelRepository repository;
+    
+    @Inject
+    TenantConfig tenantConfig;
+    
+    // Pool: (tenantId, modelId, runnerName) -> Runner instance
+    private final LoadingCache<RunnerCacheKey, ModelRunner> warmPool;
+    
+    // Track usage per runner for cleanup
+    private final Map<RunnerCacheKey, Instant> lastAccess;
+    
+    @Inject
+    public ModelRunnerFactory() {
+        this.warmPool = Caffeine.newBuilder()
+            .maximumSize(MAX_POOL_SIZE)
+            .expireAfterAccess(IDLE_TIMEOUT)
+            .removalListener(this::onRunnerEvicted)
+            .build(this::createRunner);
+            
+        this.lastAccess = new ConcurrentHashMap<>();
+        
+        // Start cleanup scheduler
+        startCleanupScheduler();
+    }
+    
+    /**
+     * Get or create runner instance for tenant
+     */
+    public ModelRunner getRunner(
+        ModelManifest manifest,
+        String runnerName,
+        TenantContext tenantContext
+    ) {
+        RunnerCacheKey key = new RunnerCacheKey(
+            tenantContext.tenantId(),
+            manifest.modelId(),
+            runnerName
+        );
+        
+        // Update last access time
+        lastAccess.put(key, Instant.now());
+        
+        // Get from pool or create
+        return warmPool.get(key);
+    }
+    
+    /**
+     * Prewarm runners for specific models
+     */
+    public void prewarm(
+        ModelManifest manifest,
+        List<String> runnerNames,
+        TenantContext tenantContext
+    ) {
+        runnerNames.forEach(runnerName -> {
+            try {
+                getRunner(manifest, runnerName, tenantContext);
+            } catch (Exception e) {
+                // Log but don't fail prewarming
+                Log.warnf("Failed to prewarm runner %s: %s", 
+                    runnerName, e.getMessage());
+            }
+        });
+    }
+    
+    /**
+     * Create new runner instance (called by cache loader)
+     */
+    private ModelRunner createRunner(RunnerCacheKey key) {
+        // Load manifest
+        ModelManifest manifest = repository
+            .findById(key.modelId(), key.tenantId())
+            .orElseThrow(() -> new ModelNotFoundException(key.modelId()));
+        
+        // Find runner provider by name
+        ModelRunner runner = runnerProviders.stream()
+            .filter(r -> r.metadata().name().equals(key.runnerName()))
+            .findFirst()
+            .orElseThrow(() -> new IllegalArgumentException(
+                "Unknown runner: " + key.runnerName()
+            ));
+        
+        // Get tenant-specific configuration
+        Map<String, Object> config = tenantConfig.getRunnerConfig(
+            key.tenantId(), 
+            key.runnerName()
+        );
+        
+        // Initialize runner
+        TenantContext ctx = TenantContext.of(key.tenantId());
+        runner.initialize(manifest, config, ctx);
+        
+        // Warmup if configured
+        if (config.getOrDefault("warmup.enabled", false).equals(true)) {
+            runner.warmup(Collections.emptyList());
+        }
+        
+        Log.infof("Created runner %s for model %s (tenant %s)", 
+            key.runnerName(), key.modelId(), key.tenantId().value());
+        
+        return runner;
+    }
+    
+    /**
+     * Cleanup callback when runner is evicted
+     */
+    private void onRunnerEvicted(
+        RunnerCacheKey key, 
+        ModelRunner runner,
+        RemovalCause cause
+    ) {
+        if (runner != null) {
+            try {
+                runner.close();
+                Log.infof("Closed runner %s for model %s (cause: %s)", 
+                    key.runnerName(), key.modelId(), cause);
+            } catch (Exception e) {
+                Log.errorf(e, "Error closing runner %s", key.runnerName());
+            }
+        }
+        lastAccess.remove(key);
+    }
+    
+    /**
+     * Background cleanup of idle runners
+     */
+    private void startCleanupScheduler() {
+        Executors.newSingleThreadScheduledExecutor()
+            .scheduleAtFixedRate(
+                this::cleanupIdleRunners,
+                5, 5, TimeUnit.MINUTES
+            );
+    }
+    
+    private void cleanupIdleRunners() {
+        Instant threshold = Instant.now().minus(IDLE_TIMEOUT);
+        
+        lastAccess.entrySet().removeIf(entry -> {
+            if (entry.getValue().isBefore(threshold)) {
+                warmPool.invalidate(entry.getKey());
+                return true;
+            }
+            return false;
+        });
+    }
+    
+    /**
+     * Cache key for runner pooling
+     */
+    private record RunnerCacheKey(
+        TenantId tenantId,
+        String modelId,
+        String runnerName
+    ) {}
+}
+```
+
+---
+
+## Implementation Guide
+
+### 5. Adapter Implementations
+
+#### GGUF/llama.cpp Adapter
+
+```java
+// inference-adapter-gguf/src/main/java/com/enterprise/inference/adapter/gguf/
+
+/**
+ * llama.cpp runner using JDK 25 Foreign Function & Memory API
+ * Supports CPU and CUDA acceleration for GGUF models
+ */
+@ApplicationScoped
+@IfBuildProperty(
+    name = "inference.adapter.gguf.enabled", 
+    stringValue = "true"
+)
+public class LlamaCppRunner implements ModelRunner {
+    
+    private static final Logger log = Logger.getLogger(LlamaCppRunner.class);
+    
+    private volatile boolean initialized = false;
+    private ModelManifest manifest;
+    private MemorySegment contextHandle;
+    private FFMNativeBinding binding;
+    private TenantContext tenantContext;
+    private Path modelPath;
+    
+    @Inject
+    ModelRepository repository;
+    
+    @ConfigProperty(name = "inference.adapter.gguf.threads")
+    Optional<Integer> threads;
+    
+    @ConfigProperty(name = "inference.adapter.gguf.use-gpu")
+    Optional<Boolean> useGpu;
+    
+    @Override
+    public void initialize(
+        ModelManifest manifest,
+        Map<String, Object> config,
+        TenantContext tenantContext
+    ) throws ModelLoadException {
+        try {
+            this.manifest = manifest;
+            this.tenantContext = tenantContext;
+            
+            // Download model artifact if not cached
+            this.modelPath = repository.downloadArtifact(
+                manifest, 
+                ModelFormat.GGUF
+            );
+            
+            // Load native library
+            this.binding = FFMNativeBinding.load();
+            
+            // Initialize context with parameters
+            LlamaContextParams params = buildContextParams(config);
+            this.contextHandle = binding.llamaInitFromFile(
+                modelPath.toString(), 
+                params
+            );
+            
+            if (contextHandle == null || contextHandle.address() == 0) {
+                throw new ModelLoadException(
+                    "Failed to initialize llama.cpp context"
+                );
+            }
+            
+            this.initialized = true;
+            
+            log.infof("Initialized GGUF model %s for tenant %s", 
+                manifest.modelId(), 
+                tenantContext.tenantId().value());
+                
+        } catch (Exception e) {
+            throw new ModelLoadException(
+                "Failed to initialize GGUF runner", e
+            );
+        }
+    }
+    
+    @Override
+    public InferenceResponse infer(
+        InferenceRequest request,
+        RequestContext context
+    ) throws InferenceException {
+        
+        if (!initialized) {
+            throw new IllegalStateException("Runner not initialized");
+        }
+        
+        try (var arena = Arena.ofConfined()) {
+            
+            // Tokenize input
+            String prompt = request.getInput("prompt", String.class);
+            int[] tokens = binding.llamaTokenize(
+                contextHandle, 
+                prompt, 
+                arena
+            );
+            
+            // Prepare generation parameters
+            GenerationParams genParams = GenerationParams.builder()
+                .maxTokens(request.getParameter("max_tokens", 512))
+                .temperature(request.getParameter("temperature", 0.7f))
+                .topP(request.getParameter("top_p", 0.9f))
+                .build();
+            
+            // Generate with timeout enforcement
+            CompletableFuture<String> future = CompletableFuture
+                .supplyAsync(() -> generate(tokens, genParams));
+            
+            String output = future.get(
+                context.timeout().toMillis(), 
+                TimeUnit.MILLISECONDS
+            );
+            
+            return InferenceResponse.builder()
+                .requestId(request.requestId())
+                .modelId(manifest.modelId())
+                .output("text", output)
+                .metadata("runner", "gguf")
+                .metadata("tokens_generated", calculateTokens(output))
+                .build();
+                
+        } catch (TimeoutException e) {
+            throw new InferenceTimeoutException(
+                "Inference exceeded timeout: " + context.timeout(), e
+            );
+        } catch (Exception e) {
+            throw new InferenceException(
+                "GGUF inference failed", e
+            );
+        }
+    }
+    
+    @Override
+    public CompletionStage<InferenceResponse> inferAsync(
+        InferenceRequest request,
+        RequestContext context
+    ) {
+        return CompletableFuture.supplyAsync(
+            () -> infer(request, context),
+            ForkJoinPool.commonPool()
+        );
+    }
+    
+    @Override
+    public HealthStatus health() {
+        if (!initialized) {
+            return HealthStatus.down("Not initialized");
+        }
+        
+        try {
+            boolean alive = binding.llamaCheckContext(contextHandle);
+            return alive ? 
+                HealthStatus.up() : 
+                HealthStatus.down("Context check failed");
+        } catch (Exception e) {
+            return HealthStatus.down("Health check error: " + e.getMessage());
+        }
+    }
+    
+    @Override
+    public ResourceMetrics getMetrics() {
+        if (!initialized) {
+            return ResourceMetrics.empty();
+        }
+        
+        return ResourceMetrics.builder()
+            .memoryUsedMb(binding.llamaGetMemoryUsage(contextHandle))
+            .lastInferenceLatency(Duration.ZERO) // Track separately
+            .build();
+    }
+    
+    @Override
+    public void warmup(List<InferenceRequest> sampleInputs) {
+        if (sampleInputs.isEmpty()) {
+            // Generate default warmup
+            sampleInputs = List.of(
+                InferenceRequest.builder()
+                    .input("prompt", "Warmup prompt")
+                    .parameter("max_tokens", 10)
+                    .build()
+            );
+        }
+        
+        for (InferenceRequest sample : sampleInputs) {
+            try {
+                infer(sample, RequestContext.defaultContext());
+            } catch (Exception e) {
+                log.warnf("Warmup failed: %s", e.getMessage());
+            }
+        }
+    }
+    
+    @Override
+    public RunnerMetadata metadata() {
+        return new RunnerMetadata(
+            "gguf",
+            "1.0.0",
+            List.of(ModelFormat.GGUF),
+            useGpu.orElse(false) ? 
+                List.of(DeviceType.CPU, DeviceType.CUDA) : 
+                List.of(DeviceType.CPU),
+            ExecutionMode.SYNCHRONOUS,
+            Map.of(
+                "supports_streaming", false,
+                "supports_batching", true
+            )
+        );
+    }
+    
+    @Override
+    public void close() {
+        if (initialized && contextHandle != null) {
+            try {
+                binding.llamaFreeContext(contextHandle);
+                initialized = false;
+                log.infof("Closed GGUF runner for model %s", 
+                    manifest.modelId());
+            } catch (Exception e) {
+                log.errorf(e, "Error closing GGUF runner");
+            }
+        }
+    }
+    
+    private LlamaContextParams buildContextParams(Map<String, Object> config) {
+        return LlamaContextParams.builder()
+            .nThreads(threads.orElse(Runtime.getRuntime().availableProcessors()))
+            .nGpuLayers(useGpu.orElse(false) ? 99 : 0)
+            .useMemoryLock(true)
+            .logitsAll(false)
+            .build();
+    }
+    
+    private String generate(int[] tokens, GenerationParams params) {
+        // Native generation logic via FFM
+        return binding.llamaGenerate(contextHandle, tokens, params);
+    }
+    
+    private int calculateTokens(String text) {
+        // Rough estimation - implement proper token counting
+        return text.split("\\s+").length;
+    }
+}
+```
+
+#### ONNX Runtime Adapter
+
+```java
+// inference-adapter-onnx/src/main/java/com/enterprise/inference/adapter/onnx/
+
+/**
+ * ONNX Runtime adapter with execution provider selection
+ * Supports CPU, CUDA, DirectML, TensorRT, and OpenVINO
+ */
+@ApplicationScoped
+@IfBuildProperty(
+    name = "inference.adapter.onnx.enabled",
+    stringValue = "true"
+)
+public class OnnxRuntimeRunner implements ModelRunner {
+    
+    private static final Logger log = Logger.getLogger(OnnxRuntimeRunner.class);
+    
+    private volatile boolean initialized = false;
+    private ModelManifest manifest;
+    private OrtSession session;
+    private OrtEnvironment environment;
+    private ExecutionProviderSelector providerSelector;
+    
+    @Inject
+    ModelRepository repository;
+    
+    @ConfigProperty(name = "inference.adapter.onnx.execution-provider")
+    Optional<String> preferredProvider;
+    
+    @ConfigProperty(name = "inference.adapter.onnx.inter-op-threads")
+    Optional<Integer> interOpThreads;
+    
+    @ConfigProperty(name = "inference.adapter.onnx.intra-op-threads")
+    Optional<Integer> intraOpThreads;
+    
+    @Override
+    public void initialize(
+        ModelManifest manifest,
+        Map<String, Object> config,
+        TenantContext tenantContext
+    ) throws ModelLoadException {
+        try {
+            this.manifest = manifest;
+            
+            // Download ONNX model
+            Path modelPath = repository.downloadArtifact(
+                manifest,
+                ModelFormat.ONNX
+            );
+            
+            // Create ONNX environment (shared)
+            this.environment = OrtEnvironment.getEnvironment();
+            
+            // Select best execution provider
+            this.providerSelector = new ExecutionProviderSelector();
+            String provider = selectExecutionProvider(config);
+            
+            // Create session options
+            OrtSession.SessionOptions options = new OrtSession.SessionOptions();
+            configureSessionOptions(options, provider, config);
+            
+            // Create session
+            this.session = environment.createSession(
+                modelPath.toString(),
+                options
+            );
+            
+            this.initialized = true;
+            
+            log.infof("Initialized ONNX model %s with provider %s", 
+                manifest.modelId(), provider);
+                
+        } catch (OrtException e) {
+            throw new ModelLoadException(
+                "Failed to initialize ONNX Runtime", e
+            );
+        }
+    }
+    
+    @Override
+    public InferenceResponse infer(
+        InferenceRequest request,
+        RequestContext context
+    ) throws InferenceException {
+        
+        if (!initialized) {
+            throw new IllegalStateException("Runner not initialized");
+        }
+        
+        try {
+            // Convert inputs to ONNX tensors
+            Map<String, OnnxTensor> inputs = convertInputs(request);
+            
+            // Run inference
+            OrtSession.Result result = session.run(inputs);
+            
+            // Convert outputs
+            Map<String, Object> outputs = convertOutputs(result);
+            
+            // Cleanup
+            inputs.values().forEach(OnnxTensor::close);
+            result.close();
+            
+            return InferenceResponse.builder()
+                .requestId(request.requestId())
+                .modelId(manifest.modelId())
+                .outputs(outputs)
+                .metadata("runner", "onnx")
+                .build();
+                
+        } catch (OrtException e) {
+            throw new InferenceException("ONNX inference failed", e);
+        }
+    }
+    
+    @Override
+    public CompletionStage<InferenceResponse> inferAsync(
+        InferenceRequest request,
+        RequestContext context
+    ) {
+        return CompletableFuture.supplyAsync(
+            () -> infer(request, context)
+        );
+    }
+    
+    @Override
+    public HealthStatus health() {
+        return initialized ? 
+            HealthStatus.up() : 
+            HealthStatus.down("Not initialized");
+    }
+    
+    @Override
+    public ResourceMetrics getMetrics() {
+        // ONNX Runtime doesn't expose direct memory metrics
+        // Use JVM metrics or system monitoring
+        return ResourceMetrics.builder()
+            .memoryUsedMb(estimateMemoryUsage())
+            .build();
+    }
+    
+    @Override
+    public RunnerMetadata metadata() {
+        List<DeviceType> devices = new ArrayList<>();
+        devices.add(DeviceType.CPU);
+        
+        if (providerSelector.isProviderAvailable("CUDAExecutionProvider")) {
+            devices.add(DeviceType.CUDA);
+        }
+        if (providerSelector.isProviderAvailable("TensorrtExecutionProvider")) {
+            devices.add(DeviceType.CUDA);
+        }
+        
+        return new RunnerMetadata(
+            "onnx",
+            OrtEnvironment.getVersion(),
+            List.of(ModelFormat.ONNX),
+            devices,
+            ExecutionMode.SYNCHRONOUS,
+            Map.of(
+                "execution_providers", 
+                    providerSelector.getAvailableProviders()
+            )
+        );
+    }
+    
+    @Override
+    public void close() {
+        if (session != null) {
+            try {
+                session.close();
+            } catch (OrtException e) {
+                log.errorf(e, "Error closing ONNX session");
+            }
+        }
+        initialized = false;
+    }
+    
+    private String selectExecutionProvider(Map<String, Object> config) {
+        // Priority: config > hardware detection > default
+        if (config.containsKey("execution_provider")) {
+            return (String) config.get("execution_provider");
+        }
+        
+        if (preferredProvider.isPresent()) {
+            String provider = preferredProvider.get();
+            if (providerSelector.isProviderAvailable(provider)) {
+                return provider;
+            }
+        }
+        
+        // Auto-detect best available
+        return providerSelector.selectBestProvider();
+    }
+    
+    private void configureSessionOptions(
+        OrtSession.SessionOptions options,
+        String provider,
+        Map<String, Object> config
+    ) throws OrtException {
+        
+        // Set thread counts
+        options.setInterOpNumThreads(
+            interOpThreads.orElse(1)
+        );
+        options.setIntraOpNumThreads(
+            intraOpThreads.orElse(
+                Runtime.getRuntime().availableProcessors()
+            )
+        );
+        
+        // Set execution provider
+        switch (provider) {
+            case "CUDAExecutionProvider":
+                options.addCUDA(0); // GPU device 0
+                break;
+            case "TensorrtExecutionProvider":
+                options.addTensorrt(0);
+                break;
+            case "OpenVINOExecutionProvider":
+                options.addOpenVINO("");
+                break;
+            case "DirectMLExecutionProvider":
+                options.addDirectML(0);
+                break;
+            default:
+                // CPUExecutionProvider is always available
+                break;
+        }
+        
+        // Optimization level
+        options.setOptimizationLevel(
+            OrtSession.SessionOptions.OptLevel.ALL_OPT
+        );
+        
+        // Memory optimization
+        options.setMemoryPatternOptimization(true);
+    }
+    
+    private Map<String, OnnxTensor> convertInputs(
+        InferenceRequest request
+    ) throws OrtException {
+        // Convert request inputs to ONNX tensors
+        // Implementation depends on model input schema
+        Map<String, OnnxTensor> tensors = new HashMap<>();
+        
+        // Example for text input
+        if (request.hasInput("input_ids")) {
+            long[] inputIds = request.getInput("input_ids", long[].class);
+            OnnxTensor tensor = OnnxTensor.createTensor(
+                environment,
+                LongBuffer.wrap(inputIds),
+                new long[]{1, inputIds.length}
+            );
+            tensors.put("input_ids", tensor);
+        }
+        
+        return tensors;
+    }
+    
+    private Map<String, Object> convertOutputs(
+        OrtSession.Result result
+    ) throws OrtException {
+        Map<String, Object> outputs = new HashMap<>();
+        
+        for (Map.Entry<String, OnnxValue> entry : result) {
+            String name = entry.getKey();
+            OnnxValue value = entry.getValue();
+            
+            if (value instanceof OnnxTensor tensor) {
+                // Convert tensor to appropriate Java type
+                outputs.put(name, tensor.getValue());
+            }
+        }
+        
+        return outputs;
+    }
+    
+    private long estimateMemoryUsage() {
+        // Estimate based on model size and session state
+        try {
+            return session.getMetadata().getProducerName() != null ? 
+                512 : 0; // Placeholder
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+}
+```
+
+#### Triton Inference Server Adapter
+
+```java
+// inference-adapter-triton/src/main/java/com/enterprise/inference/adapter/triton/
+
+/**
+ * Triton Inference Server client adapter supporting both
+ * gRPC and HTTP protocols with connection pooling
+ */
+@ApplicationScoped
+@IfBuildProperty(
+    name = "inference.adapter.triton.enabled",
+    stringValue = "true"
+)
+public class TritonGrpcRunner implements ModelRunner {
+    
+    private static final Logger log = Logger.getLogger(TritonGrpcRunner.class);
+    
+    private volatile boolean initialized = false;
+    private ModelManifest manifest;
+    private GRPCInferenceServiceBlockingStub stub;
+    private ManagedChannel channel;
+    
+    @ConfigProperty(name = "inference.adapter.triton.endpoint")
+    String tritonEndpoint;
+    
+    @ConfigProperty(name = "inference.adapter.triton.timeout-ms")
+    Optional<Integer> timeoutMs;
+    
+    @ConfigProperty(name = "inference.adapter.triton.use-ssl")
+    Optional<Boolean> useSsl;
+    
+    @Override
+    public void initialize(
+        ModelManifest manifest,
+        Map<String, Object> config,
+        TenantContext tenantContext
+    ) throws ModelLoadException {
+        try {
+            this.manifest = manifest;
+            
+            // Parse endpoint
+            String[] parts = tritonEndpoint.split(":");
+            String host = parts[0];
+            int port = parts.length > 1 ? 
+                Integer.parseInt(parts[1]) : 8001;
+            
+            // Create gRPC channel
+            ManagedChannelBuilder<?> channelBuilder = 
+                ManagedChannelBuilder.forAddress(host, port);
+            
+            if (useSsl.orElse(false)) {
+                channelBuilder.useTransportSecurity();
+            } else {
+                channelBuilder.usePlaintext();
+            }
+            
+            this.channel = channelBuilder
+                .maxInboundMessageSize(100 * 1024 * 1024) // 100MB
+                .keepAliveTime(30, TimeUnit.SECONDS)
+                .build();
+            
+            // Create stub
+            this.stub = GRPCInferenceServiceGrpc
+                .newBlockingStub(channel);
+            
+            // Verify model is loaded on Triton
+            verifyModelReady();
+            
+            this.initialized = true;
+            
+            log.infof("Connected to Triton server at %s for model %s",
+                tritonEndpoint, manifest.name());
+                
+        } catch (Exception e) {
+            throw new ModelLoadException(
+                "Failed to initialize Triton client", e
+            );
+        }
+    }
+    
+    @Override
+    public InferenceResponse infer(
+        InferenceRequest request,
+        RequestContext context
+    ) throws InferenceException {
+        
+        if (!initialized) {
+            throw new IllegalStateException("Runner not initialized");
+        }
+        
+        try {
+            // Build Triton request
+            ModelInferRequest tritonRequest = buildTritonRequest(request);
+            
+            // Execute with timeout
+            ModelInferResponse tritonResponse = stub
+                .withDeadlineAfter(
+                    timeoutMs.orElse(30000), 
+                    TimeUnit.MILLISECONDS
+                )
+                .modelInfer(tritonRequest);
+            
+            // Convert response
+            return convertTritonResponse(tritonResponse, request);
+            
+        } catch (StatusRuntimeException e) {
+            if (e.getStatus().getCode() == Status.Code.DEADLINE_EXCEEDED) {
+                throw new InferenceTimeoutException(
+                    "Triton inference timeout", e
+                );
+            }
+            throw new InferenceException(
+                "Triton inference failed: " + e.getStatus(), e
+            );
+        }
+    }
+    
+    @Override
+    public CompletionStage<InferenceResponse> inferAsync(
+        InferenceRequest request,
+        RequestContext context
+    ) {
+        return CompletableFuture.supplyAsync(
+            () -> infer(request, context)
+        );
+    }
+    
+    @Override
+    public HealthStatus health() {
+        if (!initialized) {
+            return HealthStatus.down("Not initialized");
+        }
+        
+        try {
+            // Call Triton health endpoint
+            ServerLiveRequest liveRequest = ServerLiveRequest
+                .newBuilder()
+                .build();
+                
+            ServerLiveResponse response = stub
+                .withDeadlineAfter(5, TimeUnit.SECONDS)
+                .serverLive(liveRequest);
+                
+            return response.getLive() ?
+                HealthStatus.up() :
+                HealthStatus.down("Server not live");
+                
+        } catch (Exception e) {
+            return HealthStatus.down("Health check failed: " + 
+                e.getMessage());
+        }
+    }
+    
+    @Override
+    public ResourceMetrics getMetrics() {
+        // Query Triton metrics endpoint
+        try {
+            ModelStatisticsRequest statsRequest = ModelStatisticsRequest
+                .newBuilder()
+                .setName(manifest.name())
+                .setVersion(manifest.version())
+                .build();
+                
+            ModelStatisticsResponse statsResponse = stub
+                .modelStatistics(statsRequest);
+                
+            // Extract relevant metrics
+            return ResourceMetrics.builder()
+                .requestCount(statsResponse.getModelStats(0)
+                    .getInferenceStats()
+                    .getSuccess()
+                    .getCount())
+                .build();
+                
+        } catch (Exception e) {
+            return ResourceMetrics.empty();
+        }
+    }
+    
+    @Override
+    public RunnerMetadata metadata() {
+        return new RunnerMetadata(
+            "triton",
+            "2.x",
+            List.of(
+                ModelFormat.ONNX,
+                ModelFormat.TENSORRT,
+                ModelFormat.TORCHSCRIPT,
+                ModelFormat.TENSORFLOW_SAVED_MODEL
+            ),
+            List.of(DeviceType.CPU, DeviceType.CUDA),
+            ExecutionMode.ASYNCHRONOUS,
+            Map.of(
+                "supports_streaming", true,
+                "supports_batching", true,
+                "endpoint", tritonEndpoint
+            )
+        );
+    }
+    
+    @Override
+    public void close() {
+        if (channel != null && !channel.isShutdown()) {
+            try {
+                channel.shutdown();
+                channel.awaitTermination(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                channel.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+        initialized = false;
+    }
+    
+    private void verifyModelReady() {
+        ModelReadyRequest readyRequest = ModelReadyRequest
+            .newBuilder()
+            .setName(manifest.name())
+            .setVersion(manifest.version())
+            .build();
+            
+        ModelReadyResponse response = stub.modelReady(readyRequest);
+        
+        if (!response.getReady()) {
+            throw new IllegalStateException(
+                "Model not ready on Triton: " + manifest.name()
+            );
+        }
+    }
+    
+    private ModelInferRequest buildTritonRequest(
+        InferenceRequest request
+    ) {
+        ModelInferRequest.Builder builder = ModelInferRequest
+            .newBuilder()
+            .setModelName(manifest.name())
+            .setModelVersion(manifest.version());
+        
+        // Add inputs
+        request.getInputs().forEach((name, value) -> {
+            InferInputTensor input = InferInputTensor.newBuilder()
+                .setName(name)
+                .setDatatype("FP32") // or INT64, etc.
+                .addShape(1) // Batch size
+                .setContents(
+                    InferTensorContents.newBuilder()
+                        // Add actual data
+                        .build()
+                )
+                .build();
+            builder.addInputs(input);
+        });
+        
+        // Add requested outputs
+        builder.addOutputs(
+            ModelInferRequest.InferRequestedOutputTensor
+                .newBuilder()
+                .setName("output")
+                .build()
+        );
+        
+        return builder.build();
+    }
+    
+    private InferenceResponse convertTritonResponse(
+        ModelInferResponse tritonResponse,
+        InferenceRequest originalRequest
+    ) {
+        Map<String, Object> outputs = new HashMap<>();
+        
+        tritonResponse.getOutputsList().forEach(output -> {
+            String name = output.getName();
+            // Extract data from output tensor
+            // Implementation depends on data type
+            outputs.put(name, extractTensorData(output));
+        });
+        
+        return InferenceResponse.builder()
+            .requestId(originalRequest.requestId())
+            .modelId(manifest.modelId())
+            .outputs(outputs)
+            .metadata("runner", "triton")
+            .metadata("model_version", tritonResponse.getModelVersion())
+            .build();
+    }
+    
+    private Object extractTensorData(ModelInferResponse.InferOutputTensor output) {
+        // Extract based on datatype
+        // Simplified example
+        return output.getContents().getFp32ContentList();
+    }
+}
+```
+
+---
+
+## Configuration Management
+
+### Application Configuration
+
+```yaml
+# inference-application/src/main/resources/application.yml
+
+# Quarkus Configuration
+quarkus:
+  application:
+    name: inference-platform
+  
+  # HTTP Configuration
+  http:
+    port: 8080
+    cors: true
+    limits:
+      max-body-size: 100M
+  
+  # Native Image Settings
+  native:
+    resources:
+      includes: "**/*.json,**/*.yml"
+  
+  # Logging
+  log:
+    level: INFO
+    category:
+      "com.enterprise.inference":
+        level: DEBUG
+    console:
+      format: "%d{HH:mm:ss} %-5p [%c{2.}] (%t) %s%e%n"
+  
+  # OpenTelemetry
+  otel:
+    enabled: true
+    exporter:
+      otlp:
+        endpoint: http://otel-collector:4317
+  
+  # Security
+  oidc:
+    enabled: true
+    auth-server-url: ${KEYCLOAK_URL:http://keycloak:8080}/realms/inference
+    client-id: inference-platform
+    credentials:
+      secret: ${OIDC_CLIENT_SECRET}
+  
+  # Database (for metadata)
+  datasource:
+    db-kind: postgresql
+    username: ${DB_USER:inference}
+    password: ${DB_PASSWORD}
+    jdbc:
+      url: ${DB_URL:jdbc:postgresql://postgres:5432/inference_metadata}
+      max-size: 20
+      min-size: 5
+  
+  # Flyway for schema migration
+  flyway:
+    migrate-at-start: true
+    baseline-on-migrate: true
+
+# Inference Platform Configuration
+inference:
+  # Model Repository
+  repository:
+    type: s3  # or minio, local
+    s3:
+      endpoint: ${S3_ENDPOINT:https://s3.amazonaws.com}
+      bucket: ${S3_BUCKET:inference-models}
+      region: ${S3_REGION:us-east-1}
+      access-key: ${S3_ACCESS_KEY}
+      secret-key: ${S3_SECRET_KEY}
+    cache:
+      enabled: true
+      max-size-gb: 50
+      eviction-policy: lru
+      base-path: /var/cache/models
+  
+  # Default Runner Selection
+  default-runners: ["onnx", "gguf", "triton"]
+  
+  # Selection Policy
+  selection-policy:
+    type: latency-optimized  # or cost-optimized, balanced
+    scoring:
+      device-match-weight: 50
+      format-match-weight: 30
+      latency-weight: 25
+      availability-weight: 20
+      cost-weight: 10
+  
+  # Fallback Strategy
+  fallback:
+    enabled: true
+    max-retries: 3
+    retry-delay-ms: 1000
+    exponential-backoff: true
+  
+  # Warm Pool
+  warm-pool:
+    enabled: true
+    max-instances: 10
+    idle-timeout-minutes: 15
+    prewarm-on-startup: true
+    prewarm-models:
+      - "gpt-small:1.0"
+      - "bert-base:2.0"
+  
+  # Resource Limits (per tenant)
+  limits:
+    max-concurrent-requests: 100
+    max-queue-size: 1000
+    request-timeout-seconds: 30
+    rate-limit:
+      requests-per-minute: 1000
+      burst-size: 100
+  
+  # Circuit Breaker
+  circuit-breaker:
+    enabled: true
+    failure-threshold: 5
+    success-threshold: 2
+    timeout-seconds: 60
+
+# Runner-Specific Configuration
+runners:
+  gguf:
+    enabled: ${INFERENCE_ADAPTER_GGUF:true}
+    threads: ${GGUF_THREADS:8}
+    use-gpu: ${GGUF_USE_GPU:false}
+    gpu-layers: ${GGUF_GPU_LAYERS:32}
+    warmup:
+      enabled: true
+  
+  onnx:
+    enabled: ${INFERENCE_ADAPTER_ONNX:true}
+    execution-provider: ${ONNX_EP:CPUExecutionProvider}
+    inter-op-threads: 1
+    intra-op-threads: ${ONNX_THREADS:8}
+    optimization-level: all
+    memory-pattern-optimization: true
+  
+  triton:
+    enabled: ${INFERENCE_ADAPTER_TRITON:false}
+    endpoint: ${TRITON_ENDPOINT:triton.svc.cluster.local:8001}
+    timeout-ms: 30000
+    use-ssl: false
+    max-connections: 10
+    connection-timeout-ms: 5000
+  
+  tpu:
+    enabled: ${INFERENCE_ADAPTER_TPU:false}
+    project-id: ${GCP_PROJECT_ID}
+    zone: ${GCP_ZONE:us-central1-a}
+    tpu-name: ${TPU_NAME}
+
+# Multi-Tenancy Configuration
+tenants:
+  resolver:
+    type: jwt  # or header, query-param
+    jwt:
+      claim-name: tenant_id
+  
+  # Default Tenant Configuration
+  default:
+    max-concurrent-requests: 50
+    max-models: 10
+    storage-quota-gb: 100
+    rate-limit:
+      requests-per-minute: 500
+  
+  # Per-Tenant Overrides
+  tenants:
+    tenant-premium:
+      max-concurrent-requests: 200
+      max-models: 50
+      storage-quota-gb: 500
+      rate-limit:
+        requests-per-minute: 5000
+      runners:
+        onnx:
+          execution-provider: CUDAExecutionProvider
+        triton:
+          enabled: true
+
+# Observability
+observability:
+  metrics:
+    enabled: true
+    export:
+      prometheus:
+        enabled: true
+        path: /metrics
+  
+  tracing:
+    enabled: true
+    sampler:
+      probability: 0.1  # 10% sampling
+    exporter:
+      jaeger:
+        endpoint: ${JAEGER_ENDPOINT:http://jaeger:14250}
+  
+  logging:
+    structured: true
+    include-trace-id: true
+    audit:
+      enabled: true
+      events:
+        - model_load
+        - inference_request
+        - inference_failure
+        - quota_exceeded
+```
+
+---
+
+## Build Configuration
+
+### Parent POM with Profiles
+
+```xml
+<!-- pom.xml -->
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.enterprise</groupId>
+    <artifactId>inference-platform-parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>Enterprise Inference Platform</name>
+    <description>
+        Production-grade multi-format inference engine with 
+        multi-tenancy support
+    </description>
+
+    <properties>
+        <java.version>21</java.version>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        
+        <!-- Quarkus -->
+        <quarkus.version>3.16.3</quarkus.version>
+        
+        <!-- Libraries -->
+        <onnxruntime.version>1.19.2</onnxruntime.version>
+        <grpc.version>1.62.2</grpc.version>
+        <protobuf.version>3.25.3</protobuf.version>
+        <caffeine.version>3.1.8</caffeine.version>
+        <resilience4j.version>2.2.0</resilience4j.version>
+        
+        <!-- Testing -->
+        <junit.version>5.10.2</junit.version>
+        <testcontainers.version>1.19.7</testcontainers.version>
+        <rest-assured.version>5.4.0</rest-assured.version>
+    </properties>
+
+    <modules>
+        <module>inference-api</module>
+        <module>inference-core</module>
+        <module>inference-infrastructure</module>
+        <module>inference-application</module>
+        <module>inference-tests</module>
+    </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Quarkus BOM -->
+            <dependency>
+                <groupId>io.quarkus.platform</groupId>
+                <artifactId>quarkus-bom</artifactId>
+                <version>${quarkus.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Internal Modules -->
+            <dependency>
+                <groupId>com.enterprise</groupId>
+                <artifactId>inference-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.enterprise</groupId>
+                <artifactId>inference-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- ONNX Runtime -->
+            <dependency>
+                <groupId>com.microsoft.onnxruntime</groupId>
+                <artifactId>onnxruntime</artifactId>
+                <version>${onnxruntime.version}</version>
+            </dependency>
+
+            <!-- gRPC -->
+            <dependency>
+                <groupId>io.grpc</groupId>
+                <artifactId>grpc-bom</artifactId>
+                <version>${grpc.version}</version>
+                <type>pom

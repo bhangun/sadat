@@ -1,0 +1,20 @@
+package io.quarkus.ai.agent.runtime.memory;
+
+
+/**
+ * In-Memory Backend
+ */
+package io.quarkus.ai.agent.runtime.memory.backend;
+
+import io.quarkus.ai.agent.runtime.memory.MemoryBackend;
+import io.quarkus.ai.agent.runtime.model.MemoryConfig;
+
+
+/**
+ * Redis Backend
+ */
+package io.quarkus.ai.agent.runtime.memory.backend;
+
+import io.quarkus.ai.agent.runtime.memory.MemoryBackend;
+import io.quarkus.ai.agent.runtime.model.MemoryConfig;
+

@@ -1,0 +1,50 @@
+{
+    "$id": "https://kayys.tech/schema/v1/nodes/integration/aggregator.schema.json",
+    "allOf": [
+        {
+            "$ref": "./base.schema.json"
+        }
+    ],
+    "properties": {
+        "type": {
+            "const": "Aggregator"
+        },
+        "aggregator": {
+            "type": "object",
+            "required": [
+                "correlationExpression"
+            ],
+            "properties": {
+                "correlationExpression": {
+                    "type": "string",
+                    "description": "Groups messages (e.g., '${header.orderId}')"
+                },
+                "completionPredicate": {
+                    "type": "string",
+                    "description": "When to complete aggregation"
+                },
+                "completionTimeout": {
+                    "type": "integer",
+                    "description": "Timeout in milliseconds"
+                },
+                "completionSize": {
+                    "type": "integer",
+                    "description": "Complete after N messages"
+                },
+                "aggregationStrategy": {
+                    "type": "string",
+                    "enum": [
+                        "flexible",
+                        "grouped",
+                        "custom"
+                    ],
+                    "default": "flexible"
+                },
+                "repositoryRef": {
+                    "type": "string",
+                    "description": "Persistent aggregation repository"
+                }
+            }
+        }
+    }
+}

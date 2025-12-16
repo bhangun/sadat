@@ -1,0 +1,41 @@
+{
+    "$id": "https://kayys.tech/schema/v1/nodes/integration/content-router.schema.json",
+    "allOf": [
+        {
+            "$ref": "./base.schema.json"
+        }
+    ],
+    "properties": {
+        "type": {
+            "const": "ContentBasedRouter"
+        },
+        "routingRules": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "when",
+                    "to"
+                ],
+                "properties": {
+                    "when": {
+                        "type": "string",
+                        "description": "Simple language predicate (e.g., '${header.priority} == 'high'')"
+                    },
+                    "to": {
+                        "type": "string",
+                        "description": "Destination endpoint URI"
+                    },
+                    "transform": {
+                        "type": "string",
+                        "description": "Optional transformation expression"
+                    }
+                }
+            }
+        },
+        "otherwise": {
+            "type": "string",
+            "description": "Default route if no rules match"
+        }
+    }
+}

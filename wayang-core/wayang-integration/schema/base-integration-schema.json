@@ -1,0 +1,116 @@
+{
+    "$id": "https://kayys.tech/schema/v1/nodes/integration/base.schema.json",
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Integration Node Base",
+    "allOf": [
+        {
+            "$ref": "https://kayys.tech/schema/v1/node-base.schema.json"
+        }
+    ],
+    "required": [
+        "camelConfig"
+    ],
+    "properties": {
+        "camelConfig": {
+            "type": "object",
+            "required": [
+                "routeId",
+                "pattern"
+            ],
+            "properties": {
+                "routeId": {
+                    "type": "string",
+                    "description": "Unique Camel route identifier"
+                },
+                "pattern": {
+                    "type": "string",
+                    "enum": [
+                        "message-router",
+                        "content-based-router",
+                        "message-translator",
+                        "message-filter",
+                        "splitter",
+                        "aggregator",
+                        "enricher",
+                        "resequencer",
+                        "scatter-gather",
+                        "composed-message-processor",
+                        "process-manager",
+                        "content-enricher",
+                        "claim-check",
+                        "normalizer",
+                        "canonical-data-model"
+                    ]
+                },
+                "from": {
+                    "type": "string",
+                    "description": "Camel URI (e.g., 'kafka:input-topic', 'direct:start')"
+                },
+                "to": {
+                    "oneOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    ],
+                    "description": "Camel endpoint URI(s)"
+                },
+                "errorHandlerRef": {
+                    "type": "string",
+                    "default": "defaultErrorHandler"
+                },
+                "transacted": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "streamCaching": {
+                    "type": "boolean",
+                    "default": true
+                },
+                "timeout": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Timeout in milliseconds"
+                }
+            }
+        },
+        "dataFormat": {
+            "type": "object",
+            "properties": {
+                "input": {
+                    "type": "string",
+                    "enum": [
+                        "json",
+                        "xml",
+                        "csv",
+                        "avro",
+                        "protobuf",
+                        "yaml",
+                        "plain"
+                    ]
+                },
+                "output": {
+                    "type": "string",
+                    "enum": [
+                        "json",
+                        "xml",
+                        "csv",
+                        "avro",
+                        "protobuf",
+                        "yaml",
+                        "plain"
+                    ]
+                },
+                "marshalOptions": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        }
+    }
+}

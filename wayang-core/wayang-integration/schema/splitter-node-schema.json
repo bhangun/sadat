@@ -1,0 +1,47 @@
+{
+    "$id": "https://kayys.tech/schema/v1/nodes/integration/splitter.schema.json",
+    "allOf": [
+        {
+            "$ref": "./base.schema.json"
+        }
+    ],
+    "properties": {
+        "type": {
+            "const": "Splitter"
+        },
+        "splitter": {
+            "type": "object",
+            "required": [
+                "expression"
+            ],
+            "properties": {
+                "expression": {
+                    "type": "string",
+                    "description": "JSONPath, XPath, or Simple expression"
+                },
+                "streaming": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable streaming mode for large payloads"
+                },
+                "parallel": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "aggregationStrategy": {
+                    "type": "string",
+                    "enum": [
+                        "groupedExchange",
+                        "custom",
+                        "none"
+                    ],
+                    "default": "none"
+                },
+                "stopOnException": {
+                    "type": "boolean",
+                    "default": false
+                }
+            }
+        }
+    }
+}

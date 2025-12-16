@@ -1,0 +1,1416 @@
+# Production Deployment Guide
+
+## 🚀 Complete Production Setup
+
+### Prerequisites
+
+- Java 17+
+- Maven 3.8+
+- Docker & Docker Compose
+- PostgreSQL 14+
+- Redis 7+
+- Kubernetes (optional)
+
+---
+
+## 📦 Build & Package
+
+### 1. Build the Extension
+
+```bash
+cd ai-agent-runtime-parent
+mvn clean install -DskipTests
+```
+
+### 2. Build Your Application
+
+```bash
+# JVM mode
+./mvnw clean package
+
+# Native mode (faster startup, lower memory)
+./mvnw clean package -Pnative
+
+# Docker image
+./mvnw clean package -Dquarkus.container-image.build=true
+```
+
+---
+
+## 🐳 Docker Compose Setup
+
+Create `docker-compose.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_DB: agentdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # AI Agent Runtime
+  agent-runtime:
+    image: ai-agent-runtime:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Database
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: agentdb
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      
+      # LLM Providers
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      
+      # Security
+      API_KEYS: ${API_KEYS:-test-key-1,test-key-2}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      
+      # Configuration
+      QUARKUS_LOG_LEVEL: INFO
+      MAX_CONCURRENT_WORKFLOWS: 100
+      WORKFLOW_TIMEOUT: 300
+      
+      # Monitoring
+      TRACING_ENABLED: true
+      OTEL_ENDPOINT: http://jaeger:4317
+      
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/deployments/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # Prometheus (Metrics)
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+
+  # Grafana (Dashboards)
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+  # Jaeger (Tracing)
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"  # UI
+      - "4317:4317"    # OTLP gRPC
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+```
+
+### Start Services
+
+```bash
+# Set environment variables
+export OPENAI_API_KEY=sk-...
+export ANTHROPIC_API_KEY=sk-ant-...
+export API_KEYS=prod-key-$(openssl rand -hex 16)
+
+# Start all services
+docker-compose up -d
+
+# Check logs
+docker-compose logs -f agent-runtime
+
+# Check health
+curl http://localhost:8080/health
+```
+
+---
+
+## ☸️ Kubernetes Deployment
+
+### 1. Create Namespace
+
+```yaml
+# namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-agent-runtime
+```
+
+### 2. Create Secrets
+
+```yaml
+# secrets.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: llm-api-keys
+  namespace: ai-agent-runtime
+type: Opaque
+stringData:
+  openai-key: "sk-..."
+  anthropic-key: "sk-ant-..."
+  google-key: "..."
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: api-keys
+  namespace: ai-agent-runtime
+type: Opaque
+stringData:
+  keys: "prod-key-1,prod-key-2"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: database-credentials
+  namespace: ai-agent-runtime
+type: Opaque
+stringData:
+  username: "postgres"
+  password: "change-me-in-prod"
+```
+
+### 3. Create ConfigMap
+
+```yaml
+# configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-runtime-config
+  namespace: ai-agent-runtime
+data:
+  application.yml: |
+    quarkus:
+      datasource:
+        db-kind: postgresql
+        jdbc:
+          url: jdbc:postgresql://postgres-service:5432/agentdb
+      redis:
+        hosts: redis://redis-service:6379
+    ai-agent:
+      execution:
+        max-concurrent-workflows: 100
+        workflow-timeout-seconds: 300
+      monitoring:
+        enabled: true
+```
+
+### 4. Deploy PostgreSQL
+
+```yaml
+# postgres.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: ai-agent-runtime
+spec:
+  serviceName: postgres-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:14-alpine
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: "agentdb"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: database-credentials
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: database-credentials
+              key: password
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-storage
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: ai-agent-runtime
+spec:
+  selector:
+    app: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+  clusterIP: None
+```
+
+### 5. Deploy Redis
+
+```yaml
+# redis.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: ai-agent-runtime
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+        volumeMounts:
+        - name: redis-storage
+          mountPath: /data
+      volumes:
+      - name: redis-storage
+        persistentVolumeClaim:
+          claimName: redis-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: ai-agent-runtime
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-pvc
+  namespace: ai-agent-runtime
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+```
+
+### 6. Deploy Application
+
+```yaml
+# deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-agent-runtime
+  namespace: ai-agent-runtime
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ai-agent-runtime
+  template:
+    metadata:
+      labels:
+        app: ai-agent-runtime
+    spec:
+      containers:
+      - name: runtime
+        image: your-registry/ai-agent-runtime:1.0.0
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: DB_HOST
+          value: "postgres-service"
+        - name: DB_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: database-credentials
+              key: username
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: database-credentials
+              key: password
+        - name: REDIS_HOST
+          value: "redis-service"
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: llm-api-keys
+              key: openai-key
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: llm-api-keys
+              key: anthropic-key
+        - name: API_KEYS
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: keys
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        volumeMounts:
+        - name: config
+          mountPath: /deployments/config
+      volumes:
+      - name: config
+        configMap:
+          name: agent-runtime-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-agent-runtime-service
+  namespace: ai-agent-runtime
+spec:
+  type: LoadBalancer
+  selector:
+    app: ai-agent-runtime
+  ports:
+  - port: 80
+    targetPort: 8080
+    name: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ai-agent-runtime-hpa
+  namespace: ai-agent-runtime
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ai-agent-runtime
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+```
+
+### 7. Deploy to Kubernetes
+
+```bash
+# Apply all configurations
+kubectl apply -f namespace.yaml
+kubectl apply -f secrets.yaml
+kubectl apply -f configmap.yaml
+kubectl apply -f postgres.yaml
+kubectl apply -f redis.yaml
+kubectl apply -f deployment.yaml
+
+# Check status
+kubectl get pods -n ai-agent-runtime
+kubectl logs -f deployment/ai-agent-runtime -n ai-agent-runtime
+
+# Get service URL
+kubectl get service ai-agent-runtime-service -n ai-agent-runtime
+```
+
+---
+
+## 🔒 Security Best Practices
+
+### 1. API Key Management
+
+```bash
+# Generate secure API keys
+openssl rand -hex 32
+
+# Store in Kubernetes secrets
+kubectl create secret generic api-keys \
+  --from-literal=keys="$(openssl rand -hex 32),$(openssl rand -hex 32)" \
+  -n ai-agent-runtime
+```
+
+### 2. Network Policies
+
+```yaml
+# network-policy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agent-runtime-policy
+  namespace: ai-agent-runtime
+spec:
+  podSelector:
+    matchLabels:
+      app: ai-agent-runtime
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 443  # HTTPS for LLM APIs
+```
+
+### 3. TLS/SSL Configuration
+
+```yaml
+# ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-agent-runtime-ingress
+  namespace: ai-agent-runtime
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+spec:
+  tls:
+  - hosts:
+    - api.your-domain.com
+    secretName: ai-agent-runtime-tls
+  rules:
+  - host: api.your-domain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ai-agent-runtime-service
+            port:
+              number: 80
+```
+
+---
+
+## 📊 Monitoring Setup
+
+### Prometheus Configuration
+
+```yaml
+# prometheus.yml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'ai-agent-runtime'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - ai-agent-runtime
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+```
+
+### Grafana Dashboard
+
+Import dashboard ID: Create custom dashboard for:
+- Workflow execution rate
+- Success/failure ratio
+- Average execution time
+- LLM call statistics
+- Token usage
+- Error rates
+
+---
+
+## 🧪 Testing
+
+### Health Check
+
+```bash
+curl http://localhost:8080/health
+```
+
+### Create Agent
+
+```bash
+curl -X POST http://localhost:8080/api/v1/agents \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
+  -d @agent-definition.json
+```
+
+### Execute Workflow
+
+```bash
+curl -X POST http://localhost:8080/api/v1/agents/agent-id/execute \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key" \
+  -d '{
+    "input": {
+      "query": "What is AI?"
+    },
+    "workflowName": "Q&A Workflow"
+  }'
+```
+
+---
+
+## 🔧 Troubleshooting
+
+### Check Logs
+
+```bash
+# Docker
+docker-compose logs -f agent-runtime
+
+# Kubernetes
+kubectl logs -f deployment/ai-agent-runtime -n ai-agent-runtime
+```
+
+### Database Issues
+
+```bash
+# Connect to PostgreSQL
+docker-compose exec postgres psql -U postgres -d agentdb
+
+# Check tables
+\dt
+
+# Check agent definitions
+SELECT id, name, status FROM agent_definitions;
+```
+
+### Redis Issues
+
+```bash
+# Check Redis
+docker-compose exec redis redis-cli
+
+# Check keys
+KEYS memory:*
+
+# Monitor commands
+MONITOR
+```
+
+---
+
+## 📈 Performance Tuning
+
+### JVM Options
+
+```yaml
+env:
+- name: JAVA_OPTS
+  value: >-
+    -XX:MaxRAMPercentage=75.0
+    -XX:+UseG1GC
+    -XX:MaxGCPauseMillis=200
+    -XX:+UseStringDeduplication
+```
+
+### Connection Pooling
+
+```properties
+quarkus.datasource.jdbc.max-size=50
+quarkus.datasource.jdbc.min-size=10
+quarkus.redis.max-pool-size=30
+```
+
+### Caching
+
+Enable Redis caching for frequently accessed agents and workflows.
+
+---
+
+## 🎯 Production Checklist
+
+- [ ] All API keys secured in secrets
+- [ ] Database credentials rotated
+- [ ] TLS/SSL enabled
+- [ ] Rate limiting configured
+- [ ] Monitoring and alerting setup
+- [ ] Backup strategy implemented
+- [ ] Disaster recovery plan
+- [ ] Load testing completed
+- [ ] Security scan passed
+- [ ] Documentation updated
+
+---
+
+## 📚 Additional Resources
+
+- [Quarkus Documentation](https://quarkus.io)
+- [Kubernetes Best Practices](https://kubernetes.io/docs/concepts/configuration/overview/)
+- [Prometheus Monitoring](https://prometheus.io/docs/introduction/overview/)
+- [OpenTelemetry Tracing](https://opentelemetry.io/docs/)
+
+
+
+# COMPLETE REAL IMPLEMENTATION - FINAL DEPLOYMENT
+
+## 📦 All Files You Need
+
+### 1. Dockerfile (Production-Ready)
+
+```dockerfile
+# Multi-stage build for optimal size
+FROM maven:3.9-eclipse-temurin-17 AS build
+
+WORKDIR /app
+
+# Copy pom files
+COPY pom.xml .
+COPY runtime/pom.xml runtime/
+COPY deployment/pom.xml deployment/
+
+# Download dependencies (cached layer)
+RUN mvn dependency:go-offline
+
+# Copy source
+COPY runtime/src runtime/src
+COPY deployment/src deployment/src
+
+# Build
+RUN mvn clean package -DskipTests
+
+# Runtime image
+FROM registry.access.redhat.com/ubi8/openjdk-17-runtime:latest
+
+ENV LANGUAGE='en_US:en'
+
+# Copy application
+COPY --from=build /app/runtime/target/quarkus-app/lib/ /deployments/lib/
+COPY --from=build /app/runtime/target/quarkus-app/*.jar /deployments/
+COPY --from=build /app/runtime/target/quarkus-app/app/ /deployments/app/
+COPY --from=build /app/runtime/target/quarkus-app/quarkus/ /deployments/quarkus/
+
+# Expose port
+EXPOSE 8080
+
+# Set user
+USER 185
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+# Run application
+ENTRYPOINT [ "java", "-jar", "/deployments/quarkus-run.jar" ]
+```
+
+### 2. docker-compose.yml (Complete Stack)
+
+```yaml
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:14-alpine
+    container_name: ai-agent-db
+    environment:
+      POSTGRES_DB: agentdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ai-agent-network
+
+  # Redis Cache & Memory
+  redis:
+    image: redis:7-alpine
+    container_name: ai-agent-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - ai-agent-network
+
+  # AI Agent Runtime
+  ai-agent-runtime:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-agent-runtime
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Database
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/agentdb
+      QUARKUS_DATASOURCE_USERNAME: postgres
+      QUARKUS_DATASOURCE_PASSWORD: ${DB_PASSWORD:-postgres}
+      QUARKUS_DATASOURCE_DB_KIND: postgresql
+      
+      # Redis
+      QUARKUS_REDIS_HOSTS: redis://redis:6379
+      QUARKUS_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      
+      # LLM Providers
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      COHERE_API_KEY: ${COHERE_API_KEY}
+      
+      # Security
+      AI_AGENT_SECURITY_API_KEYS: ${API_KEYS:-test-key-1,test-key-2}
+      AI_AGENT_SECURITY_ENABLED: ${SECURITY_ENABLED:-true}
+      
+      # Configuration
+      QUARKUS_LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      AI_AGENT_EXECUTION_MAX_CONCURRENT_WORKFLOWS: 100
+      AI_AGENT_EXECUTION_WORKFLOW_TIMEOUT_SECONDS: 300
+      
+      # Monitoring
+      QUARKUS_OTEL_ENABLED: ${TRACING_ENABLED:-false}
+      QUARKUS_OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/deployments/data
+      - ./logs:/deployments/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    networks:
+      - ai-agent-network
+
+  # Prometheus (Metrics)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ai-agent-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - ai-agent-network
+
+  # Grafana (Dashboards)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ai-agent-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=grafana-clock-panel
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana-dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro
+    networks:
+      - ai-agent-network
+
+  # Jaeger (Distributed Tracing)
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: ai-agent-jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4317:4317"    # OTLP gRPC
+      - "4318:4318"    # OTLP HTTP
+    networks:
+      - ai-agent-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  ai-agent-network:
+    driver: bridge
+```
+
+### 3. .env file (Environment Variables)
+
+```bash
+# Database
+DB_PASSWORD=your-secure-postgres-password
+
+# Redis
+REDIS_PASSWORD=your-secure-redis-password
+
+# LLM Provider API Keys
+OPENAI_API_KEY=sk-your-openai-key
+ANTHROPIC_API_KEY=sk-ant-your-anthropic-key
+GOOGLE_API_KEY=your-google-key
+COHERE_API_KEY=your-cohere-key
+
+# Security
+API_KEYS=prod-key-$(openssl rand -hex 16),backup-key-$(openssl rand -hex 16)
+SECURITY_ENABLED=true
+ENCRYPTION_KEY=$(openssl rand -hex 32)
+
+# Monitoring
+TRACING_ENABLED=true
+LOG_LEVEL=INFO
+
+# Grafana
+GRAFANA_USER=admin
+GRAFANA_PASSWORD=your-secure-grafana-password
+```
+
+### 4. prometheus.yml (Metrics Collection)
+
+```yaml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'ai-agent-runtime'
+    metrics_path: '/q/metrics'
+    static_configs:
+      - targets: ['ai-agent-runtime:8080']
+        labels:
+          application: 'ai-agent-runtime'
+          environment: 'production'
+
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+```
+
+### 5. init-db.sql (Database Initialization)
+
+```sql
+-- Create extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+
+-- Create indexes for performance
+CREATE INDEX IF NOT EXISTS idx_agent_definitions_name_trgm 
+  ON agent_definitions USING gin (name gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_executions_composite 
+  ON workflow_executions (agent_id, status, start_time DESC);
+
+-- Create function for cleanup
+CREATE OR REPLACE FUNCTION cleanup_old_executions(days_to_keep INTEGER)
+RETURNS INTEGER AS $$
+DECLARE
+  deleted_count INTEGER;
+BEGIN
+  DELETE FROM workflow_executions
+  WHERE start_time < NOW() - (days_to_keep || ' days')::INTERVAL
+  AND status IN ('completed', 'failed');
+  
+  GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  RETURN deleted_count;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create scheduled cleanup (requires pg_cron extension)
+-- SELECT cron.schedule('cleanup-old-executions', '0 2 * * *', 
+--   'SELECT cleanup_old_executions(30)');
+
+COMMENT ON FUNCTION cleanup_old_executions IS 
+  'Cleanup workflow executions older than specified days';
+```
+
+### 6. grafana-datasources.yml
+
+```yaml
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+
+  - name: PostgreSQL
+    type: postgres
+    url: postgres:5432
+    database: agentdb
+    user: postgres
+    secureJsonData:
+      password: postgres
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1400
+```
+
+### 7. Complete Startup Script
+
+```bash
+#!/bin/bash
+# startup.sh - Complete deployment script
+
+set -e
+
+echo "🚀 AI Agent Runtime - Complete Deployment"
+echo "========================================="
+
+# Check prerequisites
+echo "Checking prerequisites..."
+
+if ! command -v docker &> /dev/null; then
+    echo "❌ Docker is not installed"
+    exit 1
+fi
+
+if ! command -v docker-compose &> /dev/null; then
+    echo "❌ Docker Compose is not installed"
+    exit 1
+fi
+
+# Create directories
+echo "Creating directories..."
+mkdir -p data logs grafana-dashboards
+
+# Generate secure passwords if not set
+if [ -z "$DB_PASSWORD" ]; then
+    export DB_PASSWORD=$(openssl rand -hex 16)
+    echo "Generated DB_PASSWORD"
+fi
+
+if [ -z "$REDIS_PASSWORD" ]; then
+    export REDIS_PASSWORD=$(openssl rand -hex 16)
+    echo "Generated REDIS_PASSWORD"
+fi
+
+if [ -z "$API_KEYS" ]; then
+    export API_KEYS="prod-$(openssl rand -hex 16)"
+    echo "Generated API_KEYS"
+fi
+
+# Save to .env file
+cat > .env << EOF
+DB_PASSWORD=$DB_PASSWORD
+REDIS_PASSWORD=$REDIS_PASSWORD
+API_KEYS=$API_KEYS
+OPENAI_API_KEY=${OPENAI_API_KEY:-}
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+SECURITY_ENABLED=true
+TRACING_ENABLED=true
+LOG_LEVEL=INFO
+EOF
+
+echo "✅ Environment configured"
+
+# Build application
+echo "Building application..."
+docker-compose build
+
+# Start services
+echo "Starting services..."
+docker-compose up -d
+
+# Wait for services to be healthy
+echo "Waiting for services to be healthy..."
+sleep 10
+
+# Check health
+echo "Checking health..."
+for i in {1..30}; do
+    if curl -sf http://localhost:8080/health > /dev/null; then
+        echo "✅ Application is healthy!"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        echo "❌ Application failed to start"
+        docker-compose logs ai-agent-runtime
+        exit 1
+    fi
+    echo "Waiting... ($i/30)"
+    sleep 2
+done
+
+# Display information
+echo ""
+echo "========================================="
+echo "🎉 Deployment Complete!"
+echo "========================================="
+echo ""
+echo "📊 Service URLs:"
+echo "  - API:        http://localhost:8080"
+echo "  - Metrics:    http://localhost:8080/q/metrics"
+echo "  - Health:     http://localhost:8080/health"
+echo "  - Prometheus: http://localhost:9090"
+echo "  - Grafana:    http://localhost:3000 (admin/admin)"
+echo "  - Jaeger:     http://localhost:16686"
+echo ""
+echo "🔑 API Key: $API_KEYS"
+echo ""
+echo "📚 Quick test:"
+echo "curl -H 'X-API-Key: $API_KEYS' http://localhost:8080/health"
+echo ""
+echo "📖 View logs:"
+echo "docker-compose logs -f ai-agent-runtime"
+echo ""
+echo "🛑 Stop services:"
+echo "docker-compose down"
+echo ""
+```
+
+### 8. Quick Test Script
+
+```bash
+#!/bin/bash
+# test-deployment.sh - Test the deployment
+
+API_KEY=${API_KEYS:-test-key-1}
+BASE_URL="http://localhost:8080"
+
+echo "Testing AI Agent Runtime Deployment"
+echo "===================================="
+
+# Test 1: Health check
+echo "1. Testing health endpoint..."
+if curl -sf "$BASE_URL/health" | grep -q "UP"; then
+    echo "✅ Health check passed"
+else
+    echo "❌ Health check failed"
+    exit 1
+fi
+
+# Test 2: Create agent
+echo "2. Creating test agent..."
+AGENT_ID=$(curl -sf -X POST "$BASE_URL/api/v1/agents" \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "'$(uuidgen)'",
+    "name": "Test Agent",
+    "type": "conversational",
+    "status": "active",
+    "llmConfig": {
+      "provider": "openai",
+      "model": "gpt-3.5-turbo",
+      "apiKey": "'"$OPENAI_API_KEY"'",
+      "parameters": {
+        "temperature": 0.7,
+        "maxTokens": 100
+      }
+    },
+    "workflows": [{
+      "id": "'$(uuidgen)'",
+      "name": "Simple",
+      "nodes": [
+        {"id": "start", "type": "start", "name": "Start", "position": {"x": 0, "y": 0}},
+        {"id": "end", "type": "end", "name": "End", "position": {"x": 100, "y": 0}}
+      ],
+      "edges": [
+        {"id": "e1", "source": "start", "target": "end", "type": "default"}
+      ]
+    }]
+  }' | jq -r '.id')
+
+if [ -n "$AGENT_ID" ]; then
+    echo "✅ Agent created: $AGENT_ID"
+else
+    echo "❌ Failed to create agent"
+    exit 1
+fi
+
+# Test 3: Get agent
+echo "3. Getting agent..."
+if curl -sf "$BASE_URL/api/v1/agents/$AGENT_ID" \
+  -H "X-API-Key: $API_KEY" | jq -e '.id' > /dev/null; then
+    echo "✅ Agent retrieved"
+else
+    echo "❌ Failed to get agent"
+    exit 1
+fi
+
+# Test 4: List agents
+echo "4. Listing agents..."
+if curl -sf "$BASE_URL/api/v1/agents" \
+  -H "X-API-Key: $API_KEY" | jq -e '.items' > /dev/null; then
+    echo "✅ Agents listed"
+else
+    echo "❌ Failed to list agents"
+    exit 1
+fi
+
+# Test 5: Metrics
+echo "5. Checking metrics..."
+if curl -sf "$BASE_URL/q/metrics" | grep -q "jvm_memory"; then
+    echo "✅ Metrics available"
+else
+    echo "❌ Metrics not available"
+    exit 1
+fi
+
+echo ""
+echo "===================================="
+echo "✅ All tests passed!"
+echo "===================================="
+```
+
+### 9. Makefile (Convenient Commands)
+
+```makefile
+.PHONY: help build start stop restart logs test clean
+
+help:
+	@echo "AI Agent Runtime - Make Commands"
+	@echo "================================="
+	@echo "make build   - Build Docker images"
+	@echo "make start   - Start all services"
+	@echo "make stop    - Stop all services"
+	@echo "make restart - Restart all services"
+	@echo "make logs    - View logs"
+	@echo "make test    - Run tests"
+	@echo "make clean   - Clean everything"
+
+build:
+	docker-compose build
+
+start:
+	./startup.sh
+
+stop:
+	docker-compose down
+
+restart: stop start
+
+logs:
+	docker-compose logs -f ai-agent-runtime
+
+test:
+	./test-deployment.sh
+
+clean:
+	docker-compose down -v
+	rm -rf data/* logs/*
+	docker system prune -f
+```
+
+## 🚀 ONE-COMMAND STARTUP
+
+```bash
+# Make scripts executable
+chmod +x startup.sh test-deployment.sh
+
+# Set your API keys
+export OPENAI_API_KEY=sk-your-key-here
+export ANTHROPIC_API_KEY=sk-ant-your-key-here
+
+# Run!
+./startup.sh
+
+# Test
+./test-deployment.sh
+```
+
+## ✅ VERIFICATION CHECKLIST
+
+- [ ] All services started: `docker-compose ps`
+- [ ] Health check passes: `curl http://localhost:8080/health`
+- [ ] Can create agent: `./test-deployment.sh`
+- [ ] Metrics available: `curl http://localhost:8080/q/metrics`
+- [ ] Grafana accessible: http://localhost:3000
+- [ ] Prometheus accessible: http://localhost:9090
+- [ ] Database accessible: `docker-compose exec postgres psql -U postgres -d agentdb`
+- [ ] Redis accessible: `docker-compose exec redis redis-cli ping`
+
+## 📊 MONITORING DASHBOARDS
+
+Access Grafana at http://localhost:3000 (admin/admin) and import dashboards for:
+- API request rates
+- Workflow execution metrics
+- LLM call statistics
+- Error rates
+- Database performance
+
+This is the **COMPLETE REAL IMPLEMENTATION** ready for production use! 🎯

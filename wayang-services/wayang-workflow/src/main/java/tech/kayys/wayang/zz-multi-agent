@@ -1,0 +1,605 @@
+package io.quarkus.ai.agent.runtime.orchestration.strategy;
+
+import io.quarkus.ai.agent.runtime.orchestration.*;
+import io.quarkus.ai.agent.runtime.model.*;
+import io.quarkus.ai.agent.runtime.context.ExecutionContext;
+import io.quarkus.ai.agent.runtime.service.LLMService;
+import io.quarkus.ai.agent.runtime.engine.WorkflowRuntimeEngine;
+import io.smallrye.mutiny.Uni;
+import io.smallrye.mutiny.Multi;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.jboss.logging.Logger;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * Hierarchical Multi-Agent Pattern
+ * Manager agent coordinates specialized worker agents
+ */
+@ApplicationScoped
+public class HierarchicalStrategy implements OrchestrationStrategy {
+
+    private static final Logger LOG = Logger.getLogger(HierarchicalStrategy.class);
+
+    @Inject
+    LLMService llmService;
+
+    @Inject
+    WorkflowRuntimeEngine workflowEngine;
+
+    @Override
+    public Uni<StrategyResult> execute(AgentDefinition agent, Map<String, Object> input,
+                                      OrchestrationPattern pattern, ExecutionContext context) {
+        
+        LOG.info("Executing Hierarchical multi-agent pattern");
+        
+        List<OrchestrationEngine.OrchestrationStep> steps = Collections.synchronizedList(new ArrayList<>());
+        String task = (String) input.get("task");
+        
+        // Get worker agents from config
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> workerConfigs = 
+            (List<Map<String, Object>>) pattern.getConfig().getOrDefault("workers", List.of());
+        
+        // Phase 1: Manager plans task distribution
+        return planTaskDistribution(agent, task, workerConfigs, context, steps)
+            .chain(taskAssignments -> {
+                // Phase 2: Execute tasks in parallel with worker agents
+                return executeWorkerTasks(taskAssignments, context, steps);
+            })
+            .chain(workerResults -> {
+                // Phase 3: Manager synthesizes results
+                return synthesizeResults(agent, task, workerResults, context, steps);
+            })
+            .map(finalResult -> {
+                Map<String, Object> output = new HashMap<>();
+                output.put("result", finalResult);
+                
+                Map<String, Object> metadata = new HashMap<>();
+                metadata.put("pattern", "Hierarchical");
+                metadata.put("totalSteps", steps.size());
+                
+                return new StrategyResult(true, output, steps, metadata);
+            });
+    }
+
+    private Uni<List<TaskAssignment>> planTaskDistribution(AgentDefinition manager, String task,
+                                                          List<Map<String, Object>> workerConfigs,
+                                                          ExecutionContext context,
+                                                          List<OrchestrationEngine.OrchestrationStep> steps) {
+        
+        String planPrompt = buildDistributionPrompt(task, workerConfigs);
+        long startTime = System.currentTimeMillis();
+        
+        return llmService.complete(manager.getLlmConfig(), planPrompt, context)
+            .map(planResponse -> {
+                long duration = System.currentTimeMillis() - startTime;
+                
+                List<TaskAssignment> assignments = parseTaskAssignments(planResponse, workerConfigs);
+                
+                steps.add(new OrchestrationEngine.OrchestrationStep(
+                    manager.getId(),
+                    manager.getName() + " (Manager - Planning)",
+                    System.currentTimeMillis(),
+                    Map.of("task", task),
+                    Map.of("assignments", assignments),
+                    "completed",
+                    duration
+                ));
+                
+                return assignments;
+            });
+    }
+
+    private Uni<Map<String, Object>> executeWorkerTasks(List<TaskAssignment> assignments,
+                                                        ExecutionContext context,
+                                                        List<OrchestrationEngine.OrchestrationStep> steps) {
+        
+        List<Uni<Map.Entry<String, Object>>> workerExecutions = assignments.stream()
+            .map(assignment -> executeWorkerTask(assignment, context, steps))
+            .collect(Collectors.toList());
+        
+        return Uni.combine().all().unis(workerExecutions)
+            .combinedWith(results -> {
+                Map<String, Object> allResults = new HashMap<>();
+                @SuppressWarnings("unchecked")
+                List<Map.Entry<String, Object>> entries = (List<Map.Entry<String, Object>>) results;
+                entries.forEach(entry -> allResults.put(entry.getKey(), entry.getValue()));
+                return allResults;
+            });
+    }
+
+    private Uni<Map.Entry<String, Object>> executeWorkerTask(TaskAssignment assignment,
+                                                             ExecutionContext context,
+                                                             List<OrchestrationEngine.OrchestrationStep> steps) {
+        
+        long startTime = System.currentTimeMillis();
+        
+        // Create worker-specific prompt
+        String workerPrompt = "You are a " + assignment.workerRole + " agent. " +
+                            "Complete this task: " + assignment.subtask;
+        
+        LLMConfig workerConfig = createWorkerLLMConfig(assignment);
+        
+        return llmService.complete(workerConfig, workerPrompt, context)
+            .map(result -> {
+                long duration = System.currentTimeMillis() - startTime;
+                
+                steps.add(new OrchestrationEngine.OrchestrationStep(
+                    assignment.workerId,
+                    "Worker: " + assignment.workerRole,
+                    System.currentTimeMillis(),
+                    Map.of("subtask", assignment.subtask),
+                    Map.of("result", result),
+                    "completed",
+                    duration
+                ));
+                
+                return Map.entry(assignment.workerId, result);
+            });
+    }
+
+    private Uni<String> synthesizeResults(AgentDefinition manager, String originalTask,
+                                         Map<String, Object> workerResults,
+                                         ExecutionContext context,
+                                         List<OrchestrationEngine.OrchestrationStep> steps) {
+        
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("As a manager, synthesize these worker results into a final answer.\n\n");
+        prompt.append("Original task: ").append(originalTask).append("\n\n");
+        prompt.append("Worker results:\n");
+        
+        workerResults.forEach((workerId, result) -> {
+            prompt.append("- ").append(workerId).append(": ").append(result).append("\n");
+        });
+        
+        prompt.append("\nProvide a comprehensive final answer:");
+        
+        long startTime = System.currentTimeMillis();
+        
+        return llmService.complete(manager.getLlmConfig(), prompt.toString(), context)
+            .invoke(result -> {
+                long duration = System.currentTimeMillis() - startTime;
+                
+                steps.add(new OrchestrationEngine.OrchestrationStep(
+                    manager.getId(),
+                    manager.getName() + " (Manager - Synthesis)",
+                    System.currentTimeMillis(),
+                    Map.of("workerResults", workerResults),
+                    Map.of("finalAnswer", result),
+                    "completed",
+                    duration
+                ));
+            });
+    }
+
+    private String buildDistributionPrompt(String task, List<Map<String, Object>> workerConfigs) {
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("You are a manager agent. Break down this task into subtasks for specialized workers:\n\n");
+        prompt.append("Task: ").append(task).append("\n\n");
+        prompt.append("Available workers:\n");
+        
+        for (Map<String, Object> config : workerConfigs) {
+            prompt.append("- ").append(config.get("role")).append(": ")
+                  .append(config.get("capabilities")).append("\n");
+        }
+        
+        prompt.append("\nProvide task assignments in this format:\n");
+        prompt.append("Worker: [worker role]\n");
+        prompt.append("Task: [specific subtask]\n");
+        prompt.append("---\n");
+        prompt.append("(repeat for each assignment)\n");
+        
+        return prompt.toString();
+    }
+
+    private List<TaskAssignment> parseTaskAssignments(String response, List<Map<String, Object>> workerConfigs) {
+        List<TaskAssignment> assignments = new ArrayList<>();
+        String[] sections = response.split("---");
+        
+        for (String section : sections) {
+            String[] lines = section.trim().split("\n");
+            if (lines.length < 2) continue;
+            
+            TaskAssignment assignment = new TaskAssignment();
+            for (String line : lines) {
+                if (line.startsWith("Worker:")) {
+                    assignment.workerRole = line.substring("Worker:".length()).trim();
+                    assignment.workerId = "worker-" + UUID.randomUUID().toString().substring(0, 8);
+                } else if (line.startsWith("Task:")) {
+                    assignment.subtask = line.substring("Task:".length()).trim();
+                }
+            }
+            
+            if (!assignment.workerRole.isEmpty() && !assignment.subtask.isEmpty()) {
+                assignments.add(assignment);
+            }
+        }
+        
+        return assignments;
+    }
+
+    private LLMConfig createWorkerLLMConfig(TaskAssignment assignment) {
+        LLMConfig config = new LLMConfig();
+        config.setProvider(LLMConfig.Provider.OPENAI);
+        config.setModel("gpt-4");
+        
+        LLMConfig.Parameters params = new LLMConfig.Parameters();
+        params.setTemperature(0.7);
+        params.setMaxTokens(1000);
+        params.setSystemPrompt("You are a specialized " + assignment.workerRole + " agent.");
+        config.setParameters(params);
+        
+        return config;
+    }
+
+    @Override
+    public OrchestrationPattern.PatternType getSupportedPattern() {
+        return OrchestrationPattern.PatternType.HIERARCHICAL;
+    }
+
+    private static class TaskAssignment {
+        String workerId;
+        String workerRole;
+        String subtask;
+    }
+}
+
+/**
+ * Reflection Pattern
+ * Agent reflects on and improves its own outputs
+ */
+@ApplicationScoped
+public class ReflectionStrategy implements OrchestrationStrategy {
+
+    private static final Logger LOG = Logger.getLogger(ReflectionStrategy.class);
+    private static final int MAX_REFLECTIONS = 3;
+
+    @Inject
+    LLMService llmService;
+
+    @Override
+    public Uni<StrategyResult> execute(AgentDefinition agent, Map<String, Object> input,
+                                      OrchestrationPattern pattern, ExecutionContext context) {
+        
+        LOG.info("Executing Reflection pattern");
+        
+        List<OrchestrationEngine.OrchestrationStep> steps = Collections.synchronizedList(new ArrayList<>());
+        String task = (String) input.get("task");
+        
+        return reflectionLoop(agent, task, null, 0, context, steps)
+            .map(finalAnswer -> {
+                Map<String, Object> output = new HashMap<>();
+                output.put("answer", finalAnswer);
+                output.put("reflections", steps.size() / 2);
+                
+                Map<String, Object> metadata = new HashMap<>();
+                metadata.put("pattern", "Reflection");
+                metadata.put("totalReflections", steps.size() / 2);
+                
+                return new StrategyResult(true, output, steps, metadata);
+            });
+    }
+
+    private Uni<String> reflectionLoop(AgentDefinition agent, String task, String previousAnswer,
+                                       int iteration, ExecutionContext context,
+                                       List<OrchestrationEngine.OrchestrationStep> steps) {
+        
+        if (iteration >= MAX_REFLECTIONS) {
+            return Uni.createFrom().item(previousAnswer != null ? previousAnswer : "No answer generated");
+        }
+
+        // Generate or improve answer
+        String generatePrompt = previousAnswer == null
+            ? "Provide a detailed answer to: " + task
+            : "Improve this answer based on the reflection:\n\nOriginal: " + previousAnswer + 
+              "\n\nReflection: " + context.getVariable("reflection_" + (iteration - 1)) +
+              "\n\nProvide an improved answer:";
+
+        long genStartTime = System.currentTimeMillis();
+
+        return llmService.complete(agent.getLlmConfig(), generatePrompt, context)
+            .chain(answer -> {
+                long genDuration = System.currentTimeMillis() - genStartTime;
+                
+                steps.add(new OrchestrationEngine.OrchestrationStep(
+                    agent.getId(),
+                    agent.getName() + " (Generate)",
+                    System.currentTimeMillis(),
+                    Map.of("prompt", generatePrompt),
+                    Map.of("answer", answer),
+                    "completed",
+                    genDuration
+                ));
+
+                // Reflect on the answer
+                String reflectPrompt = "Critically analyze this answer and suggest improvements:\n\n" +
+                                      "Question: " + task + "\n" +
+                                      "Answer: " + answer + "\n\n" +
+                                      "Provide your reflection:";
+
+                long refStartTime = System.currentTimeMillis();
+
+                return llmService.complete(agent.getLlmConfig(), reflectPrompt, context)
+                    .chain(reflection -> {
+                        long refDuration = System.currentTimeMillis() - refStartTime;
+                        
+                        steps.add(new OrchestrationEngine.OrchestrationStep(
+                            agent.getId(),
+                            agent.getName() + " (Reflect)",
+                            System.currentTimeMillis(),
+                            Map.of("answer", answer),
+                            Map.of("reflection", reflection),
+                            "completed",
+                            refDuration
+                        ));
+
+                        context.setVariable("reflection_" + iteration, reflection);
+
+                        // Check if reflection suggests the answer is good enough
+                        if (isAnswerSatisfactory(reflection)) {
+                            return Uni.createFrom().item(answer);
+                        }
+
+                        // Continue reflecting
+                        return reflectionLoop(agent, task, answer, iteration + 1, context, steps);
+                    });
+            });
+    }
+
+    private boolean isAnswerSatisfactory(String reflection) {
+        String lower = reflection.toLowerCase();
+        return lower.contains("satisfactory") || 
+               lower.contains("good enough") || 
+               lower.contains("no improvements needed") ||
+               lower.contains("accurate and complete");
+    }
+
+    @Override
+    public OrchestrationPattern.PatternType getSupportedPattern() {
+        return OrchestrationPattern.PatternType.REFLECTION;
+    }
+}
+
+/**
+ * Router Pattern
+ * Routes tasks to specialized agents based on task type
+ */
+@ApplicationScoped
+public class RouterStrategy implements OrchestrationStrategy {
+
+    private static final Logger LOG = Logger.getLogger(RouterStrategy.class);
+
+    @Inject
+    LLMService llmService;
+
+    @Inject
+    WorkflowRuntimeEngine workflowEngine;
+
+    @Override
+    public Uni<StrategyResult> execute(AgentDefinition agent, Map<String, Object> input,
+                                      OrchestrationPattern pattern, ExecutionContext context) {
+        
+        LOG.info("Executing Router pattern");
+        
+        List<OrchestrationEngine.OrchestrationStep> steps = Collections.synchronizedList(new ArrayList<>());
+        String task = (String) input.get("task");
+        
+        // Get available routes from config
+        @SuppressWarnings("unchecked")
+        Map<String, Map<String, Object>> routes = 
+            (Map<String, Map<String, Object>>) pattern.getConfig().getOrDefault("routes", Map.of());
+        
+        // Phase 1: Classify and route
+        return classifyTask(agent, task, routes, context, steps)
+            .chain(selectedRoute -> {
+                // Phase 2: Execute with specialized agent
+                return executeRoute(selectedRoute, task, context, steps);
+            })
+            .map(result -> {
+                Map<String, Object> output = new HashMap<>();
+                output.put("result", result);
+                
+                Map<String, Object> metadata = new HashMap<>();
+                metadata.put("pattern", "Router");
+                metadata.put("totalSteps", steps.size());
+                
+                return new StrategyResult(true, output, steps, metadata);
+            });
+    }
+
+    private Uni<String> classifyTask(AgentDefinition agent, String task,
+                                     Map<String, Map<String, Object>> routes,
+                                     ExecutionContext context,
+                                     List<OrchestrationEngine.OrchestrationStep> steps) {
+        
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("Classify this task to route it to the appropriate specialized agent:\n\n");
+        prompt.append("Task: ").append(task).append("\n\n");
+        prompt.append("Available routes:\n");
+        
+        routes.forEach((routeName, routeConfig) -> {
+            prompt.append("- ").append(routeName).append(": ")
+                  .append(routeConfig.get("description")).append("\n");
+        });
+        
+        prompt.append("\nRespond with only the route name:");
+        
+        long startTime = System.currentTimeMillis();
+        
+        return llmService.complete(agent.getLlmConfig(), prompt.toString(), context)
+            .map(routeName -> {
+                long duration = System.currentTimeMillis() - startTime;
+                
+                String cleanRouteName = routeName.trim().toLowerCase();
+                
+                steps.add(new OrchestrationEngine.OrchestrationStep(
+                    agent.getId(),
+                    agent.getName() + " (Router)",
+                    System.currentTimeMillis(),
+                    Map.of("task", task),
+                    Map.of("selectedRoute", cleanRouteName),
+                    "completed",
+                    duration
+                ));
+                
+                return cleanRouteName;
+            });
+    }
+
+    private Uni<String> executeRoute(String routeName, String task,
+                                     ExecutionContext context,
+                                     List<OrchestrationEngine.OrchestrationStep> steps) {
+        
+        // Create specialized agent config for this route
+        LLMConfig routeConfig = createRouteConfig(routeName);
+        
+        String specializedPrompt = "As a " + routeName + " specialist, complete this task: " + task;
+        
+        long startTime = System.currentTimeMillis();
+        
+        return llmService.complete(routeConfig, specializedPrompt, context)
+            .map(result -> {
+                long duration = System.currentTimeMillis() - startTime;
+                
+                steps.add(new OrchestrationEngine.OrchestrationStep(
+                    "route-" + routeName,
+                    "Specialized Agent: " + routeName,
+                    System.currentTimeMillis(),
+                    Map.of("task", task),
+                    Map.of("result", result),
+                    "completed",
+                    duration
+                ));
+                
+                return result;
+            });
+    }
+
+    private LLMConfig createRouteConfig(String routeName) {
+        LLMConfig config = new LLMConfig();
+        config.setProvider(LLMConfig.Provider.OPENAI);
+        config.setModel("gpt-4");
+        
+        LLMConfig.Parameters params = new LLMConfig.Parameters();
+        params.setTemperature(0.7);
+        params.setMaxTokens(1500);
+        params.setSystemPrompt("You are a specialized " + routeName + " agent.");
+        config.setParameters(params);
+        
+        return config;
+    }
+
+    @Override
+    public OrchestrationPattern.PatternType getSupportedPattern() {
+        return OrchestrationPattern.PatternType.ROUTER;
+    }
+}
+
+/**
+ * Sequential Pattern
+ * Chain multiple agents in sequence
+ */
+@ApplicationScoped
+public class SequentialStrategy implements OrchestrationStrategy {
+
+    private static final Logger LOG = Logger.getLogger(SequentialStrategy.class);
+
+    @Inject
+    LLMService llmService;
+
+    @Override
+    public Uni<StrategyResult> execute(AgentDefinition agent, Map<String, Object> input,
+                                      OrchestrationPattern pattern, ExecutionContext context) {
+        
+        LOG.info("Executing Sequential pattern");
+        
+        List<OrchestrationEngine.OrchestrationStep> steps = Collections.synchronizedList(new ArrayList<>());
+        
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> sequence = 
+            (List<Map<String, Object>>) pattern.getConfig().getOrDefault("sequence", List.of());
+        
+        return executeSequence(sequence, 0, input, context, steps)
+            .map(finalResult -> {
+                Map<String, Object> output = new HashMap<>();
+                output.put("result", finalResult);
+                
+                Map<String, Object> metadata = new HashMap<>();
+                metadata.put("pattern", "Sequential");
+                metadata.put("totalSteps", steps.size());
+                
+                return new StrategyResult(true, output, steps, metadata);
+            });
+    }
+
+    private Uni<Map<String, Object>> executeSequence(List<Map<String, Object>> sequence, int index,
+                                                     Map<String, Object> previousOutput,
+                                                     ExecutionContext context,
+                                                     List<OrchestrationEngine.OrchestrationStep> steps) {
+        
+        if (index >= sequence.size()) {
+            return Uni.createFrom().item(previousOutput);
+        }
+
+        Map<String, Object> agentConfig = sequence.get(index);
+        String agentRole = (String) agentConfig.get("role");
+        String prompt = (String) agentConfig.get("prompt");
+        
+        // Interpolate previous output into prompt
+        String interpolatedPrompt = interpolatePrompt(prompt, previousOutput);
+        
+        LLMConfig config = createSequentialAgentConfig(agentRole);
+        long startTime = System.currentTimeMillis();
+        
+        return llmService.complete(config, interpolatedPrompt, context)
+            .chain(result -> {
+                long duration = System.currentTimeMillis() - startTime;
+                
+                Map<String, Object> output = new HashMap<>();
+                output.put("result", result);
+                output.putAll(previousOutput);
+                
+                steps.add(new OrchestrationEngine.OrchestrationStep(
+                    "seq-" + index,
+                    "Agent " + (index + 1) + ": " + agentRole,
+                    System.currentTimeMillis(),
+                    Map.of("prompt", interpolatedPrompt),
+                    output,
+                    "completed",
+                    duration
+                ));
+                
+                return executeSequence(sequence, index + 1, output, context, steps);
+            });
+    }
+
+    private String interpolatePrompt(String prompt, Map<String, Object> variables) {
+        String result = prompt;
+        for (Map.Entry<String, Object> entry : variables.entrySet()) {
+            result = result.replace("${" + entry.getKey() + "}", String.valueOf(entry.getValue()));
+        }
+        return result;
+    }
+
+    private LLMConfig createSequentialAgentConfig(String role) {
+        LLMConfig config = new LLMConfig();
+        config.setProvider(LLMConfig.Provider.OPENAI);
+        config.setModel("gpt-4");
+        
+        LLMConfig.Parameters params = new LLMConfig.Parameters();
+        params.setTemperature(0.7);
+        params.setMaxTokens(1000);
+        params.setSystemPrompt("You are a " + role + " agent in a sequential chain.");
+        config.setParameters(params);
+        
+        return config;
+    }
+
+    @Override
+    public OrchestrationPattern.PatternType getSupportedPattern() {
+        return OrchestrationPattern.PatternType.SEQUENTIAL;
+    }
+}

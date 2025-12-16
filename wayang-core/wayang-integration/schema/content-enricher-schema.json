@@ -1,0 +1,42 @@
+{
+    "$id": "https://kayys.tech/schema/v1/nodes/integration/enricher.schema.json",
+    "allOf": [
+        {
+            "$ref": "./base.schema.json"
+        }
+    ],
+    "properties": {
+        "type": {
+            "const": "ContentEnricher"
+        },
+        "enrichment": {
+            "type": "object",
+            "required": [
+                "resourceUri"
+            ],
+            "properties": {
+                "resourceUri": {
+                    "type": "string",
+                    "description": "Endpoint to fetch enrichment data (e.g., 'sql:SELECT...')"
+                },
+                "strategy": {
+                    "type": "string",
+                    "enum": [
+                        "merge",
+                        "replace",
+                        "append"
+                    ],
+                    "default": "merge"
+                },
+                "cacheEnabled": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "cacheTtl": {
+                    "type": "integer",
+                    "description": "Cache TTL in seconds"
+                }
+            }
+        }
+    }
+}

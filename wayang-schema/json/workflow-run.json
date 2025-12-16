@@ -1,0 +1,22 @@
+{
+    "workflowRunId": "uuid",
+    "workflowId": "string",
+    "workflowVersion": "semver",
+    "workspaceId": "string",
+    "status": "CREATED | RUNNING | WAITING | FAILED | COMPLETED | CANCELLED",
+    "currentNodeId": "string",
+    "executionMode": "camel_route | external_workflow | in_process",
+    "context": {
+        "exchange": {},
+        "variables": {},
+        "ragSnapshotId": "string"
+    },
+    "startedAt": "timestamp",
+    "updatedAt": "timestamp",
+    "endedAt": "timestamp",
+    "error": {
+        "code": "string",
+        "message": "string",
+        "retryable": true
+    }
+}

@@ -1,0 +1,42 @@
+{
+    "$id": "https://kayys.tech/schema/v1/nodes/integration/connector.schema.json",
+    "allOf": [
+        {
+            "$ref": "./base.schema.json"
+        }
+    ],
+    "properties": {
+        "type": {
+            "const": "Connector"
+        },
+        "connector": {
+            "type": "object",
+            "required": [
+                "component",
+                "uri"
+            ],
+            "properties": {
+                "component": {
+                    "type": "string",
+                    "description": "Camel component name (e.g., 'kafka', 'http', 'sql')"
+                },
+                "uri": {
+                    "type": "string",
+                    "description": "Full component URI with parameters"
+                },
+                "direction": {
+                    "type": "string",
+                    "enum": [
+                        "from",
+                        "to",
+                        "both"
+                    ],
+                    "default": "to"
+                },
+                "authentication": {
+                    "$ref": "https://kayys.tech/schema/v1/auth.schema.json"
+                }
+            }
+        }
+    }
+}
