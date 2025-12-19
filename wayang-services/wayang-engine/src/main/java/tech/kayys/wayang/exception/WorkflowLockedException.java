@@ -18,6 +18,10 @@ public class WorkflowLockedException extends DesignerException {
                 Map.of("workflowId", workflowId));
     }
 
+    public WorkflowLockedException(String message) {
+        super("WORKFLOW_LOCKED", message);
+    }
+
     @Override
     public Response.Status getHttpStatus() {
         return Response.Status.CONFLICT;

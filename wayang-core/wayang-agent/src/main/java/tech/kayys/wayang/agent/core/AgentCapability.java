@@ -1,4 +1,4 @@
-package tech.kayys.agent.core;
+package tech.kayys.wayang.agent.core;
 
 import java.util.HashMap;
 import java.util.HashSet;

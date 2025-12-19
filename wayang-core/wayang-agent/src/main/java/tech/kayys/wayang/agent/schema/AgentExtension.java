@@ -1,8 +1,5 @@
-package tech.kayys.agent.schema;
+package tech.kayys.wayang.agent.schema;
 
 public sealed interface AgentExtension
-    permits RiskProfileExtension, VectorStoreConfig, CustomJsonExtension {}
-
-
-
-
+        permits RiskProfileExtension, VectorStoreConfig, CustomJsonExtension {
+}

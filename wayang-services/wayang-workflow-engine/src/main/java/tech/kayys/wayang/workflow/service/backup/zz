@@ -1,0 +1,12 @@
+
+
+
+
+/**
+ * Custom exception for backup verification failures
+ */
+class BackupVerificationException extends RuntimeException {
+    public BackupVerificationException(String message) {
+        super(message);
+    }
+}

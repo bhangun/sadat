@@ -15,19 +15,31 @@ import tech.kayys.wayang.model.LogicDefinition;
 import tech.kayys.wayang.model.RuntimeConfig;
 import tech.kayys.wayang.model.UIDefinition;
 import tech.kayys.wayang.model.ValidationResult;
+import tech.kayys.wayang.schema.ExecutionRequest;
+import tech.kayys.wayang.schema.ExecutionStatus;
+import tech.kayys.wayang.schema.PublishRequest;
+import tech.kayys.wayang.schema.CodeGenRequest;
+import tech.kayys.wayang.schema.WorkflowImportForm;
+import tech.kayys.wayang.schema.ArtifactUploadForm;
 import tech.kayys.wayang.service.DraftService;
 import tech.kayys.wayang.service.LockService;
 import tech.kayys.wayang.service.ValidationService;
 import tech.kayys.wayang.service.WorkflowService;
+import tech.kayys.wayang.service.WorkflowExecutionService;
+import tech.kayys.wayang.service.WorkflowPublishService;
+import tech.kayys.wayang.service.WorkflowImportExportService;
 import tech.kayys.wayang.tenant.TenantContext;
 
+import java.net.URI;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
+import org.jboss.resteasy.reactive.MultipartForm;
 import org.jboss.resteasy.reactive.ResponseStatus;
 
 /**
@@ -56,6 +68,188 @@ public class WorkflowResource {
 
         @Inject
         TenantContext tenantContext;
+
+        @Inject
+        WorkflowExecutionService executionService;
+
+        @Inject
+        WorkflowPublishService publishService;
+
+        @Inject
+        WorkflowImportExportService importExportService;
+
+        /**
+         * Execute workflow
+         */
+        @POST
+        @Path("/{id}/execute")
+        @Operation(summary = "Execute workflow", description = "Start workflow execution")
+        public Uni<Response> executeWorkflow(
+                        @PathParam("id") String workflowId,
+                        @HeaderParam("X-Tenant-ID") String tenantId,
+                        ExecutionRequest request) {
+
+                LOG.infof("REST: Execute workflow %s (tenant=%s)", workflowId, tenantId);
+
+                return executionService.execute(workflowId, request, tenantId)
+                                .map(execution -> Response.accepted()
+                                                .entity(execution)
+                                                .header("X-Execution-ID", execution.getId())
+                                                .build());
+        }
+
+        /**
+         * Get execution status
+         */
+        @GET
+        @Path("/executions/{executionId}")
+        @Operation(summary = "Get execution status")
+        public Uni<ExecutionStatus> getExecutionStatus(
+                        @PathParam("executionId") String executionId,
+                        @HeaderParam("X-Tenant-ID") String tenantId) {
+
+                return executionService.getStatus(executionId, tenantId);
+        }
+
+        /**
+         * Cancel execution
+         */
+        @POST
+        @Path("/executions/{executionId}/cancel")
+        @Operation(summary = "Cancel workflow execution")
+        public Uni<Response> cancelExecution(
+                        @PathParam("executionId") String executionId,
+                        @HeaderParam("X-Tenant-ID") String tenantId) {
+
+                return executionService.cancel(executionId, tenantId)
+                                .map(success -> Response.ok()
+                                                .entity(Map.of("cancelled", success))
+                                                .build());
+        }
+
+        /**
+         * Publish workflow
+         */
+        @POST
+        @Path("/{id}/publish")
+        @Operation(summary = "Publish workflow", description = "Publish workflow to production")
+        public Uni<Response> publishWorkflow(
+                        @PathParam("id") String workflowId,
+                        @HeaderParam("X-Tenant-ID") String tenantId,
+                        @HeaderParam("X-User-ID") String userId,
+                        PublishRequest request) {
+
+                LOG.infof("REST: Publish workflow %s", workflowId);
+
+                return publishService.publish(workflowId, request, tenantId, userId)
+                                .map(result -> Response.ok()
+                                                .entity(result)
+                                                .build());
+        }
+
+        /**
+         * Export workflow
+         */
+        @GET
+        @Path("/{id}/export")
+        @Produces("application/zip")
+        @Operation(summary = "Export workflow", description = "Export workflow with dependencies")
+        public Uni<Response> exportWorkflow(
+                        @PathParam("id") String workflowId,
+                        @HeaderParam("X-Tenant-ID") String tenantId,
+                        @QueryParam("format") @DefaultValue("json") String format) {
+
+                LOG.infof("REST: Export workflow %s (format=%s)", workflowId, format);
+
+                return importExportService.export(workflowId, format, tenantId)
+                                .map(exportFile -> Response.ok(exportFile)
+                                                .header("Content-Disposition",
+                                                                "attachment; filename=workflow-" + workflowId + ".zip")
+                                                .build());
+        }
+
+        /**
+         * Import workflow
+         */
+        @POST
+        @Path("/import")
+        @Consumes(MediaType.MULTIPART_FORM_DATA)
+        @Operation(summary = "Import workflow", description = "Import workflow from file")
+        public Uni<Response> importWorkflow(
+                        @MultipartForm WorkflowImportForm form,
+                        @HeaderParam("X-Tenant-ID") String tenantId,
+                        @HeaderParam("X-User-ID") String userId) {
+
+                LOG.infof("REST: Import workflow (tenant=%s, user=%s)", tenantId, userId);
+
+                return importExportService.importWorkflow(form.file, tenantId, userId)
+                                .map(workflow -> Response.created(
+                                                URI.create("/api/v1/workflows/" + workflow.id))
+                                                .entity(workflow)
+                                                .build());
+        }
+
+        /**
+         * Upload document/artifact
+         */
+        @POST
+        @Path("/{id}/artifacts")
+        @Consumes(MediaType.MULTIPART_FORM_DATA)
+        @Operation(summary = "Upload artifact", description = "Upload document or artifact")
+        public Uni<Response> uploadArtifact(
+                        @PathParam("id") String workflowId,
+                        @MultipartForm ArtifactUploadForm form,
+                        @HeaderParam("X-Tenant-ID") String tenantId) {
+
+                LOG.infof("REST: Upload artifact to workflow %s", workflowId);
+
+                return importExportService.uploadArtifact(workflowId, form, tenantId)
+                                .map(artifact -> Response.created(
+                                                URI.create("/api/v1/workflows/" + workflowId + "/artifacts/"
+                                                                + artifact.getId()))
+                                                .entity(artifact)
+                                                .build());
+        }
+
+        /**
+         * Download artifact
+         */
+        @GET
+        @Path("/{id}/artifacts/{artifactId}")
+        @Produces(MediaType.APPLICATION_OCTET_STREAM)
+        @Operation(summary = "Download artifact")
+        public Uni<Response> downloadArtifact(
+                        @PathParam("id") String workflowId,
+                        @PathParam("artifactId") String artifactId,
+                        @HeaderParam("X-Tenant-ID") String tenantId) {
+
+                return importExportService.downloadArtifact(workflowId, artifactId, tenantId)
+                                .map(file -> Response.ok(file)
+                                                .header("Content-Disposition",
+                                                                "attachment; filename=" + file.getName())
+                                                .build());
+        }
+
+        /**
+         * Generate standalone agent code
+         */
+        @POST
+        @Path("/{id}/codegen")
+        @Operation(summary = "Generate standalone code", description = "Generate portable agent code")
+        public Uni<Response> generateCode(
+                        @PathParam("id") String workflowId,
+                        @HeaderParam("X-Tenant-ID") String tenantId,
+                        CodeGenRequest request) {
+
+                LOG.infof("REST: Generate code for workflow %s (target=%s)",
+                                workflowId, request.getTarget());
+
+                return executionService.generateCode(workflowId, request, tenantId)
+                                .map(artifact -> Response.accepted()
+                                                .entity(artifact)
+                                                .header("X-CodeGen-Job-ID", artifact.getJobId())
+                                                .build());
+        }
 
         @GET
         @Operation(summary = "List workflows", description = "List all workflows in workspace")
@@ -146,19 +340,6 @@ public class WorkflowResource {
 
                 return workflowService.validateWorkflow(workflowId)
                                 .map(result -> Response.ok(result).build());
-        }
-
-        @POST
-        @Path("/{workflowId}/publish")
-        @Operation(summary = "Publish workflow", description = "Publish workflow as immutable version")
-        @APIResponse(responseCode = "200", description = "Published")
-        @APIResponse(responseCode = "400", description = "Workflow not valid")
-        public Uni<Response> publishWorkflow(
-                        @PathParam("workspaceId") UUID workspaceId,
-                        @PathParam("workflowId") UUID workflowId) {
-
-                return workflowService.publishWorkflow(workflowId)
-                                .map(workflow -> Response.ok(new WorkflowResponse(workflow)).build());
         }
 
         @DELETE

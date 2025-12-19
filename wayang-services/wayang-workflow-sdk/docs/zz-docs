@@ -1,0 +1,1521 @@
+# SDK Configuration & Usage Guide
+
+## I. Maven Dependencies
+
+### pom.xml
+
+```xml
+<dependencies>
+    <!-- Workflow SDK -->
+    <dependency>
+        <groupId>com.agentic.platform</groupId>
+        <artifactId>wayang-workflow-sdk</artifactId>
+        <version>1.0.0</version>
+    </dependency>
+
+    <!-- Required: MicroProfile REST Client -->
+    <dependency>
+        <groupId>io.quarkus</groupId>
+        <artifactId>quarkus-rest-client-reactive</artifactId>
+    </dependency>
+
+    <!-- Required: Mutiny (reactive) -->
+    <dependency>
+        <groupId>io.smallrye.reactive</groupId>
+        <artifactId>mutiny</artifactId>
+    </dependency>
+
+    <!-- Optional: Jackson for JSON -->
+    <dependency>
+        <groupId>io.quarkus</groupId>
+        <artifactId>quarkus-rest-client-reactive-jackson</artifactId>
+    </dependency>
+</dependencies>
+```
+
+---
+
+## II. Application Configuration
+
+### application.yml
+
+```yaml
+# REST Client Configuration
+quarkus:
+  rest-client:
+    # Workflow Engine Client
+    workflow-engine:
+      url: ${WORKFLOW_ENGINE_URL:http://localhost:8080}
+      scope: jakarta.inject.Singleton
+      # Connection timeout
+      connect-timeout: 5000
+      # Read timeout
+      read-timeout: 60000
+      # Follow redirects
+      follow-redirects: true
+      # HTTP/2
+      http2: true
+      # TLS configuration
+      trust-store: ${TRUST_STORE_PATH:/etc/certs/truststore.jks}
+      trust-store-password: ${TRUST_STORE_PASSWORD:changeme}
+      # Retry configuration
+      max-attempts: 3
+      delay: 1000
+      max-delay: 5000
+      jitter: 0.5
+    
+    # Workflow Registry Client
+    workflow-registry:
+      url: ${WORKFLOW_REGISTRY_URL:http://localhost:8083}
+      scope: jakarta.inject.Singleton
+    
+    # Agent Runtime Client
+    agent-runtime:
+      url: ${AGENT_RUNTIME_URL:http://localhost:8081}
+      scope: jakarta.inject.Singleton
+    
+    # HITL Service Client
+    htil-service:
+      url: ${HITL_SERVICE_URL:http://localhost:8082}
+      scope: jakarta.inject.Singleton
+
+  # HTTP client configuration
+  http-client:
+    max-pool-size: 50
+    idle-timeout: 60s
+
+# SDK-specific configuration
+workflow-sdk:
+  # Default timeout for synchronous operations
+  default-sync-timeout-ms: 60000
+  
+  # Enable request/response logging
+  logging:
+    enabled: true
+    log-request-body: false
+    log-response-body: false
+  
+  # Retry policy
+  retry:
+    enabled: true
+    max-attempts: 3
+    backoff-multiplier: 2
+  
+  # Circuit breaker
+  circuit-breaker:
+    enabled: true
+    failure-threshold: 5
+    delay: 60s
+
+# Development profile
+"%dev":
+  quarkus.rest-client:
+    workflow-engine.url: http://localhost:8080
+    logging:
+      enabled: true
+      log-request-body: true
+      log-response-body: true
+
+# Production profile
+"%prod":
+  quarkus.rest-client:
+    workflow-engine.url: https://workflow-engine.production.internal
+    workflow-engine.trust-store: /etc/certs/prod-truststore.jks
+```
+
+---
+
+## III. Usage Examples
+
+### Example 1: Basic Workflow Execution
+
+```java
+package com.example.app;
+
+import com.agentic.platform.sdk.workflow.*;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.rest.client.inject.RestClient;
+
+import java.util.Map;
+
+@ApplicationScoped
+public class OrderService {
+
+    @Inject
+    @RestClient
+    WorkflowRunClient workflowClient;
+
+    /**
+     * Process order using workflow
+     */
+    public Uni<String> processOrder(String orderId, Map<String, Object> orderData) {
+        TriggerWorkflowRequest request = new TriggerWorkflowRequest(
+            "order-processing-workflow",
+            "tenant-acme",
+            "user:order-service",
+            Map.of(
+                "orderId", orderId,
+                "orderData", orderData
+            ),
+            Map.of("source", "order-service"),
+            ExecutionOptions.defaults()
+                .withPriority(ExecutionOptions.Priority.HIGH)
+                .withTimeout(300000) // 5 minutes
+        );
+
+        return workflowClient.triggerWorkflow(request)
+            .map(WorkflowRunResponse::runId);
+    }
+
+    /**
+     * Process order and wait for completion
+     */
+    public Uni<Map<String, Object>> processOrderSync(String orderId, Map<String, Object> orderData) {
+        TriggerWorkflowRequest request = new TriggerWorkflowRequest(
+            "order-processing-workflow",
+            "tenant-acme",
+            "user:order-service",
+            Map.of("orderId", orderId, "orderData", orderData)
+        );
+
+        return workflowClient.triggerWorkflowSync(request, 300000)
+            .onItem().transformToUni(run -> 
+                workflowClient.getWorkflowOutput(run.runId())
+            );
+    }
+
+    /**
+     * Check order processing status
+     */
+    public Uni<WorkflowRun.Status> checkOrderStatus(String runId) {
+        return workflowClient.getWorkflowRun(runId)
+            .map(WorkflowRunResponse::status);
+    }
+
+    /**
+     * Cancel order processing
+     */
+    public Uni<Void> cancelOrder(String runId, String reason) {
+        CancelWorkflowRequest request = new CancelWorkflowRequest(
+            reason,
+            "user:order-service",
+            false // not forced
+        );
+
+        return workflowClient.cancelWorkflow(runId, request)
+            .replaceWithVoid();
+    }
+}
+```
+
+### Example 2: Fluent API Usage
+
+```java
+package com.example.app;
+
+import com.agentic.platform.sdk.WorkflowSDK;
+import com.agentic.platform.sdk.workflow.ExecutionOptions.Priority;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+
+import java.util.Map;
+
+@ApplicationScoped
+public class InvoiceService {
+
+    @Inject
+    WorkflowSDK workflowSDK;
+
+    /**
+     * Generate invoice using fluent API
+     */
+    public Uni<String> generateInvoice(String customerId, double amount) {
+        return workflowSDK
+            .workflow("invoice-generation")
+            .forTenant("billing-dept")
+            .triggeredBy("invoice-service")
+            .withInput("customerId", customerId)
+            .withInput("amount", amount)
+            .withInput("currency", "USD")
+            .withMetadata("source", "automated")
+            .withPriority(Priority.NORMAL)
+            .withTimeout(120000)
+            .execute()
+            .map(response -> response.runId());
+    }
+
+    /**
+     * Generate invoice and wait for result
+     */
+    public Uni<Map<String, Object>> generateInvoiceSync(String customerId, double amount) {
+        return workflowSDK
+            .workflow("invoice-generation")
+            .forTenant("billing-dept")
+            .triggeredBy("invoice-service")
+            .withInput("customerId", customerId)
+            .withInput("amount", amount)
+            .executeAndWait()
+            .onItem().transformToUni(run -> 
+                workflowSDK.workflow(run.workflowId())
+                    .forTenant(run.tenantId())
+                    .triggeredBy("system")
+                    .execute()
+                    .map(r -> Map.of("invoiceId", r.runId()))
+            );
+    }
+}
+```
+
+### Example 3: Streaming Workflow Events
+
+```java
+package com.example.app;
+
+import com.agentic.platform.sdk.workflow.*;
+import io.smallrye.mutiny.Multi;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.rest.client.inject.RestClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+@ApplicationScoped
+public class WorkflowMonitor {
+
+    private static final Logger log = LoggerFactory.getLogger(WorkflowMonitor.class);
+
+    @Inject
+    @RestClient
+    WorkflowRunClient workflowClient;
+
+    /**
+     * Monitor workflow execution in real-time
+     */
+    public void monitorWorkflow(String runId) {
+        Multi<WorkflowExecutionEvent> eventStream = workflowClient.streamExecution(runId);
+
+        eventStream
+            .onItem().invoke(event -> {
+                switch (event.type()) {
+                    case RUN_STARTED:
+                        log.info("Workflow {} started", event.runId());
+                        break;
+                    case NODE_STARTED:
+                        log.info("Node {} started in workflow {}", 
+                            event.nodeId(), event.runId());
+                        break;
+                    case NODE_COMPLETED:
+                        log.info("Node {} completed: {}", 
+                            event.nodeId(), event.data());
+                        break;
+                    case NODE_FAILED:
+                        log.error("Node {} failed: {}", 
+                            event.nodeId(), event.data());
+                        break;
+                    case WAITING_FOR_INPUT:
+                        log.warn("Workflow {} waiting for human input", 
+                            event.runId());
+                        notifyOperator(event);
+                        break;
+                    case RUN_COMPLETED:
+                        log.info("Workflow {} completed successfully", 
+                            event.runId());
+                        break;
+                    case RUN_FAILED:
+                        log.error("Workflow {} failed", event.runId());
+                        break;
+                }
+            })
+            .onFailure().invoke(th -> 
+                log.error("Error streaming workflow events", th)
+            )
+            .subscribe().with(
+                event -> {}, // handled in invoke above
+                failure -> log.error("Stream failed", failure),
+                () -> log.info("Stream completed")
+            );
+    }
+
+    private void notifyOperator(WorkflowExecutionEvent event) {
+        // Send notification to operator
+        log.info("Notifying operator about pending task: {}", event.data());
+    }
+}
+```
+
+### Example 4: HITL Integration
+
+```java
+package com.example.app;
+
+import com.agentic.platform.sdk.hitl.*;
+import com.agentic.platform.sdk.workflow.*;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.rest.client.inject.RestClient;
+
+import java.util.List;
+import java.util.Map;
+
+@ApplicationScoped
+public class ApprovalService {
+
+    @Inject
+    @RestClient
+    HITLClient hitlClient;
+
+    @Inject
+    @RestClient
+    WorkflowRunClient workflowClient;
+
+    /**
+     * Get pending approvals for operator
+     */
+    public Uni<List<HumanTaskResponse>> getPendingApprovals(String operatorId) {
+        return hitlClient.getPendingTasks(operatorId, TaskPriority.NORMAL);
+    }
+
+    /**
+     * Approve a task
+     */
+    public Uni<Void> approveTask(String taskId, String operatorId, String notes) {
+        TaskCompletionRequest request = new TaskCompletionRequest(
+            new TaskAction("approve", "Approve", "Approve this request"),
+            Map.of("approved", true),
+            notes,
+            operatorId
+        );
+
+        return hitlClient.completeTask(taskId, request);
+    }
+
+    /**
+     * Reject a task
+     */
+    public Uni<Void> rejectTask(String taskId, String operatorId, String reason) {
+        TaskCompletionRequest request = new TaskCompletionRequest(
+            new TaskAction("reject", "Reject", "Reject this request"),
+            Map.of("approved", false, "reason", reason),
+            reason,
+            operatorId
+        );
+
+        return hitlClient.completeTask(taskId, request);
+    }
+
+    /**
+     * Request more information
+     */
+    public Uni<Void> requestMoreInfo(String taskId, String operatorId, String question) {
+        return hitlClient.addComment(
+            taskId,
+            new TaskCommentRequest(question, operatorId)
+        );
+    }
+
+    /**
+     * Escalate to supervisor
+     */
+    public Uni<Void> escalateToSupervisor(String taskId, String reason) {
+        return hitlClient.escalateTask(taskId, reason);
+    }
+
+    /**
+     * Complete approval and resume workflow
+     */
+    public Uni<Void> completeApprovalWorkflow(
+        String taskId, 
+        String runId, 
+        String correlationKey,
+        boolean approved,
+        String operatorId
+    ) {
+        TaskCompletionRequest taskRequest = new TaskCompletionRequest(
+            new TaskAction(approved ? "approve" : "reject", "", ""),
+            Map.of("approved", approved),
+            approved ? "Approved" : "Rejected",
+            operatorId
+        );
+
+        return hitlClient.completeTask(taskId, taskRequest)
+            .onItem().transformToUni(v -> {
+                ResumeWorkflowRequest resumeRequest = new ResumeWorkflowRequest(
+                    correlationKey,
+                    Map.of("approved", approved),
+                    operatorId,
+                    approved ? "Approved by operator" : "Rejected by operator"
+                );
+                
+                return workflowClient.resumeWorkflow(runId, resumeRequest);
+            })
+            .replaceWithVoid();
+    }
+}
+```
+
+### Example 5: Error Handling
+
+```java
+package com.example.app;
+
+import com.agentic.platform.sdk.workflow.*;
+import com.agentic.platform.sdk.exception.*;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.rest.client.inject.RestClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Map;
+
+@ApplicationScoped
+public class ResilientWorkflowService {
+
+    private static final Logger log = LoggerFactory.getLogger(ResilientWorkflowService.class);
+
+    @Inject
+    @RestClient
+    WorkflowRunClient workflowClient;
+
+    /**
+     * Execute workflow with comprehensive error handling
+     */
+    public Uni<String> executeWithRetry(String workflowId, Map<String, Object> inputs) {
+        return triggerWorkflow(workflowId, inputs)
+            .onFailure(WorkflowNotFoundException.class)
+            .recoverWithUni(th -> {
+                log.error("Workflow not found: {}", workflowId);
+                return Uni.createFrom().failure(
+                    new IllegalArgumentException("Invalid workflow ID: " + workflowId)
+                );
+            })
+            .onFailure(WorkflowTimeoutException.class)
+            .retry().atMost(3)
+            .onFailure(InvalidRunStateException.class)
+            .recoverWithUni(th -> {
+                log.warn("Invalid state, retrying workflow");
+                return triggerWorkflow(workflowId, inputs);
+            })
+            .onFailure()
+            .invoke(th -> log.error("Workflow execution failed", th));
+    }
+
+    private Uni<String> triggerWorkflow(String workflowId, Map<String, Object> inputs) {
+        TriggerWorkflowRequest request = new TriggerWorkflowRequest(
+            workflowId,
+            "default-tenant",
+            "system",
+            inputs
+        );
+
+        return workflowClient.triggerWorkflow(request)
+            .map(WorkflowRunResponse::runId);
+    }
+
+    /**
+     * Execute with fallback workflow
+     */
+    public Uni<String> executeWithFallback(
+        String primaryWorkflowId,
+        String fallbackWorkflowId,
+        Map<String, Object> inputs
+    ) {
+        return triggerWorkflow(primaryWorkflowId, inputs)
+            .onFailure()
+            .recoverWithUni(th -> {
+                log.warn("Primary workflow failed, using fallback: {}", th.getMessage());
+                return triggerWorkflow(fallbackWorkflowId, inputs);
+            });
+    }
+
+    /**
+     * Execute with timeout and cancellation
+     */
+    public Uni<WorkflowRunResponse> executeWithTimeout(
+        String workflowId,
+        Map<String, Object> inputs,
+        long timeoutMs
+    ) {
+        TriggerWorkflowRequest request = new TriggerWorkflowRequest(
+            workflowId,
+            "default-tenant",
+            "system",
+            inputs,
+            Map.of(),
+            ExecutionOptions.defaults().withTimeout(timeoutMs)
+        );
+
+        return workflowClient.triggerWorkflow(request)
+            .onItem().transformToUni(run -> 
+                waitForCompletion(run.runId(), timeoutMs)
+            )
+            .ifNoItem().after(java.time.Duration.ofMillis(timeoutMs))
+            .recoverWithUni(() -> {
+                log.error("Workflow timed out after {}ms", timeoutMs);
+                return Uni.createFrom().failure(
+                    new WorkflowTimeoutException(workflowId, timeoutMs)
+                );
+            });
+    }
+
+    private Uni<WorkflowRunResponse> waitForCompletion(String runId, long timeoutMs) {
+        return workflowClient.getWorkflowRun(runId)
+            .onItem().transformToUni(run -> {
+                if (run.isTerminal()) {
+                    return Uni.createFrom().item(run);
+                }
+                // Poll every 1 second
+                return Uni.createFrom().item(run)
+                    .onItem().delayIt().by(java.time.Duration.ofSeconds(1))
+                    .onItem().transformToUni(r -> waitForCompletion(runId, timeoutMs));
+            });
+    }
+}
+```
+
+### Example 6: Batch Workflow Execution
+
+```java
+package com.example.app;
+
+import com.agentic.platform.sdk.workflow.*;
+import io.smallrye.mutiny.Uni;
+import io.smallrye.mutiny.Multi;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.rest.client.inject.RestClient;
+
+import java.util.List;
+import java.util.Map;
+
+@ApplicationScoped
+public class BatchWorkflowService {
+
+    @Inject
+    @RestClient
+    WorkflowRunClient workflowClient;
+
+    /**
+     * Execute multiple workflows in parallel
+     */
+    public Uni<List<String>> executeBatch(
+        String workflowId,
+        List<Map<String, Object>> inputsList
+    ) {
+        List<Uni<String>> executions = inputsList.stream()
+            .map(inputs -> triggerWorkflow(workflowId, inputs))
+            .toList();
+
+        return Uni.combine().all().unis(executions)
+            .combinedWith(results -> (List<String>) results);
+    }
+
+    /**
+     * Execute workflows sequentially
+     */
+    public Uni<List<String>> executeSequential(
+        String workflowId,
+        List<Map<String, Object>> inputsList
+    ) {
+        return Multi.createFrom().iterable(inputsList)
+            .onItem().transformToUniAndConcatenate(inputs -> 
+                triggerWorkflow(workflowId, inputs)
+            )
+            .collect().asList();
+    }
+
+    /**
+     * Execute with rate limiting
+     */
+    public Uni<List<String>> executeWithRateLimit(
+        String workflowId,
+        List<Map<String, Object>> inputsList,
+        int maxConcurrent
+    ) {
+        return Multi.createFrom().iterable(inputsList)
+            .onItem().transformToUniAndMerge(inputs -> 
+                triggerWorkflow(workflowId, inputs)
+            )
+            .merge(maxConcurrent) // Limit concurrency
+            .collect().asList();
+    }
+
+    private Uni<String> triggerWorkflow(String workflowId, Map<String, Object> inputs) {
+        TriggerWorkflowRequest request = new TriggerWorkflowRequest(
+            workflowId,
+            "batch-tenant",
+            "batch-service",
+            inputs
+        );
+
+        return workflowClient.triggerWorkflow(request)
+            .map(WorkflowRunResponse::runId);
+    }
+}
+```
+
+---
+
+## IV. Testing
+
+### Test Configuration (application-test.yml)
+
+```yaml
+quarkus:
+  rest-client:
+    workflow-engine:
+      url: ${test.workflow-engine.url}
+  
+  http:
+    test-port: 8081
+
+# Use mock server
+test:
+  workflow-engine:
+    url: http://localhost:${quarkus.http.test-port}
+```
+
+### Mock Server Test
+
+```java
+package com.example.app;
+
+import com.agentic.platform.sdk.workflow.*;
+import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.junit.mockito.InjectMock;
+import io.smallrye.mutiny.Uni;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.rest.client.inject.RestClient;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+
+import java.time.Instant;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+
+@QuarkusTest
+class OrderServiceTest {
+
+    @InjectMock
+    @RestClient
+    WorkflowRunClient workflowClient;
+
+    @Inject
+    OrderService orderService;
+
+    @Test
+    void testProcessOrder() {
+        // Given
+        String expectedRunId = "test-run-123";
+        WorkflowRunResponse mockResponse = new WorkflowRunResponse(
+            expectedRunId,
+            "order-processing-workflow",
+            "tenant-acme",
+            WorkflowRun.Status.RUNNING,
+            "node-1",
+            Instant.now(),
+            Instant.now(),
+            null,
+            Instant.now(),
+            "user:test",
+            ExecutionOptions.defaults(),
+            Map.of(),
+            null
+        );
+
+        Mockito.when(workflowClient.triggerWorkflow(any()))
+            .thenReturn(Uni.createFrom().item(mockResponse));
+
+        // When
+        String runId = orderService.processOrder("ORDER-123", Map.of("total", 100.0))
+            .await().indefinitely();
+
+        // Then
+        assertEquals(expectedRunId, runId);
+        Mockito.verify(workflowClient).triggerWorkflow(any());
+    }
+}
+```
+
+---
+
+## V. Advanced Features
+
+### Custom Interceptors
+
+```java
+package com.example.app;
+
+import jakarta.ws.rs.client.ClientRequestContext;
+import jakarta.ws.rs.client.ClientRequestFilter;
+import jakarta.ws.rs.ext.Provider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+
+/**
+ * Add custom headers to all SDK requests
+ */
+@Provider
+public class WorkflowClientFilter implements ClientRequestFilter {
+
+    private static final Logger log = LoggerFactory.getLogger(WorkflowClientFilter.class);
+
+    @Override
+    public void filter(ClientRequestContext requestContext) throws IOException {
+        // Add correlation ID
+        String correlationId = java.util.UUID.randomUUID().toString();
+        requestContext.getHeaders().add("X-Correlation-ID", correlationId);
+        
+        // Add API version
+        requestContext.getHeaders().add("X-API-Version", "v1");
+        
+        // Add authentication token (if available)
+        String token = getAuthToken();
+        if (token != null) {
+            requestContext.getHeaders().add("Authorization", "Bearer " + token);
+        }
+        
+        log.debug("Request to {} with correlation ID: {}", 
+            requestContext.getUri(), correlationId);
+    }
+
+    private String getAuthToken() {
+        // Get token from security context or configuration
+        return System.getenv("API_TOKEN");
+    }
+}
+```
+
+### Metrics Collection
+
+```java
+package com.example.app;
+
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+
+@ApplicationScoped
+public class WorkflowMetricsCollector {
+
+    @Inject
+    MeterRegistry registry;
+
+    public void recordWorkflowExecution(String workflowId, long durationMs, boolean success) {
+        Timer.builder("workflow.execution")
+            .tag("workflow_id", workflowId)
+            .tag("status", success ? "success" : "failure")
+            .register(registry)
+            .record(java.time.Duration.ofMillis(durationMs));
+    }
+
+    public void recordWorkflowTrigger(String workflowId) {
+        registry.counter("workflow.triggered", "workflow_id", workflowId)
+            .increment();
+    }
+}
+```
+
+This completes the comprehensive SDK implementation with configuration, examples, and testing utilities!
+
+
+# Agentic Workflow Platform - SDK Documentation
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Installation](#installation)
+3. [Quick Start](#quick-start)
+4. [Core Components](#core-components)
+5. [API Reference](#api-reference)
+6. [Usage Patterns](#usage-patterns)
+7. [Error Handling](#error-handling)
+8. [Testing](#testing)
+9. [Best Practices](#best-practices)
+10. [Migration Guide](#migration-guide)
+
+---
+
+## Overview
+
+The Agentic Workflow Platform SDK provides a comprehensive, type-safe, and reactive client library for interacting with the workflow engine. Built on Quarkus and Mutiny, it offers both imperative and declarative APIs for workflow management.
+
+### Key Features
+
+- ✅ **Reactive & Non-Blocking**: Built on SmallRye Mutiny
+- ✅ **Type-Safe**: Full compile-time type checking
+- ✅ **Fluent API**: Chainable builder pattern
+- ✅ **Resilient**: Built-in retry policies and circuit breakers
+- ✅ **Observable**: Integrated metrics and tracing
+- ✅ **Testable**: Mock-friendly interfaces
+- ✅ **Lightweight**: Minimal dependencies
+
+---
+
+## Installation
+
+### Maven
+
+```xml
+<dependency>
+    <groupId>com.agentic.platform</groupId>
+    <artifactId>wayang-workflow-sdk</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+### Gradle
+
+```groovy
+implementation 'com.agentic.platform:wayang-workflow-sdk:1.0.0'
+```
+
+### Configuration
+
+Add to `application.yml`:
+
+```yaml
+quarkus:
+  rest-client:
+    workflow-engine:
+      url: http://localhost:8080
+      connect-timeout: 5000
+      read-timeout: 60000
+```
+
+---
+
+## Quick Start
+
+### 1. Basic Workflow Execution
+
+```java
+@ApplicationScoped
+public class MyService {
+    
+    @Inject
+    @RestClient
+    WorkflowRunClient workflowClient;
+    
+    public Uni<String> executeWorkflow(Map<String, Object> inputs) {
+        TriggerWorkflowRequest request = new TriggerWorkflowRequest(
+            "my-workflow-id",
+            "my-tenant",
+            "user:john",
+            inputs
+        );
+        
+        return workflowClient.triggerWorkflow(request)
+            .map(WorkflowRunResponse::runId);
+    }
+}
+```
+
+### 2. Fluent API
+
+```java
+@Inject
+WorkflowSDK sdk;
+
+public Uni<String> executeWorkflowFluent(Map<String, Object> inputs) {
+    return sdk.workflow("my-workflow-id")
+        .forTenant("my-tenant")
+        .triggeredBy("user:john")
+        .withInputs(inputs)
+        .withPriority(Priority.HIGH)
+        .execute()
+        .map(WorkflowRunResponse::runId);
+}
+```
+
+### 3. Synchronous Execution (Wait for Completion)
+
+```java
+public Uni<Map<String, Object>> executeAndWait(Map<String, Object> inputs) {
+    return sdk.workflow("my-workflow-id")
+        .forTenant("my-tenant")
+        .triggeredBy("user:john")
+        .withInputs(inputs)
+        .executeAndWait()
+        .onItem().transformToUni(run -> 
+            workflowClient.getWorkflowOutput(run.runId())
+        );
+}
+```
+
+---
+
+## Core Components
+
+### 1. WorkflowRunClient
+
+Primary interface for workflow execution and management.
+
+```java
+public interface WorkflowRunClient {
+    // Trigger new workflow
+    Uni<WorkflowRunResponse> triggerWorkflow(TriggerWorkflowRequest request);
+    
+    // Get run status
+    Uni<WorkflowRunResponse> getWorkflowRun(String runId);
+    
+    // Get detailed state
+    Uni<WorkflowRunStateResponse> getWorkflowRunState(String runId);
+    
+    // Resume from HITL
+    Uni<WorkflowRunResponse> resumeWorkflow(String runId, ResumeWorkflowRequest request);
+    
+    // Cancel execution
+    Uni<WorkflowRunResponse> cancelWorkflow(String runId, CancelWorkflowRequest request);
+    
+    // Query runs
+    Uni<WorkflowRunListResponse> listWorkflowRuns(/* filters */);
+    
+    // Stream events (SSE)
+    Multi<WorkflowExecutionEvent> streamExecution(String runId);
+}
+```
+
+### 2. WorkflowSDK (Fluent Builder)
+
+Simplified fluent API for common operations.
+
+```java
+public class WorkflowSDK {
+    public WorkflowBuilder workflow(String workflowId);
+}
+
+// Usage
+sdk.workflow("order-processing")
+    .forTenant("acme-corp")
+    .triggeredBy("api-user")
+    .withInput("orderId", "12345")
+    .withTimeout(Duration.ofMinutes(5))
+    .execute();
+```
+
+### 3. WorkflowDefinitionClient
+
+Manage workflow definitions.
+
+```java
+public interface WorkflowDefinitionClient {
+    Uni<WorkflowDefinitionResponse> createWorkflow(WorkflowDefinitionRequest request);
+    Uni<WorkflowDefinitionResponse> getWorkflow(String workflowId);
+    Uni<ValidationResponse> validateWorkflow(WorkflowDefinitionRequest request);
+    Uni<List<WorkflowVersionResponse>> getWorkflowVersions(String workflowId);
+}
+```
+
+### 4. AgentClient
+
+Direct agent invocation (advanced use cases).
+
+```java
+public interface AgentClient {
+    Uni<AgentExecutionResponse> executeAgent(String agentId, AgentExecutionRequest request);
+    Uni<AgentInfoResponse> getAgentInfo(String agentId);
+    Uni<List<AgentInfoResponse>> listAgents(/* filters */);
+}
+```
+
+### 5. HITLClient
+
+Human-in-the-loop task management.
+
+```java
+public interface HITLClient {
+    Uni<List<HumanTaskResponse>> getPendingTasks(String operatorId, TaskPriority priority);
+    Uni<HumanTaskResponse> getTask(String taskId);
+    Uni<Void> completeTask(String taskId, TaskCompletionRequest request);
+    Uni<Void> reassignTask(String taskId, String newOperatorId);
+}
+```
+
+---
+
+## API Reference
+
+### Request Objects
+
+#### TriggerWorkflowRequest
+
+```java
+public record TriggerWorkflowRequest(
+    String workflowId,          // Required: Workflow definition ID
+    String tenantId,            // Required: Tenant identifier
+    String triggeredBy,         // Required: User/system identifier
+    Map<String, Object> inputs, // Optional: Input data
+    Map<String, Object> metadata, // Optional: Additional metadata
+    ExecutionOptions options    // Optional: Execution configuration
+)
+```
+
+#### ExecutionOptions
+
+```java
+public record ExecutionOptions(
+    Priority priority,       // LOW, NORMAL, HIGH, CRITICAL
+    long timeoutMs,         // Execution timeout
+    boolean dryRun,         // Simulation mode
+    String parentRunId,     // Parent workflow (for sub-workflows)
+    Map<String, String> tags // Custom tags
+)
+```
+
+#### ResumeWorkflowRequest
+
+```java
+public record ResumeWorkflowRequest(
+    String correlationKey,  // Required: HITL correlation key
+    Map<String, Object> resumeData, // Optional: Resume data
+    String resumedBy,       // Required: Who resumed
+    String notes            // Optional: Notes
+)
+```
+
+### Response Objects
+
+#### WorkflowRunResponse
+
+```java
+public record WorkflowRunResponse(
+    String runId,
+    String workflowId,
+    String tenantId,
+    WorkflowRun.Status status,      // PENDING, RUNNING, WAITING, COMPLETED, FAILED, CANCELLED
+    String currentNodeId,
+    Instant createdAt,
+    Instant startedAt,
+    Instant completedAt,
+    Instant lastUpdateAt,
+    String triggeredBy,
+    ExecutionOptions options,
+    Map<String, Object> metadata,
+    ExecutionMetrics metrics
+) {
+    // Convenience methods
+    boolean isRunning();
+    boolean isWaiting();
+    boolean isCompleted();
+    boolean isFailed();
+    boolean isTerminal();
+}
+```
+
+#### WorkflowRunStateResponse
+
+```java
+public record WorkflowRunStateResponse(
+    String runId,
+    WorkflowRun.Status status,
+    Map<String, NodeExecutionState> nodeStates,
+    Map<String, Object> workflowState,
+    List<String> executionPath,
+    Map<String, Object> output
+)
+```
+
+---
+
+## Usage Patterns
+
+### Pattern 1: Fire-and-Forget
+
+```java
+public Uni<String> submitJob(Map<String, Object> jobData) {
+    return workflowClient.triggerWorkflow(
+        new TriggerWorkflowRequest("job-processor", "jobs-tenant", "scheduler", jobData)
+    ).map(WorkflowRunResponse::runId);
+}
+```
+
+### Pattern 2: Wait for Completion with Polling
+
+```java
+@Inject
+WorkflowPoller poller;
+
+public Uni<WorkflowRunResponse> executeAndWaitForResult(String workflowId, Map<String, Object> inputs) {
+    return workflowClient.triggerWorkflow(
+        new TriggerWorkflowRequest(workflowId, "tenant", "user", inputs)
+    )
+    .onItem().transformToUni(response -> 
+        poller.pollUntilComplete(response.runId(), Duration.ofMinutes(10))
+    );
+}
+```
+
+### Pattern 3: Event Streaming (Real-time Monitoring)
+
+```java
+public void monitorWorkflowRealtime(String runId) {
+    workflowClient.streamExecution(runId)
+        .onItem().invoke(event -> {
+            log.info("Event: {} - Node: {} - Type: {}", 
+                event.runId(), event.nodeId(), event.type());
+            
+            // Handle specific events
+            switch (event.type()) {
+                case NODE_COMPLETED -> handleNodeComplete(event);
+                case NODE_FAILED -> handleNodeFailure(event);
+                case WAITING_FOR_INPUT -> notifyOperator(event);
+            }
+        })
+        .subscribe().with(
+            event -> {},
+            error -> log.error("Stream error", error),
+            () -> log.info("Stream completed")
+        );
+}
+```
+
+### Pattern 4: Batch Execution
+
+```java
+public Uni<List<String>> executeBatch(List<Map<String, Object>> inputsList) {
+    List<Uni<String>> executions = inputsList.stream()
+        .map(inputs -> workflowClient.triggerWorkflow(
+            new TriggerWorkflowRequest("batch-job", "batch", "system", inputs)
+        ))
+        .map(uni -> uni.map(WorkflowRunResponse::runId))
+        .toList();
+    
+    return Uni.combine().all().unis(executions)
+        .combinedWith(results -> (List<String>) results);
+}
+```
+
+### Pattern 5: Retry with Exponential Backoff
+
+```java
+public Uni<String> executeWithRetry(Map<String, Object> inputs) {
+    return workflowClient.triggerWorkflow(
+        new TriggerWorkflowRequest("flaky-workflow", "tenant", "user", inputs)
+    )
+    .map(WorkflowRunResponse::runId)
+    .onFailure().retry()
+    .withBackOff(Duration.ofSeconds(1), Duration.ofMinutes(5))
+    .withJitter(0.5)
+    .atMost(5);
+}
+```
+
+### Pattern 6: Circuit Breaker
+
+```java
+import io.smallrye.faulttolerance.api.CircuitBreakerName;
+import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
+
+@CircuitBreaker(
+    requestVolumeThreshold = 10,
+    failureRatio = 0.5,
+    delay = 10000,
+    successThreshold = 3
+)
+@CircuitBreakerName("workflow-trigger")
+public Uni<String> executeWithCircuitBreaker(Map<String, Object> inputs) {
+    return workflowClient.triggerWorkflow(
+        new TriggerWorkflowRequest("protected-workflow", "tenant", "user", inputs)
+    ).map(WorkflowRunResponse::runId);
+}
+```
+
+### Pattern 7: Timeout with Fallback
+
+```java
+public Uni<String> executeWithTimeout(Map<String, Object> inputs) {
+    return workflowClient.triggerWorkflow(
+        new TriggerWorkflowRequest("slow-workflow", "tenant", "user", inputs)
+    )
+    .map(WorkflowRunResponse::runId)
+    .ifNoItem().after(Duration.ofMinutes(5))
+    .recoverWithUni(() -> {
+        log.warn("Workflow timed out, using fallback");
+        return workflowClient.triggerWorkflow(
+            new TriggerWorkflowRequest("fallback-workflow", "tenant", "user", inputs)
+        ).map(WorkflowRunResponse::runId);
+    });
+}
+```
+
+---
+
+## Error Handling
+
+### Exception Hierarchy
+
+```
+WorkflowSDKException (base)
+├── WorkflowNotFoundException
+├── RunNotFoundException
+├── InvalidRunStateException
+└── WorkflowTimeoutException
+```
+
+### Handling Specific Errors
+
+```java
+public Uni<String> executeWithErrorHandling(Map<String, Object> inputs) {
+    return workflowClient.triggerWorkflow(
+        new TriggerWorkflowRequest("my-workflow", "tenant", "user", inputs)
+    )
+    .map(WorkflowRunResponse::runId)
+    
+    // Handle workflow not found
+    .onFailure(WorkflowNotFoundException.class)
+    .recoverWithUni(ex -> {
+        log.error("Workflow not found: {}", ex.getMessage());
+        return Uni.createFrom().failure(
+            new IllegalArgumentException("Invalid workflow configuration")
+        );
+    })
+    
+    // Handle timeout
+    .onFailure(WorkflowTimeoutException.class)
+    .retry().atMost(2)
+    
+    // Handle invalid state
+    .onFailure(InvalidRunStateException.class)
+    .recoverWithItem(ex -> {
+        log.warn("Invalid state: {}", ex.getMessage());
+        return "FALLBACK_RUN_ID";
+    })
+    
+    // Handle all other errors
+    .onFailure()
+    .invoke(ex -> log.error("Unexpected error", ex));
+}
+```
+
+### Global Error Handler
+
+```java
+@ApplicationScoped
+public class WorkflowErrorHandler {
+    
+    public <T> Uni<T> wrapWithErrorHandling(Uni<T> operation, String context) {
+        return operation
+            .onFailure().invoke(th -> 
+                log.error("Workflow SDK error in {}: {}", context, th.getMessage())
+            )
+            .onFailure(WorkflowSDKException.class)
+            .invoke(ex -> {
+                // Send to error tracking service
+                errorTracker.captureException(ex);
+                
+                // Emit metric
+                metricsCollector.recordApiError(context, ex.getErrorCode());
+            });
+    }
+}
+```
+
+---
+
+## Testing
+
+### Unit Tests with Mocks
+
+```java
+@QuarkusTest
+class MyServiceTest {
+    
+    @InjectMock
+    @RestClient
+    WorkflowRunClient workflowClient;
+    
+    @Inject
+    MyService service;
+    
+    @Test
+    void testWorkflowExecution() {
+        // Given
+        String expectedRunId = "test-run-123";
+        WorkflowRunResponse mockResponse = new WorkflowRunResponse(
+            expectedRunId, "workflow-id", "tenant", 
+            WorkflowRun.Status.RUNNING, "node-1",
+            Instant.now(), Instant.now(), null, Instant.now(),
+            "user", ExecutionOptions.defaults(), Map.of(), null
+        );
+        
+        when(workflowClient.triggerWorkflow(any()))
+            .thenReturn(Uni.createFrom().item(mockResponse));
+        
+        // When
+        String runId = service.executeWorkflow(Map.of("key", "value"))
+            .await().indefinitely();
+        
+        // Then
+        assertEquals(expectedRunId, runId);
+        verify(workflowClient).triggerWorkflow(any());
+    }
+}
+```
+
+### Integration Tests
+
+```java
+@QuarkusTest
+@TestHTTPEndpoint(WorkflowResource.class)
+class WorkflowIntegrationTest {
+    
+    @Test
+    void testEndToEndWorkflowExecution() {
+        // Trigger workflow
+        TriggerWorkflowRequest request = new TriggerWorkflowRequest(
+            "test-workflow", "test-tenant", "test-user", Map.of("input", "data")
+        );
+        
+        String runId = given()
+            .contentType(ContentType.JSON)
+            .body(request)
+            .when()
+            .post("/trigger")
+            .then()
+            .statusCode(200)
+            .extract().path("runId");
+        
+        // Poll for completion
+        await().atMost(30, SECONDS).until(() -> {
+            WorkflowRunResponse response = given()
+                .when()
+                .get("/" + runId)
+                .then()
+                .statusCode(200)
+                .extract().as(WorkflowRunResponse.class);
+            
+            return response.isTerminal();
+        });
+    }
+}
+```
+
+---
+
+## Best Practices
+
+### 1. Always Use Async/Reactive
+
+```java
+// ✅ GOOD: Non-blocking
+public Uni<String> executeWorkflow() {
+    return workflowClient.triggerWorkflow(request)
+        .map(WorkflowRunResponse::runId);
+}
+
+// ❌ BAD: Blocking
+public String executeWorkflow() {
+    return workflowClient.triggerWorkflow(request)
+        .await().indefinitely()
+        .runId();
+}
+```
+
+### 2. Set Appropriate Timeouts
+
+```java
+ExecutionOptions options = ExecutionOptions.defaults()
+    .withTimeout(Duration.ofMinutes(10).toMillis());
+```
+
+### 3. Use Correlation IDs
+
+```java
+Map<String, Object> metadata = Map.of(
+    "correlationId", UUID.randomUUID().toString(),
+    "source", "api-gateway",
+    "timestamp", Instant.now()
+);
+```
+
+### 4. Handle All Error Cases
+
+```java
+return workflowClient.triggerWorkflow(request)
+    .onFailure(WorkflowNotFoundException.class).recoverWithItem("default")
+    .onFailure(WorkflowTimeoutException.class).retry().atMost(3)
+    .onFailure().invoke(th -> log.error("Unexpected error", th));
+```
+
+### 5. Use Resource Pools
+
+```yaml
+quarkus:
+  rest-client:
+    workflow-engine:
+      max-pool-size: 50
+      connection-ttl: 60000
+```
+
+### 6. Enable Metrics
+
+```java
+@Inject
+WorkflowMetricsCollector metrics;
+
+metrics.recordWorkflowTriggered(workflowId, tenantId);
+```
+
+---
+
+## Migration Guide
+
+### From 0.x to 1.0
+
+1. **Package Rename**:
+   ```java
+   // Old
+   import com.agentic.workflow.client.*;
+   
+   // New
+   import com.agentic.platform.sdk.workflow.*;
+   ```
+
+2. **Async by Default**:
+   ```java
+   // Old (blocking)
+   String runId = client.triggerWorkflow(request);
+   
+   // New (reactive)
+   Uni<String> runId = client.triggerWorkflow(request)
+       .map(WorkflowRunResponse::runId);
+   ```
+
+3. **New Fluent API**:
+   ```java
+   // Old
+   TriggerWorkflowRequest request = new TriggerWorkflowRequest(...);
+   client.triggerWorkflow(request);
+   
+   // New (preferred)
+   sdk.workflow("id")
+       .forTenant("tenant")
+       .triggeredBy("user")
+       .withInputs(inputs)
+       .execute();
+   ```
+
+---
+
+## Support
+
+- **Documentation**: https://docs.agentic-platform.io
+- **GitHub**: https://github.com/agentic-platform/sdk
+- **Issues**: https://github.com/agentic-platform/sdk/issues
+
+---
+
+## License
+
+Apache License 2.0

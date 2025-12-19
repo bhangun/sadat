@@ -1,0 +1,72 @@
+package io.agentic.platform.guardrails;
+
+import io.agentic.platform.schema.*;
+import io.agentic.platform.engine.execution.*;
+import io.agentic.platform.node.*;
+
+
+
+
+
+
+
+
+
+
+
+
+package io.agentic.platform.selfheal;
+
+import io.agentic.platform.schema.*;
+import io.agentic.platform.engine.execution.*;
+import io.agentic.platform.error.*;
+
+
+
+
+/**
+ * Schema validator placeholder.
+ */
+@ApplicationScoped
+class SchemaValidator {
+    
+    public ValidationResult validate(Object value, Object schema) {
+        // Use JSON Schema validator (networknt or similar)
+        // Simplified for now
+        if (value == null) {
+            return ValidationResult.failure("Value is null", List.of());
+        }
+        return ValidationResult.success();
+    }
+}
+
+/**
+ * Validation result.
+ */
+@lombok.Data
+@lombok.Builder
+class ValidationResult {
+    private final boolean valid;
+    private final String message;
+    private final Map<String, Object> errors;
+    
+    public static ValidationResult success() {
+        return ValidationResult.builder()
+                .valid(true)
+                .message("Validation passed")
+                .errors(Map.of())
+                .build();
+    }
+    
+    public static ValidationResult failure(String message, List<String> errorList) {
+        return ValidationResult.builder()
+                .valid(false)
+                .message(message)
+                .errors(Map.of("errors", errorList))
+                .build();
+    }
+}
+
+
+
+

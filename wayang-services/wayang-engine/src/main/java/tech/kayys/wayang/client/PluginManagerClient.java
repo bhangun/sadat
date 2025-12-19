@@ -1,7 +1,6 @@
 package tech.kayys.wayang.client;
 
 import java.util.List;
-import java.util.Map;
 
 import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.faulttolerance.Timeout;
@@ -15,6 +14,7 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
+import tech.kayys.wayang.schema.node.PluginDescriptor;
 
 /**
  * PluginManagerClient - Client for Plugin Manager service
@@ -50,16 +50,17 @@ public interface PluginManagerClient {
         Uni<CompatibilityResult> checkCompatibility(CompatibilityRequest request);
 
         // DTOs
-        record PluginDescriptor(
-                        String id,
-                        String name,
-                        String version,
-                        String description,
-                        PluginStatus status,
-                        List<String> capabilities,
-                        Map<String, Object> metadata) {
-        }
-
+        /*
+         * record PluginDescriptor(
+         * String id,
+         * String name,
+         * String version,
+         * String description,
+         * PluginStatus status,
+         * List<String> capabilities,
+         * Map<String, Object> metadata) {
+         * }
+         */
         enum PluginStatus {
                 ACTIVE, DEPRECATED, DISABLED
         }

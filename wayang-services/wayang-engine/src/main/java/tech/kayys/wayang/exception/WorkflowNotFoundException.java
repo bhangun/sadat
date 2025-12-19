@@ -18,6 +18,10 @@ public class WorkflowNotFoundException extends DesignerException {
                 Map.of("workflowId", workflowId, "tenantId", tenantId));
     }
 
+    public WorkflowNotFoundException(String message) {
+        super("WORKFLOW_NOT_FOUND", message, null, null);
+    }
+
     @Override
     public Response.Status getHttpStatus() {
         return Response.Status.NOT_FOUND;

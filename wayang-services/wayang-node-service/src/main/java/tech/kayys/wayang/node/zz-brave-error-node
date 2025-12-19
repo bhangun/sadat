@@ -1,0 +1,777 @@
+package com.agentic.platform.service.engine.nodes;
+
+import com.agentic.platform.runtime.node.*;
+import com.agentic.platform.commons.error.ErrorPayload;
+import com.agentic.platform.commons.audit.AuditPayload;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * ErrorHandlerNode: Built-in node for error routing (Blueprint Section 3.1)
+ * 
+ * Responsibilities:
+ * - Evaluate error against CEL rules
+ * - Route to: retry, auto_fix, human_review, or abort
+ * - Enforce retry policies (max attempts, backoff)
+ * - Emit structured routing decisions
+ * 
+ * Input:
+ * - error: ErrorPayload
+ * 
+ * Outputs:
+ * - retry: route back to origin node
+ * - auto_fix: route to SelfHealingNode
+ * - human_review: route to HumanDecisionNode
+ * - abort: terminal failure
+ * 
+ * Configuration:
+ * - rules: List of CEL expressions with actions
+ * - retryPolicy: backoff strategy, max attempts
+ */
+@ApplicationScoped
+public class ErrorHandlerNode extends IntegrationNode {
+
+    private static final Logger log = LoggerFactory.getLogger(ErrorHandlerNode.class);
+
+    private CELEngine celEngine;
+
+    @Override
+    protected Uni<Void> doOnLoad(NodeDescriptor descriptor, NodeConfig config) {
+        this.celEngine = new CELEngine();
+
+        // Validate rules configuration
+        List < ErrorHandlingRule > rules = parseRules(config);
+        if (rules.isEmpty()) {
+            log.warn("ErrorHandlerNode loaded with no rules - will default to abort");
+        }
+
+        return Uni.createFrom().voidItem();
+    }
+
+    @Override
+    protected Uni<ExecutionResult> executeIntegration(NodeContext context) {
+        // Get error payload from input
+        ErrorPayload error = context.getInput("error", ErrorPayload.class);
+
+        if (error == null) {
+            log.error("ErrorHandlerNode called without error input");
+            return Uni.createFrom().item(
+                ExecutionResult.failed("No error payload provided")
+            );
+        }
+
+        log.info("Handling error from node {} (type: {}, attempt: {}/{})",
+            error.originNode(), error.type(), error.attempt(), error.maxAttempts());
+
+        // Evaluate rules
+        List < ErrorHandlingRule > rules = parseRules(config);
+
+        for (ErrorHandlingRule rule : rules) {
+            if (evaluateRule(rule, error)) {
+                log.info("Rule '{}' matched, action: {}", rule.name(), rule.action());
+
+                // Log audit event
+                context.getProvenance().log(
+                    AuditPayload.builder()
+                        .runId(context.getRunId())
+                        .nodeId(context.getNodeId())
+                        .systemActor()
+                        .event("ERROR_HANDLER_INVOKED")
+                        .level(AuditPayload.Level.WARN)
+                        .metadata(Map.of(
+                            "errorType", error.type().toString(),
+                            "originNode", error.originNode(),
+                            "action", rule.action().toString(),
+                            "rule", rule.name()
+                        ))
+                        .build()
+                );
+
+                return routeError(error, rule.action(), context);
+            }
+        }
+
+        // Default: abort if no rule matched
+        log.error("No error handling rule matched for error type {}", error.type());
+        return Uni.createFrom().item(
+            ExecutionResult.success("abort", Map.of("error", error))
+        );
+    }
+
+    /**
+     * Route error based on action
+     */
+    private Uni<ExecutionResult> routeError(
+        ErrorPayload error,
+        ErrorAction action,
+        NodeContext context
+    ) {
+        return switch (action) {
+            case RETRY -> handleRetry(error, context);
+            case AUTO_FIX -> handleAutoFix(error, context);
+            case HUMAN_REVIEW -> handleHumanReview(error, context);
+            case ABORT -> Uni.createFrom().item(
+                ExecutionResult.success("abort", Map.of("error", error))
+            );
+        };
+    }
+
+    /**
+     * Handle retry: increment attempt, apply backoff
+     */
+    private Uni<ExecutionResult> handleRetry(ErrorPayload error, NodeContext context) {
+        if (error.attempt() >= error.maxAttempts()) {
+            log.warn("Max retry attempts reached for node {}", error.originNode());
+            return Uni.createFrom().item(
+                ExecutionResult.success("abort", Map.of(
+                    "error", error,
+                    "reason", "max_attempts_exceeded"
+                ))
+            );
+        }
+
+        // Calculate backoff delay
+        ErrorHandlingConfig errorConfig = descriptor.errorHandling();
+        long delayMs = calculateBackoff(
+            errorConfig.retryPolicy(),
+            error.attempt()
+        );
+
+        log.info("Scheduling retry #{} for node {} after {}ms",
+            error.attempt() + 1, error.originNode(), delayMs);
+
+        // Log retry scheduled
+        context.getProvenance().log(
+            AuditPayload.builder()
+                .runId(context.getRunId())
+                .nodeId(error.originNode())
+                .systemActor()
+                .event(AuditPayload.Events.RETRY_SCHEDULED)
+                .level(AuditPayload.Level.INFO)
+                .metadata(Map.of(
+                    "attempt", error.attempt() + 1,
+                    "delayMs", delayMs
+                ))
+                .build()
+        );
+
+        return Uni.createFrom().item(
+            ExecutionResult.success("retry", Map.of(
+                "error", error,
+                "delayMs", delayMs,
+                "attempt", error.attempt() + 1
+            ))
+        );
+    }
+
+    /**
+     * Handle auto-fix: route to SelfHealingNode
+     */
+    private Uni<ExecutionResult> handleAutoFix(ErrorPayload error, NodeContext context) {
+        log.info("Routing error from node {} to auto-fix", error.originNode());
+
+        return Uni.createFrom().item(
+            ExecutionResult.success("auto_fix", Map.of(
+                "error", error,
+                "originNode", error.originNode()
+            ))
+        );
+    }
+
+    /**
+     * Handle human review: route to HumanDecisionNode
+     */
+    private Uni<ExecutionResult> handleHumanReview(ErrorPayload error, NodeContext context) {
+        log.info("Escalating error from node {} to human review", error.originNode());
+
+        context.getProvenance().log(
+            AuditPayload.builder()
+                .runId(context.getRunId())
+                .nodeId(context.getNodeId())
+                .systemActor()
+                .event(AuditPayload.Events.ESCALATED)
+                .level(AuditPayload.Level.WARN)
+                .metadata(Map.of(
+                    "errorType", error.type().toString(),
+                    "originNode", error.originNode()
+                ))
+                .build()
+        );
+
+        return Uni.createFrom().item(
+            ExecutionResult.success("human_review", Map.of(
+                "error", error,
+                "taskType", "error_review"
+            ))
+        );
+    }
+
+    /**
+     * Evaluate CEL rule against error
+     */
+    private boolean evaluateRule(ErrorHandlingRule rule, ErrorPayload error) {
+        try {
+            // Bind error to CEL context
+            Map < String, Object > celContext = Map.of(
+                "error", Map.of(
+                    "type", error.type().toString(),
+                    "retryable", error.retryable(),
+                    "attempt", error.attempt(),
+                    "maxAttempts", error.maxAttempts(),
+                    "details", error.details()
+                )
+            );
+
+            return celEngine.evaluate(rule.when(), celContext, Boolean.class);
+        } catch (Exception e) {
+            log.error("Error evaluating rule {}: {}", rule.name(), e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Calculate backoff delay based on policy
+     */
+    private long calculateBackoff(RetryPolicy policy, int attempt) {
+        return switch (policy.backoff()) {
+            case "fixed" -> policy.initialDelayMs();
+            case "exponential" -> {
+                long delay = policy.initialDelayMs() * (long) Math.pow(2, attempt);
+                yield Math.min(delay, policy.maxDelayMs());
+            }
+            case "linear" -> {
+                long delay = policy.initialDelayMs() * (attempt + 1);
+                yield Math.min(delay, policy.maxDelayMs());
+            }
+            default -> policy.initialDelayMs();
+        };
+    }
+
+    /**
+     * Parse rules from config
+     */
+    private List<ErrorHandlingRule> parseRules(NodeConfig config) {
+        // Parse from config.properties.rules
+        // Implementation omitted for brevity
+        return List.of(
+            new ErrorHandlingRule(
+                "retry-if-transient",
+                "error.retryable == true && error.attempt < error.maxAttempts",
+                ErrorAction.RETRY
+            ),
+            new ErrorHandlingRule(
+                "auto-fix-validation",
+                "error.type == 'ValidationError'",
+                ErrorAction.AUTO_FIX
+            ),
+            new ErrorHandlingRule(
+                "escalate-to-human",
+                "error.type == 'LLMError' && error.attempt >= 1",
+                ErrorAction.HUMAN_REVIEW
+            ),
+            new ErrorHandlingRule(
+                "abort-default",
+                "true",
+                ErrorAction.ABORT
+            )
+        );
+    }
+}
+
+// Supporting types
+record ErrorHandlingRule(String name, String when, ErrorAction action) { }
+
+enum ErrorAction {
+    RETRY, AUTO_FIX, HUMAN_REVIEW, ABORT
+}
+
+record RetryPolicy(
+    int maxAttempts,
+    String backoff,
+    long initialDelayMs,
+    long maxDelayMs,
+    boolean jitter
+) {
+    public static RetryPolicy defaults() {
+        return new RetryPolicy(3, "exponential", 500, 30000, true);
+    }
+}
+
+
+
+
+package com.agentic.platform.runtime.node;
+
+import com.agentic.platform.commons.error.ErrorPayload;
+import com.agentic.platform.commons.audit.AuditPayload;
+import io.smallrye.mutiny.Uni;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Map;
+
+/**
+ * AbstractNode: Base implementation following Blueprint pattern.
+ * 
+ * Responsibilities:
+ * - Pre-check guardrails
+ * - Input validation
+ * - Execute derived node logic
+ * - Post-check guardrails
+ * - Metrics & provenance recording
+ * - Error handling with ErrorPayload
+ * - Tracing
+ * 
+ * Derived classes:
+ * - IntegrationNode: for deterministic I/O, transformations
+ * - AgentNode: for LLM-driven reasoning with additional safety
+ */
+public abstract class AbstractNode implements Node {
+
+    protected final Logger log = LoggerFactory.getLogger(getClass());
+
+    protected NodeDescriptor descriptor;
+    protected NodeConfig config;
+    protected MetricsCollector metrics;
+
+    @Override
+    public Uni<Void> onLoad(NodeDescriptor descriptor, NodeConfig config) {
+        this.descriptor = descriptor;
+        this.config = config;
+        this.metrics = MetricsCollector.forNode(descriptor.id());
+
+        log.info("Loading node: {} (type: {})", descriptor.id(), descriptor.type());
+
+        return doOnLoad(descriptor, config)
+            .onFailure().invoke(th ->
+                log.error("Failed to load node {}", descriptor.id(), th)
+            );
+    }
+
+    @Override
+    public final Uni<ExecutionResult> execute(NodeContext context) {
+        Span span = startTrace(context);
+        long startTime = System.nanoTime();
+
+        return Uni.createFrom().deferred(() -> {
+            Guardrails guardrails = context.getGuardrails();
+            ProvenanceContext provenance = context.getProvenance();
+
+            // 1. Pre-check guardrails
+            Uni<GuardrailResult> preCheck = config.guardrailsConfig().enabled()
+                ? guardrails.preCheck(context, descriptor)
+                : Uni.createFrom().item(GuardrailResult.allow());
+
+            return preCheck
+                .onItem().transformToUni(guardResult -> {
+                    if(!guardResult.isAllowed()) {
+            log.warn("Guardrail pre-check blocked node {} in run {}: {}",
+                context.getNodeId(), context.getRunId(), guardResult.getReason());
+            return Uni.createFrom().item(
+                ExecutionResult.blocked(guardResult.getReason())
+            );
+        }
+
+                    // 2. Validate inputs
+                    return validateInputs(context)
+            .onItem().transformToUni(valid -> {
+                if(!valid) {
+                                ErrorPayload err = ErrorPayload.builder()
+                        .type(ErrorPayload.ErrorType.VALIDATION_ERROR)
+                        .message("Input validation failed")
+                        .originNode(context.getNodeId())
+                        .originRunId(context.getRunId())
+                        .retryable(false)
+                        .suggestedAction(ErrorPayload.SuggestedAction.AUTO_FIX)
+                        .build();
+                    return Uni.createFrom().item(ExecutionResult.error(err));
+                }
+
+                            // 3. Execute the node logic (implemented by subclass)
+                            return doExecute(context);
+            });
+    })
+
+                // 4. Post-check guardrails
+                .onItem().transformToUni(result -> {
+    if(!config.guardrailsConfig().enabled() || !result.isSuccess()) {
+    return Uni.createFrom().item(result);
+}
+
+return guardrails.postCheck(result, descriptor)
+    .map(g -> {
+        if(!g.isAllowed()) {
+    log.warn("Guardrail post-check blocked output from node {}: {}",
+        context.getNodeId(), g.getReason());
+    return ExecutionResult.blocked(g.getReason());
+}
+return result;
+                        });
+                })
+
+                // 5. Record metrics & provenance
+                .onItem().invoke(result -> {
+    long durationNs = System.nanoTime() - startTime;
+    metrics.recordExecution(durationNs, result.status());
+
+    // Log audit event
+    provenance.log(
+        AuditPayload.builder()
+            .runId(context.getRunId())
+            .nodeId(context.getNodeId())
+            .systemActor()
+            .event(result.isSuccess() ?
+                AuditPayload.Events.NODE_SUCCESS :
+                AuditPayload.Events.NODE_ERROR)
+            .level(result.isError() ?
+                AuditPayload.Level.ERROR :
+                AuditPayload.Level.INFO)
+            .metadata(Map.of(
+                "durationMs", durationNs / 1_000_000,
+                "outputChannel", result.outputChannel()
+            ))
+            .build()
+    );
+})
+
+    // 6. Error handling
+    .onFailure().recoverWithItem(th -> {
+        log.error("Node {} execution failed in run {}",
+            context.getNodeId(), context.getRunId(), th);
+
+        metrics.recordFailure(th);
+
+        ErrorPayload err = ErrorPayload.fromThrowable(
+            th,
+            context.getNodeId(),
+            context.getRunId()
+        );
+
+        return ExecutionResult.error(err);
+    })
+
+    // 7. Close trace span
+    .eventually(() -> endTrace(span));
+        });
+    }
+
+    /**
+     * Subclasses implement node-specific logic here.
+     * Must not throw exceptions - return error results instead.
+     */
+    protected abstract Uni < ExecutionResult > doExecute(NodeContext context);
+
+    /**
+     * Optional initialization hook
+     */
+    protected Uni < Void > doOnLoad(NodeDescriptor descriptor, NodeConfig config) {
+    return Uni.createFrom().voidItem();
+}
+
+    /**
+     * Validate inputs against descriptor schema
+     */
+    private Uni < Boolean > validateInputs(NodeContext context) {
+    return Uni.createFrom().item(() -> {
+        for(var inputDesc : descriptor.inputs()) {
+                Object value = context.getInput(inputDesc.name());
+
+        if (inputDesc.required() && value == null) {
+            log.error("Required input '{}' is missing", inputDesc.name());
+            return false;
+        }
+
+        if (value != null && inputDesc.schema() != null) {
+            if (!SchemaValidator.validate(value, inputDesc.schema())) {
+                log.error("Input '{}' failed schema validation", inputDesc.name());
+                return false;
+            }
+        }
+    }
+    return true;
+});
+    }
+
+    private Span startTrace(NodeContext context) {
+    return Tracer.spanBuilder("node.execute")
+        .withTag("node.id", descriptor.id())
+        .withTag("node.type", descriptor.type())
+        .withTag("run.id", context.getRunId())
+        .withTag("tenant.id", context.getTenantId())
+        .start();
+}
+
+    private void endTrace(Span span) {
+    if (span != null) {
+        span.finish();
+    }
+}
+
+@Override
+public Uni < Void > onUnload() {
+    log.info("Unloading node: {}", descriptor.id());
+    if (metrics != null) {
+        metrics.close();
+    }
+    return Uni.createFrom().voidItem();
+}
+}
+
+/**
+ * IntegrationNode: For deterministic I/O operations
+ * Examples: HTTP calls, database queries, message queue operations
+ */
+public abstract class IntegrationNode extends AbstractNode {
+
+    @Override
+    protected final Uni<ExecutionResult> doExecute(NodeContext context) {
+        return executeIntegration(context);
+    }
+
+    /**
+     * Implement integration logic here.
+     * Should be deterministic and side-effect explicit.
+     */
+    protected abstract Uni<ExecutionResult> executeIntegration(NodeContext context);
+}
+
+/**
+ * AgentNode: For LLM-driven reasoning nodes
+ * Adds additional safety layers for AI operations
+ */
+public abstract class AgentNode extends AbstractNode {
+
+    /**
+     * Optional pre-execution AI-specific safety checks
+     * Examples: prompt injection detection, content filtering
+     */
+    protected Uni<Void> preAgentSafety(NodeContext context) {
+        return Uni.createFrom().voidItem();
+    }
+
+    /**
+     * Optional post-execution validation
+     * Examples: hallucination detection, JSON repair
+     */
+    protected ExecutionResult postAgentValidation(ExecutionResult result) {
+        return result;
+    }
+
+    @Override
+    protected final Uni<ExecutionResult> doExecute(NodeContext context) {
+        return preAgentSafety(context)
+            .onItem().transformToUni(v -> executeAgent(context))
+            .map(this:: postAgentValidation);
+    }
+
+    /**
+     * Implement agent reasoning logic here.
+     * May involve LLM calls, tool usage, memory access.
+     */
+    protected abstract Uni<ExecutionResult> executeAgent(NodeContext context);
+}
+
+
+package com.agentic.platform.runtime.node;
+
+import com.agentic.platform.commons.error.ErrorPayload;
+import io.smallrye.mutiny.Uni;
+import java.util.Map;
+
+/**
+ * Core Node interface - all execution units implement this.
+ * Aligned with Blueprint AbstractNode pattern.
+ */
+public interface Node {
+
+    /**
+     * Called once when node is loaded into runtime.
+     * Use for initialization, validation, resource allocation.
+     */
+    Uni<Void> onLoad(NodeDescriptor descriptor, NodeConfig config);
+
+    /**
+     * Execute node logic with provided context.
+     * MUST return ExecutionResult with exactly one output channel.
+     * 
+     * @param context contains inputs, run metadata, guardrails, provenance
+     * @return ExecutionResult with success or error output
+     */
+    Uni<ExecutionResult> execute(NodeContext context);
+
+    /**
+     * Called when node is unloaded (shutdown, hot-reload).
+     * Clean up resources here.
+     */
+    Uni<Void> onUnload();
+}
+
+/**
+ * Execution result from node.execute()
+ * Follows Blueprint's success/error output port pattern.
+ */
+public record ExecutionResult(
+    Status status,
+    String outputChannel,
+    Map < String, Object > data,
+    ErrorPayload error,
+    Map < String, Object > metadata
+) {
+
+    public enum Status {
+        SUCCESS,        // Normal completion
+        ERROR,          // Error output port activated
+        BLOCKED,        // Guardrail blocked
+        WAITING         // HITL or external event
+    }
+
+    public boolean isSuccess() {
+        return status == Status.SUCCESS;
+    }
+
+    public boolean isError() {
+        return status == Status.ERROR;
+    }
+
+    public static ExecutionResult success(Map < String, Object > data) {
+        return new ExecutionResult(Status.SUCCESS, "success", data, null, Map.of());
+    }
+
+    public static ExecutionResult success(String channel, Map < String, Object > data) {
+        return new ExecutionResult(Status.SUCCESS, channel, data, null, Map.of());
+    }
+
+    public static ExecutionResult error(ErrorPayload error) {
+        return new ExecutionResult(Status.ERROR, "error", Map.of(), error, Map.of());
+    }
+
+    public static ExecutionResult blocked(String reason) {
+        return new ExecutionResult(
+            Status.BLOCKED,
+            "blocked",
+            Map.of("reason", reason),
+            null,
+            Map.of()
+        );
+    }
+
+    public static ExecutionResult waiting(String correlationKey) {
+        return new ExecutionResult(
+            Status.WAITING,
+            "waiting",
+            Map.of("correlationKey", correlationKey),
+            null,
+            Map.of()
+        );
+    }
+
+    public static ExecutionResult failed(String message) {
+        ErrorPayload err = ErrorPayload.builder()
+            .type(ErrorPayload.ErrorType.UNKNOWN_ERROR)
+            .message(message)
+            .originNode("unknown")
+            .build();
+        return error(err);
+    }
+}
+
+/**
+ * NodeContext: execution environment passed to node.execute()
+ */
+public interface NodeContext {
+    String getRunId();
+    String getNodeId();
+    String getTenantId();
+
+/**
+ * Get input by port name
+ */
+<T> T getInput(String portName, Class<T> type);
+
+    /**
+     * Get input as raw object
+     */
+    Object getInput(String portName);
+
+    /**
+     * Access to guardrails for pre/post checks
+     */
+    Guardrails getGuardrails();
+
+    /**
+     * Access to provenance service for audit logging
+     */
+    ProvenanceContext getProvenance();
+
+    /**
+     * Access to shared workflow state
+     */
+    Map<String, Object> getWorkflowState();
+
+    /**
+     * Store intermediate state (for HITL resume)
+     */
+    void storeIntermediateState(Map<String, Object> state);
+}
+
+    /**
+     * NodeDescriptor: metadata about node type
+     */
+    public record NodeDescriptor(
+    String id,
+    String type,
+    String version,
+    List<PortDescriptor> inputs,
+        OutputsDescriptor outputs,
+        Map<String, Object> capabilities,
+        ErrorHandlingConfig errorHandling
+        ) {
+            public List<String> getInputNames() {
+        return inputs.stream().map(PortDescriptor::name).toList();
+    }
+}
+
+            /**
+             * NodeConfig: runtime configuration
+             */
+            public record NodeConfig(
+            Map<String, Object> properties,
+            GuardrailsConfig guardrailsConfig,
+            TelemetryConfig telemetryConfig,
+            ResourceProfile resourceProfile
+            ) {
+                public < T > T getProperty(String key, Class<T> type) {
+        return type.cast(properties.get(key));
+    }
+
+                public String getProperty(String key, String defaultValue) {
+                    Object val = properties.get(key);
+                return val != null ? val.toString() : defaultValue;
+    }
+}
+
+                public record GuardrailsConfig(
+                boolean enabled,
+                List<String> preCheckRules,
+                    List<String> postCheckRules
+                        ) { }
+
+                        public record TelemetryConfig(
+                        boolean enabled,
+                        double sampleRate
+                        ) { }
+
+                        public record ResourceProfile(
+                        String cpu,
+                        String memory,
+                        int timeoutMs
+                        ) {
+                            public static ResourceProfile defaults() {
+        return new ResourceProfile("100m", "128Mi", 30000);
+    }
+}

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>tech.kayys.wayang</groupId>
+        <artifactId>wayang</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>wayang-services</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <modules>
+        <module>wayang-common</module>
+        <module>wayang-integration-service</module>
+        <module>wayang-automation-service</module>
+        <module>wayang-htil-service</module>
+        <module>wayang-agent-service</module>
+        <module>wayang-agent-orchestrator</module>
+        <module>wayang-node-service</module>
+        <module>wayang-chatpot</module>
+        <module>wayang-rag-service</module>
+        <module>wayang-mcp-gateway</module>
+        <module>wayang-workflow-api</module>
+        <module>wayang-workflow-engine</module>
+        <module>wayang-workflow-sdk</module>
+        <module>wayang-standalone-runtime</module>
+    </modules>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>21</maven.compiler.release>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Inherit dependencies from the engine's BOM if needed -->
+        </dependencies>
+    </dependencyManagement>
+</project>

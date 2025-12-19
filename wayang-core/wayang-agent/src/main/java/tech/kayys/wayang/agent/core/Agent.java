@@ -1,4 +1,4 @@
-package tech.kayys.agent.core;
+package tech.kayys.wayang.agent.core;
 
 /**
  * Base interface for all agent types in the Wayang platform.

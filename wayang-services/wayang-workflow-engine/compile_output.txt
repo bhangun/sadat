@@ -1,0 +1,337 @@
+[INFO] Scanning for projects...
+[WARNING] 
+[WARNING] Some problems were encountered while building the effective model for tech.kayys.wayang:wayang-workflow-engine:jar:1.0.0-SNAPSHOT
+[WARNING] 'dependencies.dependency.(groupId:artifactId:type:classifier)' must be unique: tech.kayys.wayang:wayang-workflow-api:jar -> version 1.0.0-SNAPSHOT vs ${project.version} @ line 109, column 21
+[WARNING] 
+[WARNING] It is highly recommended to fix these problems because they threaten the stability of your build.
+[WARNING] 
+[WARNING] For this reason, future Maven versions might no longer support building such malformed projects.
+[WARNING] 
+[INFO] 
+[INFO] --------------< tech.kayys.wayang:wayang-workflow-engine >--------------
+[INFO] Building wayang-workflow-engine 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ wayang-workflow-engine ---
+[INFO] Copying 3 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- quarkus:3.30.3:generate-code (default) @ wayang-workflow-engine ---
+[INFO] [io.quarkus.grpc.codegen.GrpcCodeGen] Successfully finished generating and post-processing sources from proto files
+[INFO] 
+[INFO] --- compiler:3.14.1:compile (default-compile) @ wayang-workflow-engine ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 147 source files with javac [debug parameters release 21] to target/classes
+[INFO] -------------------------------------------------------------
+[ERROR] COMPILATION ERROR : 
+[INFO] -------------------------------------------------------------
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/repository/WorkflowExecutionRepository.java:[58,34] cannot find symbol
+  symbol:   class ExecutionResult
+  location: class tech.kayys.wayang.workflow.service.WorkflowRuntimeEngine
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowRuntimeEngine.java:[230,27] cannot find symbol
+  symbol:   class ErrorHandling
+  location: class tech.kayys.wayang.schema.node.NodeDefinition
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowRuntimeEngine.java:[250,27] cannot find symbol
+  symbol:   class ErrorHandling
+  location: class tech.kayys.wayang.schema.node.NodeDefinition
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowRuntimeEngine.java:[272,13] cannot find symbol
+  symbol:   class EdgeDefinition
+  location: class tech.kayys.wayang.workflow.service.WorkflowRuntimeEngine
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/NodeExecutorRegistry.java:[38,31] cannot find symbol
+  symbol:   class NodeRegistration
+  location: class tech.kayys.wayang.workflow.service.NodeExecutorRegistry
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/NodeExecutorRegistry.java:[98,29] package NodeRegistration does not exist
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/NodeExecutorRegistry.java:[167,34] cannot find symbol
+  symbol:   class NodeRegistration
+  location: class tech.kayys.wayang.workflow.service.NodeExecutorRegistry
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/NodeExecutorRegistry.java:[190,12] cannot find symbol
+  symbol:   class NodeRegistration
+  location: class tech.kayys.wayang.workflow.service.NodeExecutorRegistry
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/NodeExecutorRegistry.java:[197,24] cannot find symbol
+  symbol:   class NodeRegistration
+  location: class tech.kayys.wayang.workflow.service.NodeExecutorRegistry
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/NodeExecutorRegistry.java:[204,24] cannot find symbol
+  symbol:   class NodeRegistration
+  location: class tech.kayys.wayang.workflow.service.NodeExecutorRegistry
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/NodeExecutorRegistry.java:[215,24] cannot find symbol
+  symbol:   class NodeRegistration
+  location: class tech.kayys.wayang.workflow.service.NodeExecutorRegistry
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/resource/VersionedWorkflowAPI.java:[11,41] cannot find symbol
+  symbol:   class WorkflowDefinitionV1
+  location: package tech.kayys.wayang.schema.workflow
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/resource/VersionedWorkflowAPI.java:[12,41] cannot find symbol
+  symbol:   class WorkflowDefinitionV2
+  location: package tech.kayys.wayang.schema.workflow
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/resource/VersionedWorkflowAPI.java:[27,16] cannot find symbol
+  symbol:   class WorkflowDefinitionV1
+  location: class tech.kayys.wayang.workflow.resource.VersionedWorkflowAPI
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/resource/VersionedWorkflowAPI.java:[34,16] cannot find symbol
+  symbol:   class WorkflowDefinitionV2
+  location: class tech.kayys.wayang.workflow.resource.VersionedWorkflowAPI
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/BackupManager.java:[72,17] cannot find symbol
+  symbol:   class List
+  location: class tech.kayys.wayang.workflow.service.BackupManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/BackupManager.java:[76,17] cannot find symbol
+  symbol:   class List
+  location: class tech.kayys.wayang.workflow.service.BackupManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/BackupManager.java:[80,17] cannot find symbol
+  symbol:   class List
+  location: class tech.kayys.wayang.workflow.service.BackupManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/BackupManager.java:[84,17] cannot find symbol
+  symbol:   class List
+  location: class tech.kayys.wayang.workflow.service.BackupManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/BackupManager.java:[115,17] cannot find symbol
+  symbol:   class List
+  location: class tech.kayys.wayang.workflow.service.BackupManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/BackupManager.java:[119,17] cannot find symbol
+  symbol:   class List
+  location: class tech.kayys.wayang.workflow.service.BackupManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/BackupManager.java:[160,73] cannot find symbol
+  symbol:   class List
+  location: class tech.kayys.wayang.workflow.service.BackupManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/DynamicWorkflowGenerator.java:[9,41] package tech.kayys.wayang.workflow.parser does not exist
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/DynamicWorkflowGenerator.java:[10,44] package tech.kayys.wayang.workflow.optimizer does not exist
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/MultiRegionCoordinator.java:[28,5] cannot find symbol
+  symbol:   class CrossRegionReplicator
+  location: class tech.kayys.wayang.workflow.service.MultiRegionCoordinator
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/MultiRegionCoordinator.java:[33,37] cannot find symbol
+  symbol:   class TriggerWorkflowRequest
+  location: class tech.kayys.wayang.workflow.service.MultiRegionCoordinator
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/PolicyEngine.java:[8,32] cannot find symbol
+  symbol:   class NodeDefinition
+  location: package tech.kayys.wayang.schema
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/PolicyEngine.java:[9,32] cannot find symbol
+  symbol:   class PolicyConfig
+  location: package tech.kayys.wayang.schema
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/PolicyEngine.java:[27,13] cannot find symbol
+  symbol:   class NodeDefinition
+  location: class tech.kayys.wayang.workflow.service.PolicyEngine
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/PolicyEngine.java:[67,13] cannot find symbol
+  symbol:   class NodeDefinition
+  location: class tech.kayys.wayang.workflow.service.PolicyEngine
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/PolicyEngine.java:[77,25] package PolicyConfig does not exist
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/PolicyEngine.java:[85,25] package PolicyConfig does not exist
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[9,32] cannot find symbol
+  symbol:   class AgentDefinition
+  location: package tech.kayys.wayang.schema
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[10,32] cannot find symbol
+  symbol:   class NodeDefinition
+  location: package tech.kayys.wayang.schema
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[11,32] cannot find symbol
+  symbol:   class Trigger
+  location: package tech.kayys.wayang.schema
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[12,32] cannot find symbol
+  symbol:   class WorkflowDefinition
+  location: package tech.kayys.wayang.schema
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[25,18] cannot find symbol
+  symbol:   class Node
+  location: class tech.kayys.wayang.workflow.service.WorkflowBuilder
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[26,18] cannot find symbol
+  symbol:   class Edge
+  location: class tech.kayys.wayang.workflow.service.WorkflowBuilder
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[27,18] cannot find symbol
+  symbol:   class Variable
+  location: class tech.kayys.wayang.workflow.service.WorkflowBuilder
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[28,18] cannot find symbol
+  symbol:   class Trigger
+  location: class tech.kayys.wayang.workflow.service.WorkflowBuilder
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[49,36] cannot find symbol
+  symbol:   class Node
+  location: class tech.kayys.wayang.workflow.service.WorkflowBuilder
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[54,36] cannot find symbol
+  symbol:   class Edge
+  location: class tech.kayys.wayang.workflow.service.WorkflowBuilder
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[59,40] cannot find symbol
+  symbol:   class Variable
+  location: class tech.kayys.wayang.workflow.service.WorkflowBuilder
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[64,39] cannot find symbol
+  symbol:   class Trigger
+  location: class tech.kayys.wayang.workflow.service.WorkflowBuilder
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[198,12] cannot find symbol
+  symbol:   class WorkflowDefinition
+  location: class tech.kayys.wayang.workflow.service.WorkflowBuilder
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[217,13] package Node does not exist
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[219,13] package Node does not exist
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[221,31] package Node does not exist
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[226,42] package Node does not exist
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowEngine.java:[44,5] cannot find symbol
+  symbol:   class ErrorOrchestrator
+  location: class tech.kayys.wayang.workflow.service.WorkflowEngine
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowEngine.java:[56,5] cannot find symbol
+  symbol:   class HTILService
+  location: class tech.kayys.wayang.workflow.service.WorkflowEngine
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowTemplateManager.java:[18,5] cannot find symbol
+  symbol:   class TemplateRegistry
+  location: class tech.kayys.wayang.workflow.service.WorkflowTemplateManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowTemplateManager.java:[40,13] cannot find symbol
+  symbol:   class Industry
+  location: class tech.kayys.wayang.workflow.service.WorkflowTemplateManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowTemplateManager.java:[39,21] cannot find symbol
+  symbol:   class WorkflowTemplate
+  location: class tech.kayys.wayang.workflow.service.WorkflowTemplateManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/ConnectionPoolTuner.java:[19,6] cannot find symbol
+  symbol:   class Scheduled
+  location: class tech.kayys.wayang.workflow.service.ConnectionPoolTuner
+[INFO] 55 errors 
+[INFO] -------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  4.434 s
+[INFO] Finished at: 2025-12-19T01:09:09+07:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.14.1:compile (default-compile) on project wayang-workflow-engine: Compilation failure: Compilation failure: 
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/repository/WorkflowExecutionRepository.java:[58,34] cannot find symbol
+[ERROR]   symbol:   class ExecutionResult
+[ERROR]   location: class tech.kayys.wayang.workflow.service.WorkflowRuntimeEngine
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowRuntimeEngine.java:[230,27] cannot find symbol
+[ERROR]   symbol:   class ErrorHandling
+[ERROR]   location: class tech.kayys.wayang.schema.node.NodeDefinition
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowRuntimeEngine.java:[250,27] cannot find symbol
+[ERROR]   symbol:   class ErrorHandling
+[ERROR]   location: class tech.kayys.wayang.schema.node.NodeDefinition
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowRuntimeEngine.java:[272,13] cannot find symbol
+[ERROR]   symbol:   class EdgeDefinition
+[ERROR]   location: class tech.kayys.wayang.workflow.service.WorkflowRuntimeEngine
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/NodeExecutorRegistry.java:[38,31] cannot find symbol
+[ERROR]   symbol:   class NodeRegistration
+[ERROR]   location: class tech.kayys.wayang.workflow.service.NodeExecutorRegistry
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/NodeExecutorRegistry.java:[98,29] package NodeRegistration does not exist
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/NodeExecutorRegistry.java:[167,34] cannot find symbol
+[ERROR]   symbol:   class NodeRegistration
+[ERROR]   location: class tech.kayys.wayang.workflow.service.NodeExecutorRegistry
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/NodeExecutorRegistry.java:[190,12] cannot find symbol
+[ERROR]   symbol:   class NodeRegistration
+[ERROR]   location: class tech.kayys.wayang.workflow.service.NodeExecutorRegistry
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/NodeExecutorRegistry.java:[197,24] cannot find symbol
+[ERROR]   symbol:   class NodeRegistration
+[ERROR]   location: class tech.kayys.wayang.workflow.service.NodeExecutorRegistry
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/NodeExecutorRegistry.java:[204,24] cannot find symbol
+[ERROR]   symbol:   class NodeRegistration
+[ERROR]   location: class tech.kayys.wayang.workflow.service.NodeExecutorRegistry
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/NodeExecutorRegistry.java:[215,24] cannot find symbol
+[ERROR]   symbol:   class NodeRegistration
+[ERROR]   location: class tech.kayys.wayang.workflow.service.NodeExecutorRegistry
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/resource/VersionedWorkflowAPI.java:[11,41] cannot find symbol
+[ERROR]   symbol:   class WorkflowDefinitionV1
+[ERROR]   location: package tech.kayys.wayang.schema.workflow
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/resource/VersionedWorkflowAPI.java:[12,41] cannot find symbol
+[ERROR]   symbol:   class WorkflowDefinitionV2
+[ERROR]   location: package tech.kayys.wayang.schema.workflow
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/resource/VersionedWorkflowAPI.java:[27,16] cannot find symbol
+[ERROR]   symbol:   class WorkflowDefinitionV1
+[ERROR]   location: class tech.kayys.wayang.workflow.resource.VersionedWorkflowAPI
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/resource/VersionedWorkflowAPI.java:[34,16] cannot find symbol
+[ERROR]   symbol:   class WorkflowDefinitionV2
+[ERROR]   location: class tech.kayys.wayang.workflow.resource.VersionedWorkflowAPI
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/BackupManager.java:[72,17] cannot find symbol
+[ERROR]   symbol:   class List
+[ERROR]   location: class tech.kayys.wayang.workflow.service.BackupManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/BackupManager.java:[76,17] cannot find symbol
+[ERROR]   symbol:   class List
+[ERROR]   location: class tech.kayys.wayang.workflow.service.BackupManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/BackupManager.java:[80,17] cannot find symbol
+[ERROR]   symbol:   class List
+[ERROR]   location: class tech.kayys.wayang.workflow.service.BackupManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/BackupManager.java:[84,17] cannot find symbol
+[ERROR]   symbol:   class List
+[ERROR]   location: class tech.kayys.wayang.workflow.service.BackupManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/BackupManager.java:[115,17] cannot find symbol
+[ERROR]   symbol:   class List
+[ERROR]   location: class tech.kayys.wayang.workflow.service.BackupManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/BackupManager.java:[119,17] cannot find symbol
+[ERROR]   symbol:   class List
+[ERROR]   location: class tech.kayys.wayang.workflow.service.BackupManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/BackupManager.java:[160,73] cannot find symbol
+[ERROR]   symbol:   class List
+[ERROR]   location: class tech.kayys.wayang.workflow.service.BackupManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/DynamicWorkflowGenerator.java:[9,41] package tech.kayys.wayang.workflow.parser does not exist
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/DynamicWorkflowGenerator.java:[10,44] package tech.kayys.wayang.workflow.optimizer does not exist
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/MultiRegionCoordinator.java:[28,5] cannot find symbol
+[ERROR]   symbol:   class CrossRegionReplicator
+[ERROR]   location: class tech.kayys.wayang.workflow.service.MultiRegionCoordinator
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/MultiRegionCoordinator.java:[33,37] cannot find symbol
+[ERROR]   symbol:   class TriggerWorkflowRequest
+[ERROR]   location: class tech.kayys.wayang.workflow.service.MultiRegionCoordinator
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/PolicyEngine.java:[8,32] cannot find symbol
+[ERROR]   symbol:   class NodeDefinition
+[ERROR]   location: package tech.kayys.wayang.schema
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/PolicyEngine.java:[9,32] cannot find symbol
+[ERROR]   symbol:   class PolicyConfig
+[ERROR]   location: package tech.kayys.wayang.schema
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/PolicyEngine.java:[27,13] cannot find symbol
+[ERROR]   symbol:   class NodeDefinition
+[ERROR]   location: class tech.kayys.wayang.workflow.service.PolicyEngine
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/PolicyEngine.java:[67,13] cannot find symbol
+[ERROR]   symbol:   class NodeDefinition
+[ERROR]   location: class tech.kayys.wayang.workflow.service.PolicyEngine
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/PolicyEngine.java:[77,25] package PolicyConfig does not exist
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/PolicyEngine.java:[85,25] package PolicyConfig does not exist
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[9,32] cannot find symbol
+[ERROR]   symbol:   class AgentDefinition
+[ERROR]   location: package tech.kayys.wayang.schema
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[10,32] cannot find symbol
+[ERROR]   symbol:   class NodeDefinition
+[ERROR]   location: package tech.kayys.wayang.schema
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[11,32] cannot find symbol
+[ERROR]   symbol:   class Trigger
+[ERROR]   location: package tech.kayys.wayang.schema
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[12,32] cannot find symbol
+[ERROR]   symbol:   class WorkflowDefinition
+[ERROR]   location: package tech.kayys.wayang.schema
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[25,18] cannot find symbol
+[ERROR]   symbol:   class Node
+[ERROR]   location: class tech.kayys.wayang.workflow.service.WorkflowBuilder
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[26,18] cannot find symbol
+[ERROR]   symbol:   class Edge
+[ERROR]   location: class tech.kayys.wayang.workflow.service.WorkflowBuilder
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[27,18] cannot find symbol
+[ERROR]   symbol:   class Variable
+[ERROR]   location: class tech.kayys.wayang.workflow.service.WorkflowBuilder
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[28,18] cannot find symbol
+[ERROR]   symbol:   class Trigger
+[ERROR]   location: class tech.kayys.wayang.workflow.service.WorkflowBuilder
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[49,36] cannot find symbol
+[ERROR]   symbol:   class Node
+[ERROR]   location: class tech.kayys.wayang.workflow.service.WorkflowBuilder
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[54,36] cannot find symbol
+[ERROR]   symbol:   class Edge
+[ERROR]   location: class tech.kayys.wayang.workflow.service.WorkflowBuilder
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[59,40] cannot find symbol
+[ERROR]   symbol:   class Variable
+[ERROR]   location: class tech.kayys.wayang.workflow.service.WorkflowBuilder
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[64,39] cannot find symbol
+[ERROR]   symbol:   class Trigger
+[ERROR]   location: class tech.kayys.wayang.workflow.service.WorkflowBuilder
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[198,12] cannot find symbol
+[ERROR]   symbol:   class WorkflowDefinition
+[ERROR]   location: class tech.kayys.wayang.workflow.service.WorkflowBuilder
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[217,13] package Node does not exist
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[219,13] package Node does not exist
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[221,31] package Node does not exist
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowBuilder.java:[226,42] package Node does not exist
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowEngine.java:[44,5] cannot find symbol
+[ERROR]   symbol:   class ErrorOrchestrator
+[ERROR]   location: class tech.kayys.wayang.workflow.service.WorkflowEngine
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowEngine.java:[56,5] cannot find symbol
+[ERROR]   symbol:   class HTILService
+[ERROR]   location: class tech.kayys.wayang.workflow.service.WorkflowEngine
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowTemplateManager.java:[18,5] cannot find symbol
+[ERROR]   symbol:   class TemplateRegistry
+[ERROR]   location: class tech.kayys.wayang.workflow.service.WorkflowTemplateManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowTemplateManager.java:[40,13] cannot find symbol
+[ERROR]   symbol:   class Industry
+[ERROR]   location: class tech.kayys.wayang.workflow.service.WorkflowTemplateManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowTemplateManager.java:[39,21] cannot find symbol
+[ERROR]   symbol:   class WorkflowTemplate
+[ERROR]   location: class tech.kayys.wayang.workflow.service.WorkflowTemplateManager
+[ERROR] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/ConnectionPoolTuner.java:[19,6] cannot find symbol
+[ERROR]   symbol:   class Scheduled
+[ERROR]   location: class tech.kayys.wayang.workflow.service.ConnectionPoolTuner
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException

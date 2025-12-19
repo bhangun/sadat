@@ -1,0 +1,292 @@
+package io.agentic.platform.registry;
+
+import io.agentic.platform.schema.*;
+import io.agentic.platform.node.*;
+
+
+
+
+
+/**
+ * Node descriptor (runtime representation).
+ */
+@lombok.Data
+@lombok.Builder
+class NodeDescriptor {
+    private String id;
+    private String name;
+    private String type;
+    private String version;
+    private List<PortDescriptor> inputs;
+    private OutputsV2 outputs;
+    private String pluginRef;
+    private List<String> capabilities;
+    
+    public static NodeDescriptor fromMetadata(NodeMetadata metadata) {
+        return NodeDescriptor.builder()
+                .id(metadata.getNodeType())
+                .name(metadata.getName())
+                .pluginRef(metadata.getPluginId())
+                .capabilities(metadata.getCapabilities())
+                .build();
+    }
+}
+
+
+
+
+// ============================================================================
+// REST API
+// ============================================================================
+
+package io.agentic.platform.api;
+
+import io.agentic.platform.engine.*;
+import io.agentic.platform.engine.state.*;
+import io.agentic.platform.schema.*;
+import io.smallrye.mutiny.Uni;
+import jakarta.inject.Inject;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.*;
+import org.jboss.logging.Logger;
+import java.util.*;
+
+/**
+ * Workflow REST API - Main entry point for workflow operations.
+ */
+@Path("/api/v1/workflows")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+public class WorkflowResource {
+
+    private static final Logger LOG = Logger.getLogger(WorkflowResource.class);
+
+    @Inject
+    WorkflowEngine workflowEngine;
+
+    @Inject
+    WorkflowRunManager runManager;
+
+    @Inject
+    WorkflowRepository workflowRepository;
+
+    @Context
+    SecurityContext securityContext;
+
+    /**
+     * Create a new workflow definition.
+     */
+    @POST
+    public Uni<Response> createWorkflow(WorkflowDefinition workflow) {
+        String tenantId = getTenantId();
+        
+        return workflowRepository.save(workflow, tenantId)
+                .map(saved -> Response
+                    .status(Response.Status.CREATED)
+                    .entity(saved)
+                    .build()
+                )
+                .onFailure().recoverWithItem(th -> 
+                    Response.status(Response.Status.BAD_REQUEST)
+                        .entity(Map.of("error", th.getMessage()))
+                        .build()
+                );
+    }
+
+    /**
+     * Get workflow by ID.
+     */
+    @GET
+    @Path("/{workflowId}")
+    public Uni<Response> getWorkflow(@PathParam("workflowId") String workflowId) {
+        String tenantId = getTenantId();
+        
+        return workflowRepository.findById(workflowId, tenantId)
+                .map(workflow -> Response.ok(workflow).build())
+                .onItem().ifNull().continueWith(() ->
+                    Response.status(Response.Status.NOT_FOUND).build()
+                );
+    }
+
+    /**
+     * List all workflows.
+     */
+    @GET
+    public Uni<Response> listWorkflows(
+            @QueryParam("page") @DefaultValue("0") int page,
+            @QueryParam("size") @DefaultValue("20") int size) {
+        
+        String tenantId = getTenantId();
+        
+        return workflowRepository.findByTenant(tenantId, page, size)
+                .map(workflows -> Response.ok(workflows).build());
+    }
+
+    /**
+     * Update workflow.
+     */
+    @PUT
+    @Path("/{workflowId}")
+    public Uni<Response> updateWorkflow(
+            @PathParam("workflowId") String workflowId,
+            WorkflowDefinition workflow) {
+        
+        String tenantId = getTenantId();
+        workflow.setId(workflowId);
+        
+        return workflowRepository.update(workflow, tenantId)
+                .map(updated -> Response.ok(updated).build())
+                .onFailure().recoverWithItem(th ->
+                    Response.status(Response.Status.BAD_REQUEST)
+                        .entity(Map.of("error", th.getMessage()))
+                        .build()
+                );
+    }
+
+    /**
+     * Delete workflow.
+     */
+    @DELETE
+    @Path("/{workflowId}")
+    public Uni<Response> deleteWorkflow(@PathParam("workflowId") String workflowId) {
+        String tenantId = getTenantId();
+        
+        return workflowRepository.delete(workflowId, tenantId)
+                .map(deleted -> Response.noContent().build());
+    }
+
+    /**
+     * Execute workflow (start new run).
+     */
+    @POST
+    @Path("/{workflowId}/execute")
+    public Uni<Response> executeWorkflow(
+            @PathParam("workflowId") String workflowId,
+            Map<String, Object> inputs) {
+        
+        String tenantId = getTenantId();
+        String userId = getUserId();
+        
+        return workflowRepository.findById(workflowId, tenantId)
+                .onItem().transformToUni(workflow -> {
+                    if (workflow == null) {
+                        return Uni.createFrom().item(
+                            Response.status(Response.Status.NOT_FOUND).build()
+                        );
+                    }
+
+                    return workflowEngine.start(workflow, inputs, tenantId)
+                            .map(run -> Response
+                                .status(Response.Status.ACCEPTED)
+                                .entity(run)
+                                .build()
+                            );
+                })
+                .onFailure().recoverWithItem(th ->
+                    Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .entity(Map.of("error", th.getMessage()))
+                        .build()
+                );
+    }
+
+    /**
+     * Get workflow run status.
+     */
+    @GET
+    @Path("/runs/{runId}")
+    public Uni<Response> getRunStatus(@PathParam("runId") String runId) {
+        String tenantId = getTenantId();
+        
+        return runManager.getDetails(runId, tenantId)
+                .map(details -> Response.ok(details).build())
+                .onItem().ifNull().continueWith(() ->
+                    Response.status(Response.Status.NOT_FOUND).build()
+                );
+    }
+
+    /**
+     * List workflow runs.
+     */
+    @GET
+    @Path("/{workflowId}/runs")
+    public Uni<Response> listRuns(
+            @PathParam("workflowId") String workflowId,
+            @QueryParam("limit") @DefaultValue("50") int limit) {
+        
+        String tenantId = getTenantId();
+        
+        return workflowRepository.findRuns(workflowId, tenantId, limit)
+                .map(runs -> Response.ok(runs).build());
+    }
+
+    /**
+     * Cancel workflow run.
+     */
+    @POST
+    @Path("/runs/{runId}/cancel")
+    public Uni<Response> cancelRun(
+            @PathParam("runId") String runId,
+            Map<String, String> request) {
+        
+        String reason = request.getOrDefault("reason", "Cancelled by user");
+        
+        return runManager.cancel(runId, reason)
+                .map(cancelled -> Response.ok(cancelled).build())
+                .onFailure().recoverWithItem(th ->
+                    Response.status(Response.Status.BAD_REQUEST)
+                        .entity(Map.of("error", th.getMessage()))
+                        .build()
+                );
+    }
+
+    /**
+     * Pause workflow run.
+     */
+    @POST
+    @Path("/runs/{runId}/pause")
+    public Uni<Response> pauseRun(@PathParam("runId") String runId) {
+        return workflowEngine.pause(runId)
+                .map(v -> Response.ok().build());
+    }
+
+    /**
+     * Resume workflow run.
+     */
+    @POST
+    @Path("/runs/{runId}/resume")
+    public Uni<Response> resumeRun(@PathParam("runId") String runId) {
+        return workflowEngine.resume(runId)
+                .map(run -> Response.ok(run).build());
+    }
+
+    private String getTenantId() {
+        // Extract from JWT or security context
+        return "default-tenant";
+    }
+
+    private String getUserId() {
+        // Extract from security context
+        return securityContext.getUserPrincipal().getName();
+    }
+}
+
+
+
+
+package io.agentic.platform.engine.execution;
+
+import io.agentic.platform.schema.*;
+import io.agentic.platform.error.*;
+import io.agentic.platform.node.*;
+import io.agentic.platform.guardrails.*;
+import io.agentic.platform.audit.*;
+
+
+
+
+package io.agentic.platform.engine.execution;
+
+import io.agentic.platform.schema.*;
+import io.agentic.platform.error.ErrorPayload;
+
+

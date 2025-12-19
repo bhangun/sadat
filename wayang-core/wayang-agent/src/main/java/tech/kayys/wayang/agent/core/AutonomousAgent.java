@@ -1,4 +1,4 @@
-package tech.kayys.agent.core;
+package tech.kayys.wayang.agent.core;
 
 /**
  * Specialized agent for autonomous reasoning and planning

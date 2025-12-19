@@ -2,20 +2,18 @@ package tech.kayys.wayang.websocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import io.vertx.mutiny.ext.web.Session;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.websocket.*;
 import jakarta.websocket.server.PathParam;
 import jakarta.websocket.server.ServerEndpoint;
-import tech.kayys.wayang.agent.model.AgentDefinition;
-import tech.kayys.wayang.agent.model.Workflow;
 import tech.kayys.wayang.agent.repository.AgentDefinitionRepository;
+
+import tech.kayys.wayang.service.SchemaProcessor;
 import tech.kayys.wayang.workflow.model.ExecutionContext;
 import tech.kayys.wayang.workflow.model.WebSocketMessage;
 import tech.kayys.wayang.workflow.service.ExecutionContextManager;
 import tech.kayys.wayang.workflow.service.WorkflowRuntimeEngine;
-
 import org.jboss.logging.Logger;
 
 import java.util.*;
@@ -157,7 +155,7 @@ public class AgentWebSocket {
                     .subscribe().with(
                             agent -> {
                                 // Store in session
-                                agentSessions.put(sessionId, new AgentSession(agent.getId(), agent));
+                                agentSessions.put(sessionId, new AgentSession(agent.getId().getValue(), agent));
 
                                 // Broadcast to all connected clients
                                 broadcastToSession(sessionId, new WebSocketMessage(
@@ -176,7 +174,7 @@ public class AgentWebSocket {
      */
     private void handleUpdateAgent(WebSocketMessage message, Session session, String sessionId) {
         try {
-            @SuppressWarnings("unchecked")
+
             Map<String, Object> data = (Map<String, Object>) message.getData();
             String agentId = (String) data.get("agentId");
 
@@ -208,6 +206,10 @@ public class AgentWebSocket {
         }
     }
 
+    private void handleDeleteAgent(WebSocketMessage message, Session session, String sessionId) {
+        sendError(session, "Delete agent not implemented");
+    }
+
     /**
      * Create workflow
      */
@@ -219,10 +221,9 @@ public class AgentWebSocket {
                 return;
             }
 
-            @SuppressWarnings("unchecked")
             Map<String, Object> data = (Map<String, Object>) message.getData();
 
-            Workflow workflow = objectMapper.convertValue(data.get("workflow"), Workflow.class);
+            WorkflowDefinition workflow = objectMapper.convertValue(data.get("workflow"), WorkflowDefinition.class);
 
             AgentDefinition agent = agentSession.getAgent();
             if (agent.getWorkflows() == null) {
@@ -256,12 +257,11 @@ public class AgentWebSocket {
                 return;
             }
 
-            @SuppressWarnings("unchecked")
             Map<String, Object> data = (Map<String, Object>) message.getData();
             String workflowId = (String) data.get("workflowId");
 
             AgentDefinition agent = agentSession.getAgent();
-            Workflow workflow = agent.getWorkflows().stream()
+            WorkflowDefinition workflow = agent.getWorkflows().stream()
                     .filter(w -> w.getId().equals(workflowId))
                     .findFirst()
                     .orElse(null);
@@ -313,19 +313,18 @@ public class AgentWebSocket {
                 return;
             }
 
-            @SuppressWarnings("unchecked")
             Map<String, Object> data = (Map<String, Object>) message.getData();
             String workflowId = (String) data.get("workflowId");
 
             AgentDefinition agent = agentSession.getAgent();
-            Workflow workflow = findWorkflow(agent, workflowId);
+            WorkflowDefinition workflow = findWorkflow(agent, workflowId);
 
             if (workflow == null) {
                 sendError(session, "Workflow not found");
                 return;
             }
 
-            Workflow.Node node = objectMapper.convertValue(data.get("node"), Workflow.Node.class);
+            NodeDefinition node = objectMapper.convertValue(data.get("node"), NodeDefinition.class);
 
             if (workflow.getNodes() == null) {
                 workflow.setNodes(new ArrayList<>());
@@ -346,19 +345,19 @@ public class AgentWebSocket {
     private void handleUpdateNode(WebSocketMessage message, Session session, String sessionId) {
         try {
             AgentSession agentSession = agentSessions.get(sessionId);
-            @SuppressWarnings("unchecked")
+
             Map<String, Object> data = (Map<String, Object>) message.getData();
 
             String workflowId = (String) data.get("workflowId");
             String nodeId = (String) data.get("nodeId");
 
-            Workflow workflow = findWorkflow(agentSession.getAgent(), workflowId);
+            WorkflowDefinition workflow = findWorkflow(agentSession.getAgent(), workflowId);
             if (workflow == null) {
                 sendError(session, "Workflow not found");
                 return;
             }
 
-            Workflow.Node node = workflow.getNodes().stream()
+            NodeDefinition node = workflow.getNodes().stream()
                     .filter(n -> n.getId().equals(nodeId))
                     .findFirst()
                     .orElse(null);
@@ -385,20 +384,20 @@ public class AgentWebSocket {
     private void handleDeleteNode(WebSocketMessage message, Session session, String sessionId) {
         try {
             AgentSession agentSession = agentSessions.get(sessionId);
-            @SuppressWarnings("unchecked")
+
             Map<String, Object> data = (Map<String, Object>) message.getData();
 
             String workflowId = (String) data.get("workflowId");
             String nodeId = (String) data.get("nodeId");
 
-            Workflow workflow = findWorkflow(agentSession.getAgent(), workflowId);
+            WorkflowDefinition workflow = findWorkflow(agentSession.getAgent(), workflowId);
             if (workflow == null) {
                 sendError(session, "Workflow not found");
                 return;
             }
 
             workflow.getNodes().removeIf(n -> n.getId().equals(nodeId));
-            workflow.getEdges().removeIf(e -> e.getSource().equals(nodeId) || e.getTarget().equals(nodeId));
+            workflow.getEdges().removeIf(e -> e.getFrom().equals(nodeId) || e.getTo().equals(nodeId));
 
             saveAndBroadcast(agentSession, sessionId, "nodeDeleted", Map.of("nodeId", nodeId));
 
@@ -413,13 +412,13 @@ public class AgentWebSocket {
     private void handleAddEdge(WebSocketMessage message, Session session, String sessionId) {
         try {
             AgentSession agentSession = agentSessions.get(sessionId);
-            @SuppressWarnings("unchecked")
+
             Map<String, Object> data = (Map<String, Object>) message.getData();
 
             String workflowId = (String) data.get("workflowId");
-            Workflow workflow = findWorkflow(agentSession.getAgent(), workflowId);
+            WorkflowDefinition workflow = findWorkflow(agentSession.getAgent(), workflowId);
 
-            Workflow.Edge edge = objectMapper.convertValue(data.get("edge"), Workflow.Edge.class);
+            EdgeDefinition edge = objectMapper.convertValue(data.get("edge"), EdgeDefinition.class);
 
             if (workflow.getEdges() == null) {
                 workflow.setEdges(new ArrayList<>());
@@ -439,13 +438,13 @@ public class AgentWebSocket {
     private void handleDeleteEdge(WebSocketMessage message, Session session, String sessionId) {
         try {
             AgentSession agentSession = agentSessions.get(sessionId);
-            @SuppressWarnings("unchecked")
+
             Map<String, Object> data = (Map<String, Object>) message.getData();
 
             String workflowId = (String) data.get("workflowId");
             String edgeId = (String) data.get("edgeId");
 
-            Workflow workflow = findWorkflow(agentSession.getAgent(), workflowId);
+            WorkflowDefinition workflow = findWorkflow(agentSession.getAgent(), workflowId);
             workflow.getEdges().removeIf(e -> e.getId().equals(edgeId));
 
             saveAndBroadcast(agentSession, sessionId, "edgeDeleted", Map.of("edgeId", edgeId));
@@ -485,17 +484,18 @@ public class AgentWebSocket {
     /**
      * Execute workflow with real-time updates
      */
+    @SuppressWarnings("unchecked")
     private void handleExecuteWorkflow(WebSocketMessage message, Session session, String sessionId) {
         try {
             AgentSession agentSession = agentSessions.get(sessionId);
-            @SuppressWarnings("unchecked")
+
             Map<String, Object> data = (Map<String, Object>) message.getData();
 
             String workflowId = (String) data.get("workflowId");
-            @SuppressWarnings("unchecked")
+
             Map<String, Object> input = (Map<String, Object>) data.get("input");
 
-            Workflow workflow = findWorkflow(agentSession.getAgent(), workflowId);
+            WorkflowDefinition workflow = findWorkflow(agentSession.getAgent(), workflowId);
             if (workflow == null) {
                 sendError(session, "Workflow not found");
                 return;
@@ -545,7 +545,7 @@ public class AgentWebSocket {
      * Subscribe to execution updates
      */
     private void handleSubscribeExecution(WebSocketMessage message, Session session, String sessionId) {
-        @SuppressWarnings("unchecked")
+
         Map<String, Object> data = (Map<String, Object>) message.getData();
         String executionId = (String) data.get("executionId");
 
@@ -560,7 +560,7 @@ public class AgentWebSocket {
      */
     private void handleGetAgent(WebSocketMessage message, Session session, String sessionId) {
         try {
-            @SuppressWarnings("unchecked")
+
             Map<String, Object> data = (Map<String, Object>) message.getData();
             String agentId = (String) data.get("agentId");
 
@@ -649,12 +649,12 @@ public class AgentWebSocket {
                         error -> LOG.errorf(error, "Failed to save agent"));
     }
 
-    private Workflow findWorkflow(AgentDefinition agent, String workflowId) {
+    private WorkflowDefinition findWorkflow(AgentDefinition agent, String workflowId) {
         if (agent.getWorkflows() == null)
             return null;
 
         return agent.getWorkflows().stream()
-                .filter(w -> w.getId().equals(workflowId))
+                .filter(w -> w.getId().getValue().equals(workflowId))
                 .findFirst()
                 .orElse(null);
     }
@@ -669,7 +669,7 @@ public class AgentWebSocket {
         // Add more update handlers as needed
     }
 
-    private void applyWorkflowUpdates(Workflow workflow, Map<String, Object> updates) {
+    private void applyWorkflowUpdates(WorkflowDefinition workflow, Map<String, Object> updates) {
         if (updates.containsKey("name")) {
             workflow.setName((String) updates.get("name"));
         }
@@ -678,17 +678,18 @@ public class AgentWebSocket {
         }
     }
 
-    private void applyNodeUpdates(Workflow.Node node, Map<String, Object> updates) {
+    @SuppressWarnings("unchecked")
+    private void applyNodeUpdates(NodeDefinition node, Map<String, Object> updates) {
         if (updates.containsKey("name")) {
-            node.setName((String) updates.get("name"));
+            node.setDisplayName((String) updates.get("name"));
         }
         if (updates.containsKey("position")) {
-            @SuppressWarnings("unchecked")
+
             Map<String, Double> pos = (Map<String, Double>) updates.get("position");
-            Workflow.Node.Position position = new Workflow.Node.Position();
+            Position position = new Position();
             position.setX(pos.get("x"));
             position.setY(pos.get("y"));
-            node.setPosition(position);
+            node.getUi().setPosition(position);
         }
     }
 

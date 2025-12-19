@@ -1,4 +1,6 @@
-package tech.kayys.agent.core;
+package tech.kayys.wayang.agent.core;
+
+import java.util.Set;
 
 /**
  * Abstract base implementation providing common agent functionality

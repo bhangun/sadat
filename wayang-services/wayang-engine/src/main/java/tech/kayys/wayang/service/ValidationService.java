@@ -118,6 +118,18 @@ public class ValidationService {
                 .replaceWithVoid();
     }
 
+    public Uni<ValidationResult> validateNode(tech.kayys.wayang.schema.NodeInput input) {
+        ValidationResult result = new ValidationResult();
+        // Map NodeInput to NodeDefinition or validate directly
+        if (input.getType() == null || input.getType().isBlank()) {
+            result.errors.add(createError("MISSING_NODE_TYPE", "Node must have a type", null));
+            result.valid = false;
+        } else {
+            result.valid = true;
+        }
+        return Uni.createFrom().item(result);
+    }
+
     /**
      * Validate connections
      */
@@ -235,5 +247,11 @@ public class ValidationService {
         warning.nodeId = nodeId;
         warning.suggestion = suggestion;
         return warning;
+    }
+
+    public Uni<ValidationResult> validateConnection(tech.kayys.wayang.schema.ConnectionInput input, String workflowId) {
+        ValidationResult result = new ValidationResult();
+        result.valid = true;
+        return Uni.createFrom().item(result);
     }
 }

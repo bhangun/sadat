@@ -1,0 +1,190 @@
+package com.agentic.platform.commons.audit;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import io.quarkus.runtime.annotations.RegisterForReflection;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Canonical audit event payload as per Blueprint Audit Node section.
+ * Provides tamper-proof logging with SHA-256 hashing for chain-of-custody.
+ * 
+ * Design:
+ * - Immutable record
+ * - Auto-generated hash for integrity
+ * - Supports event chaining (blockchain-style without blockchain)
+ * - Multi-sink compatible (PostgreSQL, Kafka, Elasticsearch, S3)
+ */
+@RegisterForReflection
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record AuditPayload(
+    Instant timestamp,
+    String runId,
+    String nodeId,
+    Actor actor,
+    String event,
+    Level level,
+    List<String> tags,
+    Map<String, Object> metadata,
+    Map<String, Object> contextSnapshot,
+    String hash,
+    String previousHash
+) {
+    
+    public enum Level {
+        INFO, WARN, ERROR, CRITICAL
+    }
+
+    @RegisterForReflection
+    public record Actor(
+        ActorType type,
+        String id,
+        String role
+    ) {
+        public enum ActorType {
+            SYSTEM, HUMAN, AGENT
+        }
+    }
+
+    /**
+     * Builder with automatic hash generation
+     */
+    public static class Builder {
+        private Instant timestamp = Instant.now();
+        private String runId;
+        private String nodeId;
+        private Actor actor;
+        private String event;
+        private Level level = Level.INFO;
+        private List<String> tags = List.of();
+        private Map<String, Object> metadata = Map.of();
+        private Map<String, Object> contextSnapshot = Map.of();
+        private String previousHash;
+
+        public Builder runId(String runId) {
+            this.runId = runId;
+            return this;
+        }
+
+        public Builder nodeId(String nodeId) {
+            this.nodeId = nodeId;
+            return this;
+        }
+
+        public Builder actor(Actor actor) {
+            this.actor = actor;
+            return this;
+        }
+
+        public Builder systemActor() {
+            this.actor = new Actor(Actor.ActorType.SYSTEM, "engine", "orchestrator");
+            return this;
+        }
+
+        public Builder humanActor(String userId, String role) {
+            this.actor = new Actor(Actor.ActorType.HUMAN, userId, role);
+            return this;
+        }
+
+        public Builder event(String event) {
+            this.event = event;
+            return this;
+        }
+
+        public Builder level(Level level) {
+            this.level = level;
+            return this;
+        }
+
+        public Builder tags(List<String> tags) {
+            this.tags = tags != null ? List.copyOf(tags) : List.of();
+            return this;
+        }
+
+        public Builder metadata(Map<String, Object> metadata) {
+            this.metadata = metadata != null ? Map.copyOf(metadata) : Map.of();
+            return this;
+        }
+
+        public Builder contextSnapshot(Map<String, Object> snapshot) {
+            this.contextSnapshot = snapshot != null ? Map.copyOf(snapshot) : Map.of();
+            return this;
+        }
+
+        public Builder previousHash(String hash) {
+            this.previousHash = hash;
+            return this;
+        }
+
+        public AuditPayload build() {
+            if (runId == null) throw new IllegalStateException("runId required");
+            if (nodeId == null) throw new IllegalStateException("nodeId required");
+            if (actor == null) throw new IllegalStateException("actor required");
+            if (event == null) throw new IllegalStateException("event required");
+
+            // Generate hash
+            String hash = generateHash(timestamp, runId, nodeId, event, actor.id());
+            
+            return new AuditPayload(
+                timestamp, runId, nodeId, actor, event, level,
+                tags, metadata, contextSnapshot, hash, previousHash
+            );
+        }
+
+        private String generateHash(Instant ts, String runId, String nodeId, 
+                                    String event, String actorId) {
+            try {
+                MessageDigest digest = MessageDigest.getInstance("SHA-256");
+                String content = String.join("|",
+                    ts.toString(), runId, nodeId, event, actorId,
+                    previousHash != null ? previousHash : ""
+                );
+                byte[] hashBytes = digest.digest(content.getBytes(StandardCharsets.UTF_8));
+                return HexFormat.of().formatHex(hashBytes);
+            } catch (NoSuchAlgorithmException e) {
+                throw new RuntimeException("SHA-256 not available", e);
+            }
+        }
+    }
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    /**
+     * Standard audit events as per Blueprint
+     */
+    public static final class Events {
+        public static final String NODE_START = "NODE_START";
+        public static final String NODE_SUCCESS = "NODE_SUCCESS";
+        public static final String NODE_ERROR = "NODE_ERROR";
+        public static final String RETRY_SCHEDULED = "RETRY_SCHEDULED";
+        public static final String AUTO_FIX_ATTEMPT = "AUTO_FIX_ATTEMPT";
+        public static final String HITL_CREATED = "HITL_CREATED";
+        public static final String HITL_COMPLETED = "HITL_COMPLETED";
+        public static final String ESCALATED = "ESCALATED";
+        public static final String WORKFLOW_COMPLETED = "WORKFLOW_COMPLETED";
+        
+        private Events() {}
+    }
+
+    /**
+     * Verify hash integrity
+     */
+    public boolean verifyHash() {
+        String expected = new Builder()
+            .runId(runId)
+            .nodeId(nodeId)
+            .actor(actor)
+            .event(event)
+            .previousHash(previousHash)
+            .build()
+            .hash;
+        return expected.equals(hash);
+    }
+}

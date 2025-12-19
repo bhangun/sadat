@@ -106,6 +106,22 @@ public class Workflow extends PanacheEntityBase {
     @Column(columnDefinition = "jsonb")
     public Map<String, Object> metadata;
 
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    public List<String> tags;
+
+    @Column(name = "is_locked")
+    public boolean locked;
+
+    @Column(name = "locked_by")
+    public String lockedBy;
+
+    @Column(name = "locked_at")
+    public Instant lockedAt;
+
+    @Column(name = "last_modified_by")
+    public String lastModifiedBy;
+
     @Version
     public Long entityVersion; // Optimistic locking
 
