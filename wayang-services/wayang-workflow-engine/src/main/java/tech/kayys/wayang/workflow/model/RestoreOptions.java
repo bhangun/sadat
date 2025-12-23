@@ -1,29 +1,29 @@
 package tech.kayys.wayang.workflow.model;
 
-import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
-@lombok.Builder
+import lombok.Data;
+import lombok.Builder;
+import lombok.AllArgsConstructor;
+import lombok.NoArgsConstructor;
+
+@Data
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
 public class RestoreOptions {
-    private RestoreStrategy strategy;
-    private Instant targetTimestamp;
-    private List<String> selectedTenants;
+    private boolean selective;
+    private List<String> selectedItems;
+    private boolean skipVerification;
+    private Map<String, Object> parameters;
 
-    public enum RestoreStrategy {
-        FULL_RESTORE,
-        POINT_IN_TIME,
-        SELECTIVE
-    }
-
-    public RestoreStrategy getStrategy() {
-        return strategy;
-    }
-
-    public Instant getTargetTimestamp() {
-        return targetTimestamp;
-    }
-
-    public List<String> getSelectedTenants() {
-        return selectedTenants;
+    public static RestoreOptions fullRestore() {
+        return RestoreOptions.builder()
+                .selective(false)
+                .selectedItems(List.of())
+                .skipVerification(false)
+                .parameters(Map.of())
+                .build();
     }
 }

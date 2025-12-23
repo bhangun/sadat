@@ -3,12 +3,12 @@ package tech.kayys.wayang.workflow.domain;
 import java.util.Map;
 
 import jakarta.persistence.Column;
-import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import tech.kayys.wayang.schema.workflow.WorkflowDefinition;
-import tech.kayys.wayang.workflow.service.JsonbConverter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * Workflow entity for persistence.
@@ -29,7 +29,7 @@ public class WorkflowEntity {
     private String version;
 
     @Column(columnDefinition = "jsonb")
-    @Convert(converter = JsonbConverter.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     private Map<String, Object> definition;
 
     private java.time.Instant createdAt;

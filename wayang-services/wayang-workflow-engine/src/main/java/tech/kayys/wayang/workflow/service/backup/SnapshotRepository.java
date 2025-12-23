@@ -8,22 +8,19 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.quarkus.hibernate.reactive.panache.PanacheRepositoryBase;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.persistence.EntityManager;
 import tech.kayys.wayang.workflow.model.WorkflowSnapshot;
 
 /**
  * Repository for managing workflow snapshots
  */
 @ApplicationScoped
-public class SnapshotRepository {
+public class SnapshotRepository implements PanacheRepositoryBase<WorkflowSnapshot, String> {
 
     private static final Logger log = LoggerFactory.getLogger(SnapshotRepository.class);
-
-    @Inject
-    EntityManager entityManager;
 
     @Inject
     SnapshotCache snapshotCache;
@@ -31,70 +28,56 @@ public class SnapshotRepository {
     /**
      * Find all snapshots
      */
-    public Uni<List<WorkflowSnapshot>> findAll() {
-        return Uni.createFrom().item(() -> entityManager.createQuery("FROM WorkflowSnapshot", WorkflowSnapshot.class)
-                .getResultList());
+    public Uni<List<WorkflowSnapshot>> getAllSnapshots() {
+        return listAll();
     }
 
     /**
      * Find snapshots modified since a specific time
      */
     public Uni<List<WorkflowSnapshot>> findModifiedSince(Instant since) {
-        return Uni.createFrom().item(() -> entityManager.createQuery(
-                "FROM WorkflowSnapshot WHERE lastModified >= :since",
-                WorkflowSnapshot.class)
-                .setParameter("since", since)
-                .getResultList());
+        return find("lastModified >= ?1", since).list();
     }
 
     /**
      * Find snapshot by ID
      */
-    public Uni<Optional<WorkflowSnapshot>> findById(String snapshotId) {
-        return Uni.createFrom().item(() -> {
-            WorkflowSnapshot snapshot = snapshotCache.get(snapshotId);
-            if (snapshot != null) {
-                return Optional.of(snapshot);
-            }
+    public Uni<Optional<WorkflowSnapshot>> getSnapshotById(String snapshotId) {
+        WorkflowSnapshot cached = snapshotCache.get(snapshotId);
+        if (cached != null) {
+            return Uni.createFrom().item(Optional.of(cached));
+        }
 
-            snapshot = entityManager.find(WorkflowSnapshot.class, snapshotId);
-            return Optional.ofNullable(snapshot);
-        });
+        return findById(snapshotId)
+                .map(Optional::ofNullable);
     }
 
     /**
      * Save or update snapshot
      */
-    public Uni<WorkflowSnapshot> save(WorkflowSnapshot snapshot) {
-        return Uni.createFrom().item(() -> {
-            if (snapshot.getId() == null) {
-                snapshot.setId(UUID.randomUUID().toString());
-                snapshot.setCreatedAt(Instant.now());
-                entityManager.persist(snapshot);
-            } else {
-                snapshot.setLastModified(Instant.now());
-                snapshot = entityManager.merge(snapshot);
-            }
-
-            snapshotCache.put(snapshot.getId(), snapshot);
-            log.debug("Saved snapshot: {}", snapshot.getId());
-            return snapshot;
-        });
+    public Uni<WorkflowSnapshot> saveSnapshot(WorkflowSnapshot snapshot) {
+        if (snapshot.getId() == null) {
+            snapshot.setId(UUID.randomUUID().toString());
+            snapshot.setCreatedAt(Instant.now());
+            snapshot.setLastModified(snapshot.getCreatedAt());
+            return persist(snapshot)
+                    .onItem().invoke(saved -> snapshotCache.put(saved.getId(), saved));
+        } else {
+            snapshot.setLastModified(Instant.now());
+            return getSession().onItem().transformToUni(session -> session.merge(snapshot))
+                    .onItem().invoke(saved -> snapshotCache.put(saved.getId(), saved));
+        }
     }
 
     /**
      * Delete snapshot
      */
-    public Uni<Boolean> delete(String snapshotId) {
-        return findById(snapshotId)
-                .onItem().transform(optionalSnapshot -> {
-                    if (optionalSnapshot.isPresent()) {
-                        entityManager.remove(optionalSnapshot.get());
+    public Uni<Boolean> deleteSnapshot(String snapshotId) {
+        return deleteById(snapshotId)
+                .onItem().invoke(deleted -> {
+                    if (deleted) {
                         snapshotCache.remove(snapshotId);
-                        log.debug("Deleted snapshot: {}", snapshotId);
-                        return true;
                     }
-                    return false;
                 });
     }
 }

@@ -1,0 +1,38 @@
+[INFO] Scanning for projects...
+[WARNING] 
+[WARNING] Some problems were encountered while building the effective model for tech.kayys.wayang:wayang-workflow-engine:jar:1.0.0-SNAPSHOT
+[WARNING] 'dependencies.dependency.(groupId:artifactId:type:classifier)' must be unique: tech.kayys.wayang:wayang-workflow-api:jar -> version 1.0.0-SNAPSHOT vs ${project.version} @ line 110, column 21
+[WARNING] 'parent.relativePath' of POM tech.kayys.wayang:wayang-workflow-engine:1.0.0-SNAPSHOT (/Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/pom.xml) points at tech.kayys.wayang:wayang-services instead of tech.kayys.wayang:wayang-workflow, please verify your project structure @ line 6, column 13
+[WARNING] 
+[WARNING] It is highly recommended to fix these problems because they threaten the stability of your build.
+[WARNING] 
+[WARNING] For this reason, future Maven versions might no longer support building such malformed projects.
+[WARNING] 
+[INFO] 
+[INFO] --------------< tech.kayys.wayang:wayang-workflow-engine >--------------
+[INFO] Building wayang-workflow-engine 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ wayang-workflow-engine ---
+[INFO] Copying 2 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- quarkus:3.30.3:generate-code (default) @ wayang-workflow-engine ---
+[INFO] [io.quarkus.grpc.codegen.GrpcCodeGen] Successfully finished generating and post-processing sources from proto files
+[INFO] 
+[INFO] --- compiler:3.14.1:compile (default-compile) @ wayang-workflow-engine ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 169 source files with javac [debug parameters release 21] to target/classes
+[WARNING] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/backup/BackupStorageService.java:[205,17] <O>combinedWith(java.util.function.Function<java.util.List<?>,O>) in io.smallrye.mutiny.groups.UniAndGroupIterable has been deprecated and marked for removal
+[WARNING] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/backup/BackupVerificationService.java:[96,17] <O>combinedWith(java.util.function.Function<java.util.List<?>,O>) in io.smallrye.mutiny.groups.UniAndGroupIterable has been deprecated and marked for removal
+[WARNING] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/multiregion/EventReplicationService.java:[93,17] <O>combinedWith(java.util.function.Function<java.util.List<?>,O>) in io.smallrye.mutiny.groups.UniAndGroupIterable has been deprecated and marked for removal
+[INFO] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowRuntimeEngine.java: /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowRuntimeEngine.java uses or overrides a deprecated API.
+[INFO] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/WorkflowRuntimeEngine.java: Recompile with -Xlint:deprecation for details.
+[INFO] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/PolicyEngine.java: /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/PolicyEngine.java uses unchecked or unsafe operations.
+[INFO] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/PolicyEngine.java: Recompile with -Xlint:unchecked for details.
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  4.870 s
+[INFO] Finished at: 2025-12-23T13:56:29+07:00
+[INFO] ------------------------------------------------------------------------

@@ -4,13 +4,13 @@ import java.time.Instant;
 
 import io.quarkus.hibernate.reactive.panache.PanacheEntityBase;
 import jakarta.persistence.Column;
-import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import tech.kayys.wayang.workflow.model.WorkflowExecutionState;
-import tech.kayys.wayang.workflow.service.JsonbConverter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * Checkpoint entity
@@ -39,7 +39,7 @@ public class Checkpoint extends PanacheEntityBase {
     private Integer sequenceNumber;
 
     @Column(columnDefinition = "jsonb", nullable = false)
-    @Convert(converter = JsonbConverter.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     private WorkflowExecutionState executionState;
 
     @Column(length = 30)

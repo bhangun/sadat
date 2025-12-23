@@ -5,17 +5,14 @@ import io.smallrye.mutiny.Multi;
 import io.quarkus.hibernate.reactive.panache.PanacheRepositoryBase;
 import io.quarkus.panache.common.Sort;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.persistence.*;
 import tech.kayys.wayang.workflow.domain.WorkflowEventEntity;
 import tech.kayys.wayang.workflow.api.model.WorkflowEvent;
 
-import org.hibernate.annotations.Type;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -50,7 +47,7 @@ public class WorkflowEventStore implements PanacheRepositoryBase<WorkflowEventEn
                                                         Instant.now());
 
                                         return persist(entity)
-                                                        .map(e -> e.sequence);
+                                                        .map(e -> e.getSequence());
                                 });
         }
 
@@ -59,6 +56,17 @@ public class WorkflowEventStore implements PanacheRepositoryBase<WorkflowEventEn
          */
         public Uni<List<WorkflowEvent>> getEvents(String runId) {
                 return find("runId = ?1", Sort.by("sequence"), runId)
+                                .list()
+                                .map(entities -> entities.stream()
+                                                .map(this::toEvent)
+                                                .toList());
+        }
+
+        /**
+         * Get events for a run by specific type
+         */
+        public Uni<List<WorkflowEvent>> getEventsByType(String runId, String eventType) {
+                return find("runId = ?1 and type = ?2", Sort.by("sequence"), runId, eventType)
                                 .list()
                                 .map(entities -> entities.stream()
                                                 .map(this::toEvent)
@@ -80,7 +88,9 @@ public class WorkflowEventStore implements PanacheRepositoryBase<WorkflowEventEn
          * Stream events in real-time
          */
         public Multi<WorkflowEvent> streamEvents(String runId) {
-                return stream("runId = ?1", Sort.by("sequence"), runId)
+                return find("runId = ?1", Sort.by("sequence"), runId)
+                                .list()
+                                .onItem().transformToMulti(list -> Multi.createFrom().iterable(list))
                                 .map(this::toEvent);
         }
 
@@ -104,12 +114,12 @@ public class WorkflowEventStore implements PanacheRepositoryBase<WorkflowEventEn
          * Get next sequence number for run (atomic)
          */
         private Uni<Long> getNextSequence(String runId) {
-                return getEntityManager()
-                                .createQuery(
+                return getSession()
+                                .onItem().transformToUni(session -> session.createQuery(
                                                 "SELECT COALESCE(MAX(e.sequence), 0) + 1 FROM WorkflowEventEntity e WHERE e.runId = :runId",
                                                 Long.class)
-                                .setParameter("runId", runId)
-                                .getSingleResult();
+                                                .setParameter("runId", runId)
+                                                .getSingleResult());
         }
 
         /**
@@ -117,11 +127,11 @@ public class WorkflowEventStore implements PanacheRepositoryBase<WorkflowEventEn
          */
         private WorkflowEvent toEvent(WorkflowEventEntity entity) {
                 return new WorkflowEvent(
-                                entity.id,
-                                entity.runId,
-                                entity.sequence,
-                                entity.type,
-                                entity.data,
-                                entity.createdAt);
+                                entity.getId(),
+                                entity.getRunId(),
+                                entity.getSequence(),
+                                entity.getType(),
+                                entity.getData(),
+                                entity.getCreatedAt());
         }
 }

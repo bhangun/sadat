@@ -2,7 +2,8 @@ package tech.kayys.wayang.workflow.domain;
 
 import java.time.Instant;
 
-import org.hibernate.annotations.Type;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -23,7 +24,7 @@ public class SagaExecutionEntity {
     private String id;
     private String runId;
     private String sagaDefId;
-    @Type(io.hypersistence.utils.hibernate.type.json.JsonBinaryType.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private CompensationStrategy strategy;
     @Enumerated(EnumType.STRING)

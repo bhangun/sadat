@@ -55,17 +55,16 @@
             <artifactId>lombok</artifactId>
             <version>${lombok.version}</version>
         </dependency>
+        <dependency>
+            <groupId>io.quarkiverse.minio</groupId>
+            <artifactId>quarkus-minio</artifactId>
+            <version>3.8.6</version>
+        </dependency>
         <!--         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-lombok</artifactId>
             <version>${quarkus.platform.version}</version>
         </dependency> -->
-        <!-- JSON Support (Hypersistence for JSONB) -->
-        <dependency>
-            <groupId>io.hypersistence</groupId>
-            <artifactId>hypersistence-utils-hibernate-71</artifactId>
-            <version>3.13.3</version>
-        </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-grpc</artifactId>
@@ -104,11 +103,6 @@
         </dependency>
         <dependency>
             <groupId>tech.kayys.wayang</groupId>
-            <artifactId>wayang-workflow-api</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>tech.kayys.wayang</groupId>
             <artifactId>wayang-workflow-sdk</artifactId>
             <version>${project.version}</version>
         </dependency>
@@ -127,10 +121,6 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-hibernate-validator</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-smallrye-metrics</artifactId>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
@@ -163,6 +153,10 @@
             <artifactId>rest-assured</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- H2 Database for development -->
+
+
     </dependencies>
 
     <build>

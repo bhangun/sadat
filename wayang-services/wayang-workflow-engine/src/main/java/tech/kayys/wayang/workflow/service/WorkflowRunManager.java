@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.quarkus.cache.CacheResult;
+import io.quarkus.hibernate.reactive.panache.Panache;
 import io.quarkus.scheduler.Scheduled;
 import io.quarkus.vertx.ConsumeEvent;
 import io.smallrye.mutiny.Multi;
@@ -76,10 +77,15 @@ public class WorkflowRunManager {
 
         @Transactional
         public Uni<WorkflowRun> createRun(CreateRunRequest request) {
+                // Validate input
+                if (request == null) {
+                        return Uni.createFrom()
+                                        .failure(new IllegalArgumentException("CreateRunRequest cannot be null"));
+                }
+
                 String tenantId = "default-tenant";
                 log.info("Creating workflow run for workflow: {}, tenant: {}", request.getWorkflowId(), tenantId);
 
-                // Validate input
                 if (request.getWorkflowId() == null || request.getWorkflowId().trim().isEmpty()) {
                         return Uni.createFrom()
                                         .failure(new IllegalArgumentException("Workflow ID cannot be null or empty"));
@@ -93,13 +99,24 @@ public class WorkflowRunManager {
                                 "manual",
                                 "manual");
 
-                WorkflowEvent createdEvent = WorkflowEvent.created(run, request.getInputs());
+                WorkflowEvent createdEvent = WorkflowEvent.created(run.getRunId(),
+                                Map.of(
+                                                "workflowId", request.getWorkflowId(),
+                                                "workflowVersion",
+                                                request.getWorkflowVersion() != null ? request.getWorkflowVersion()
+                                                                : "1.0.0",
+                                                "tenantId", tenantId,
+                                                "triggeredBy", "manual",
+                                                "inputs",
+                                                request.getInputs() != null ? request.getInputs() : Map.of()));
 
                 return eventStore.append(run.getRunId(), createdEvent)
                                 .onItem().transformToUni(eventId -> runRepository.save(run))
                                 .onFailure().invoke(failure -> {
                                         log.error("Failed to create workflow run for workflow: {}",
                                                         request.getWorkflowId(), failure);
+                                        // Clear any cache that might have been affected
+                                        activeRunsCache.remove(run.getRunId());
                                 })
                                 .onItem().invoke(savedRun -> {
                                         activeRunsCache.put(savedRun.getRunId(), savedRun);
@@ -168,7 +185,7 @@ public class WorkflowRunManager {
                 }
 
                 return acquireLock(runId, "status-update")
-                                .onItem().transformToUni(lock -> runRepository.findById(runId)
+                                .flatMap(lock -> runRepository.findById(runId)
                                                 .onItem().ifNull().failWith(() -> new RunNotFoundException(runId))
                                                 .onItem().invoke(run -> {
                                                         if (!run.getTenantId().equals(tenantId)) {
@@ -176,7 +193,7 @@ public class WorkflowRunManager {
                                                                                 "Tenant mismatch for run: " + runId);
                                                         }
                                                 })
-                                                .onItem().transformToUni(run -> {
+                                                .flatMap(run -> {
                                                         RunStatus oldStatus = run.getStatus();
                                                         validateStateTransition(oldStatus, newStatus);
 
@@ -228,7 +245,7 @@ public class WorkflowRunManager {
                 }
 
                 return acquireLock(runId, "node-update")
-                                .onItem().transformToUni(lock -> runRepository.findById(runId)
+                                .flatMap(lock -> runRepository.findById(runId)
                                                 .onItem().ifNull().failWith(() -> new RunNotFoundException(runId))
                                                 .onItem().invoke(run -> {
                                                         if (!run.getTenantId().equals(tenantId)) {
@@ -236,9 +253,11 @@ public class WorkflowRunManager {
                                                                                 "Tenant mismatch for run: " + runId);
                                                         }
                                                 })
-                                                .onItem().transformToUni(run -> {
-                                                        WorkflowEvent nodeEvent = WorkflowEvent.nodeExecuted(runId,
-                                                                        nodeState);
+                                                .flatMap(run -> {
+                                                        WorkflowEvent nodeEvent = WorkflowEvent.nodeExecuted(
+                                                                        runId,
+                                                                        nodeState.nodeId(),
+                                                                        nodeState.status().toString());
 
                                                         final Uni<Void> sagaOperation = nodeState
                                                                         .status() == NodeExecutionState.NodeStatus.FAILED
@@ -294,7 +313,7 @@ public class WorkflowRunManager {
                 }
 
                 return acquireLock(runId, "completion")
-                                .onItem().transformToUni(lock -> runRepository.findById(runId)
+                                .flatMap(lock -> runRepository.findById(runId)
                                                 .onItem().ifNull().failWith(() -> new RunNotFoundException(runId))
                                                 .onItem().invoke(run -> {
                                                         if (!run.getTenantId().equals(tenantId)) {
@@ -304,7 +323,7 @@ public class WorkflowRunManager {
                                                         // Validate state transition
                                                         validateStateTransition(run.getStatus(), RunStatus.SUCCEEDED);
                                                 })
-                                                .onItem().transformToUni(run -> {
+                                                .flatMap(run -> {
                                                         WorkflowEvent completedEvent = WorkflowEvent.completed(runId,
                                                                         outputs);
 
@@ -348,7 +367,7 @@ public class WorkflowRunManager {
                 }
 
                 return acquireLock(runId, "failure")
-                                .onItem().transformToUni(lock -> runRepository.findById(runId)
+                                .flatMap(lock -> runRepository.findById(runId)
                                                 .onItem().ifNull().failWith(() -> new RunNotFoundException(runId))
                                                 .onItem().invoke(run -> {
                                                         if (!run.getTenantId().equals(tenantId)) {
@@ -358,7 +377,7 @@ public class WorkflowRunManager {
                                                         // Validate state transition
                                                         validateStateTransition(run.getStatus(), RunStatus.FAILED);
                                                 })
-                                                .onItem().transformToUni(run -> {
+                                                .flatMap(run -> {
                                                         WorkflowEvent statusEvent = WorkflowEvent.statusChanged(runId,
                                                                         run.getStatus(), RunStatus.FAILED);
 
@@ -398,9 +417,11 @@ public class WorkflowRunManager {
                         return Uni.createFrom()
                                         .failure(new IllegalArgumentException("Tenant ID cannot be null or empty"));
                 }
+                Map<String, Object> safeStateUpdates = (stateUpdates != null) ? stateUpdates
+                                : java.util.Collections.emptyMap();
 
                 return acquireLock(runId, "state-update")
-                                .onItem().transformToUni(lock -> runRepository.findById(runId)
+                                .flatMap(lock -> runRepository.findById(runId)
                                                 .onItem().ifNull().failWith(() -> new RunNotFoundException(runId))
                                                 .onItem().invoke(run -> {
                                                         if (!run.getTenantId().equals(tenantId)) {
@@ -408,13 +429,14 @@ public class WorkflowRunManager {
                                                                                 "Tenant mismatch for run: " + runId);
                                                         }
                                                 })
-                                                .onItem().transformToUni(run -> {
+                                                .flatMap(run -> {
                                                         WorkflowEvent stateEvent = WorkflowEvent.stateUpdated(runId,
-                                                                        stateUpdates);
+                                                                        safeStateUpdates);
 
                                                         return eventStore.append(runId, stateEvent)
                                                                         .onItem().transformToUni(eventId -> {
-                                                                                run.updateWorkflowState(stateUpdates);
+                                                                                run.updateWorkflowState(
+                                                                                                safeStateUpdates);
                                                                                 return runRepository.update(run);
                                                                         })
                                                                         .onFailure().invoke(failure -> {
@@ -430,9 +452,7 @@ public class WorkflowRunManager {
                                                                                 logProvenance(runId,
                                                                                                 "WORKFLOW_STATE_UPDATED",
                                                                                                 Map.of("stateUpdates",
-                                                                                                                stateUpdates != null
-                                                                                                                                ? stateUpdates
-                                                                                                                                : Map.of()));
+                                                                                                                safeStateUpdates));
                                                                         })
                                                                         .replaceWithVoid();
                                                 })
@@ -453,7 +473,7 @@ public class WorkflowRunManager {
                 }
 
                 return acquireLock(runId, "resume")
-                                .onItem().transformToUni(lock -> runRepository.findById(runId)
+                                .flatMap(lock -> runRepository.findById(runId)
                                                 .onItem().ifNull().failWith(() -> new RunNotFoundException(runId))
                                                 .onItem().invoke(run -> {
                                                         if (!run.getTenantId().equals(tenantId)) {
@@ -461,7 +481,7 @@ public class WorkflowRunManager {
                                                                                 "Tenant mismatch for run: " + runId);
                                                         }
                                                 })
-                                                .onItem().transformToUni(run -> {
+                                                .flatMap(run -> {
                                                         WorkflowEvent resumeEvent = WorkflowEvent.resumed(runId,
                                                                         humanTaskId, resumeData, "user");
 
@@ -506,7 +526,7 @@ public class WorkflowRunManager {
                 }
 
                 return acquireLock(runId, "cancel")
-                                .onItem().transformToUni(lock -> runRepository.findById(runId)
+                                .flatMap(lock -> runRepository.findById(runId)
                                                 .onItem().ifNull().failWith(() -> new RunNotFoundException(runId))
                                                 .onItem().invoke(run -> {
                                                         if (!run.getTenantId().equals(tenantId)) {
@@ -514,7 +534,7 @@ public class WorkflowRunManager {
                                                                                 "Tenant mismatch for run: " + runId);
                                                         }
                                                 })
-                                                .onItem().transformToUni(run -> {
+                                                .flatMap(run -> {
                                                         WorkflowEvent cancelEvent = WorkflowEvent.cancelled(runId,
                                                                         reason != null ? reason : "Cancelled by user",
                                                                         "user");
@@ -558,10 +578,15 @@ public class WorkflowRunManager {
 
         @CacheResult(cacheName = "workflow-run")
         public Uni<WorkflowRun> getRun(String runId) {
+                if (runId == null || runId.trim().isEmpty()) {
+                        return Uni.createFrom().failure(new IllegalArgumentException("Run ID cannot be null or empty"));
+                }
+
                 WorkflowRun cached = activeRunsCache.get(runId);
                 if (cached != null) {
                         return Uni.createFrom().item(cached);
                 }
+
                 return runRepository.findById(runId)
                                 .onItem().ifNull().failWith(() -> new RunNotFoundException(runId))
                                 .onItem().invoke(run -> {
@@ -572,16 +597,41 @@ public class WorkflowRunManager {
                                                                                                    // RUNNING
                                                 activeRunsCache.put(runId, run);
                                         }
+                                })
+                                .onFailure().invoke(throwable -> {
+                                        log.error("Error retrieving workflow run: {}", runId, throwable);
                                 });
         }
 
         public Uni<tech.kayys.wayang.workflow.model.WorkflowRunQuery.Result> queryRuns(
                         String tenantId, String workflowId, RunStatus status, int page, int size) {
-                return runRepository.query(new WorkflowRunQuery(tenantId, workflowId, status, page, size));
+                if (tenantId == null || tenantId.trim().isEmpty()) {
+                        return Uni.createFrom()
+                                        .failure(new IllegalArgumentException("Tenant ID cannot be null or empty"));
+                }
+
+                // Normalize page and size values
+                int normalizedPage = Math.max(0, page);
+                int normalizedSize = Math.min(Math.max(1, size), 100); // Max 100 items per page
+
+                return runRepository
+                                .query(new WorkflowRunQuery(tenantId, workflowId, status, normalizedPage,
+                                                normalizedSize))
+                                .onFailure().invoke(throwable -> {
+                                        log.error("Error querying workflow runs for tenant: {}", tenantId, throwable);
+                                });
         }
 
         public Uni<List<WorkflowRun>> getActiveRuns(String tenantId) {
-                return runRepository.findActiveByTenant(tenantId);
+                if (tenantId == null || tenantId.trim().isEmpty()) {
+                        return Uni.createFrom()
+                                        .failure(new IllegalArgumentException("Tenant ID cannot be null or empty"));
+                }
+
+                return runRepository.findActiveByTenant(tenantId)
+                                .onFailure().invoke(throwable -> {
+                                        log.error("Error retrieving active runs for tenant: {}", tenantId, throwable);
+                                });
         }
 
         public Uni<Long> getActiveRunsCount(String tenantId) {
@@ -594,117 +644,218 @@ public class WorkflowRunManager {
         }
 
         public Multi<WorkflowEvent> streamRunEvents(String runId) {
-                return eventStore.streamEvents(runId);
+                if (runId == null || runId.trim().isEmpty()) {
+                        throw new IllegalArgumentException("Run ID cannot be null or empty");
+                }
+                return eventStore.streamEvents(runId)
+                                .onFailure().invoke(throwable -> {
+                                        log.error("Error streaming events for workflow run: {}", runId, throwable);
+                                });
         }
 
         public Uni<WorkflowRun> rebuildFromEvents(String runId) {
+                if (runId == null || runId.trim().isEmpty()) {
+                        return Uni.createFrom().failure(new IllegalArgumentException("Run ID cannot be null or empty"));
+                }
+
                 log.info("Rebuilding run {} from event store", runId);
                 return eventStore.getEvents(runId)
                                 .onItem().transform(events -> {
-                                        if (events.isEmpty()) {
+                                        if (events == null || events.isEmpty()) {
                                                 throw new RunNotFoundException(runId);
                                         }
                                         WorkflowEvent firstEvent = events.get(0);
                                         if (firstEvent.type() != WorkflowEventType.CREATED) {
-                                                throw new IllegalStateException("First event must be CREATED");
+                                                throw new IllegalStateException(
+                                                                "First event must be CREATED for run: " + runId);
                                         }
+
+                                        var eventData = firstEvent.data();
+                                        if (!eventData.containsKey("workflowId") ||
+                                                        !eventData.containsKey("tenantId") ||
+                                                        !eventData.containsKey("triggeredBy")) {
+                                                throw new IllegalStateException(
+                                                                "Missing required data in CREATED event for run: "
+                                                                                + runId);
+                                        }
+
                                         WorkflowRun run = WorkflowRun.builder()
                                                         .runId(runId)
-                                                        .workflowId(firstEvent.data().get("workflowId").toString())
-                                                        .tenantId(firstEvent.data().get("tenantId").toString())
-                                                        .triggeredBy(firstEvent.data().get("triggeredBy").toString())
+                                                        .workflowId(eventData.get("workflowId").toString())
+                                                        .tenantId(eventData.get("tenantId").toString())
+                                                        .triggeredBy(eventData.get("triggeredBy").toString())
                                                         .build();
                                         for (WorkflowEvent event : events) {
                                                 applyEvent(run, event);
                                         }
                                         return run;
+                                })
+                                .onFailure().invoke(throwable -> {
+                                        log.error("Error rebuilding workflow run from events: {}", runId, throwable);
                                 });
         }
 
         private void applyEvent(WorkflowRun run, WorkflowEvent event) {
+                if (run == null || event == null) {
+                        log.warn("Cannot apply null event to workflow run");
+                        return;
+                }
+
+                var eventData = event.data();
+                if (eventData == null) {
+                        log.warn("Event data is null for event type: {}", event.type());
+                        return;
+                }
+
                 switch (event.type()) {
                         case CREATED -> {
+                                // Nothing to do here - run is already initialized during rebuild
                         }
                         case STATUS_CHANGED -> {
-                                RunStatus newStatus = RunStatus.valueOf(event.data().get("newStatus").toString());
-                                run.setStatus(newStatus);
-                                if (newStatus == RunStatus.SUCCEEDED && event.data().containsKey("outputs")) {
-                                        @SuppressWarnings("unchecked")
-                                        Map<String, Object> outputs = (Map<String, Object>) event.data().get("outputs");
-                                        run.setOutputs(outputs);
+                                try {
+                                        Object newStatusObj = eventData.get("newStatus");
+                                        if (newStatusObj == null) {
+                                                log.warn("Missing newStatus in STATUS_CHANGED event");
+                                                return;
+                                        }
+                                        RunStatus newStatus = RunStatus.valueOf(newStatusObj.toString());
+                                        run.setStatus(newStatus);
+                                        if (newStatus == RunStatus.SUCCEEDED && eventData.containsKey("outputs")) {
+                                                @SuppressWarnings("unchecked")
+                                                Map<String, Object> outputs = (Map<String, Object>) eventData
+                                                                .get("outputs");
+                                                run.setOutputs(outputs);
+                                        }
+                                } catch (IllegalArgumentException e) {
+                                        log.warn("Invalid status in STATUS_CHANGED event: {}",
+                                                        eventData.get("newStatus"), e);
                                 }
                         }
                         case NODE_EXECUTED -> {
-                                String nodeId = event.data().get("nodeId").toString();
-                                NodeExecutionState.NodeStatus status = NodeExecutionState.NodeStatus.valueOf(
-                                                event.data().get("status").toString());
-                                @SuppressWarnings("unchecked")
-                                Map<String, Object> outputs = (Map<String, Object>) event.data().getOrDefault("outputs",
-                                                Map.of());
-                                String errorMessage = (String) event.data().getOrDefault("errorMessage", "");
-                                @SuppressWarnings("unchecked")
-                                Map<String, Object> inputs = (Map<String, Object>) event.data().getOrDefault("inputs",
-                                                Map.of());
-                                Instant startedAt = event.data().containsKey("startedAt")
-                                                && !event.data().get("startedAt").toString().isEmpty()
-                                                                ? Instant.parse(event.data().get("startedAt")
-                                                                                .toString())
-                                                                : Instant.now();
-                                Instant completedAt = event.data().containsKey("completedAt")
-                                                && !event.data().get("completedAt").toString().isEmpty()
-                                                                ? Instant.parse(event.data().get("completedAt")
-                                                                                .toString())
-                                                                : Instant.now();
+                                Object nodeIdObj = eventData.get("nodeId");
+                                if (nodeIdObj == null) {
+                                        log.warn("Missing nodeId in NODE_EXECUTED event");
+                                        return;
+                                }
+                                String nodeId = nodeIdObj.toString();
 
-                                NodeExecutionState nodeState = new NodeExecutionState(
-                                                nodeId, status, inputs, outputs, errorMessage, startedAt, completedAt);
-                                run.recordNodeState(nodeId, nodeState);
+                                Object statusObj = eventData.get("status");
+                                if (statusObj == null) {
+                                        log.warn("Missing status in NODE_EXECUTED event for node: {}", nodeId);
+                                        return;
+                                }
+
+                                try {
+                                        NodeExecutionState.NodeStatus status = NodeExecutionState.NodeStatus.valueOf(
+                                                        statusObj.toString());
+                                        @SuppressWarnings("unchecked")
+                                        Map<String, Object> outputs = (Map<String, Object>) eventData.getOrDefault(
+                                                        "outputs",
+                                                        Map.of());
+                                        String errorMessage = (String) eventData.getOrDefault("errorMessage", "");
+                                        @SuppressWarnings("unchecked")
+                                        Map<String, Object> inputs = (Map<String, Object>) eventData.getOrDefault(
+                                                        "inputs",
+                                                        Map.of());
+                                        Instant startedAt = eventData.containsKey("startedAt")
+                                                        && eventData.get("startedAt") != null
+                                                                        ? Instant.parse(eventData.get("startedAt")
+                                                                                        .toString())
+                                                                        : Instant.now();
+                                        Instant completedAt = eventData.containsKey("completedAt")
+                                                        && eventData.get("completedAt") != null
+                                                                        ? Instant.parse(eventData.get("completedAt")
+                                                                                        .toString())
+                                                                        : Instant.now();
+
+                                        NodeExecutionState nodeState = new NodeExecutionState(
+                                                        nodeId, status, inputs, outputs, errorMessage, startedAt,
+                                                        completedAt);
+                                        run.recordNodeState(nodeId, nodeState);
+                                } catch (IllegalArgumentException e) {
+                                        log.warn("Invalid status in NODE_EXECUTED event for node {}: {}", nodeId,
+                                                        statusObj, e);
+                                } catch (Exception e) {
+                                        log.warn("Error processing NODE_EXECUTED event for node: {}", nodeId, e);
+                                }
                         }
                         case STATE_UPDATED -> {
                                 @SuppressWarnings("unchecked")
-                                Map<String, Object> updates = (Map<String, Object>) event.data().get("stateUpdates");
-                                run.updateWorkflowState(updates);
+                                Map<String, Object> updates = (Map<String, Object>) eventData.get("stateUpdates");
+                                if (updates != null) {
+                                        run.updateWorkflowState(updates);
+                                }
                         }
                         case RESUMED -> run.setStatus(RunStatus.RUNNING);
                         case CANCELLED -> run.setStatus(RunStatus.CANCELLED);
+                        default -> log.warn("Unknown event type: {}", event.type());
                 }
         }
 
         @Transactional
         public Uni<Void> createSnapshot(String runId) {
+                if (runId == null || runId.trim().isEmpty()) {
+                        return Uni.createFrom().failure(new IllegalArgumentException("Run ID cannot be null or empty"));
+                }
+
                 return getRun(runId)
-                                .onItem().transformToUni(run -> eventStore.getEventCount(runId)
+                                .flatMap(run -> eventStore.getEventCount(runId)
                                                 .onItem().transformToUni(eventCount -> snapshotStore.save(
                                                                 new WorkflowSnapshot(runId, run, eventCount,
-                                                                                Instant.now()))));
+                                                                                Instant.now()))))
+                                .onFailure().invoke(throwable -> {
+                                        log.error("Error creating snapshot for workflow run: {}", runId, throwable);
+                                });
         }
 
         public Uni<WorkflowRun> restoreFromSnapshot(String runId) {
                 return snapshotStore.getLatest(runId)
-                                .onItem().transformToUni(snapshot -> {
-                                        if (snapshot == null)
+                                .flatMap(snapshot -> {
+                                        if (snapshot == null) {
                                                 return rebuildFromEvents(runId);
+                                        }
+
                                         return eventStore.getEventsAfter(runId, snapshot.eventCount())
                                                         .onItem().transform(recentEvents -> {
-                                                                WorkflowRun run = snapshot.state();
+                                                                WorkflowRun run = snapshot.workflowRun();
                                                                 for (WorkflowEvent event : recentEvents) {
                                                                         applyEvent(run, event);
                                                                 }
                                                                 return run;
+                                                        })
+                                                        .onFailure().recoverWithUni(throwable -> {
+                                                                log.error("Failed to restore from snapshot for run: {}",
+                                                                                runId, throwable);
+                                                                return rebuildFromEvents(runId);
                                                         });
+                                })
+                                .onFailure().recoverWithUni(throwable -> {
+                                        log.error("Failed to retrieve snapshot for run: {}", runId, throwable);
+                                        return rebuildFromEvents(runId);
                                 });
         }
 
         @Scheduled(every = "1h")
-        void autoSnapshot() {
+        Uni<Void> autoSnapshot() {
                 log.info("Running auto-snapshot");
-                runRepository.findAllActive()
+                return Panache.withTransaction(() -> runRepository.findAllActive()
                                 .onItem().transformToMulti(runs -> Multi.createFrom().iterable(runs))
-                                .onItem()
-                                .transformToUniAndMerge(
-                                                run -> createSnapshot(run.getRunId()).onFailure().recoverWithNull())
-                                .subscribe().with(v -> {
-                                }, error -> log.error("Auto-snapshot failed", error));
+                                .onItem().transformToUniAndMerge(run -> {
+                                        if (run != null) {
+                                                return createSnapshot(run.getRunId())
+                                                                .onFailure()
+                                                                .invoke(error -> log.warn(
+                                                                                "Failed to create snapshot for run: {}",
+                                                                                run.getRunId(), error))
+                                                                .onItem()
+                                                                .invoke(v -> log.debug("Created snapshot for run: {}",
+                                                                                run.getRunId()));
+                                        }
+                                        return Uni.createFrom().voidItem();
+                                })
+                                .collect().asList()
+                                .replaceWithVoid())
+                                .onFailure().invoke(error -> log.error("Auto-snapshot failed", error));
         }
 
         private void publishClusterEvent(ClusterEvent event) {
@@ -713,53 +864,104 @@ public class WorkflowRunManager {
 
         @ConsumeEvent(EVENT_BUS_ADDRESS)
         void handleClusterEvent(ClusterEvent event) {
+                if (event == null) {
+                        log.warn("Received null cluster event");
+                        return;
+                }
+
                 log.debug("Received cluster event: {}", event.getClass().getSimpleName());
 
-                if (event instanceof ClusterEvent.RunCreated e) {
-                        cacheManager.invalidate("workflow-run", e.runId());
-                        // Optionally add to active runs cache if needed
-                } else if (event instanceof ClusterEvent.StatusChanged e) {
-                        cacheManager.invalidate("workflow-run", e.runId());
-                        activeRunsCache.remove(e.runId());
-                } else if (event instanceof ClusterEvent.NodeExecuted e) {
-                        cacheManager.invalidate("workflow-run", e.runId());
-                } else if (event instanceof ClusterEvent.StateUpdated e) {
-                        cacheManager.invalidate("workflow-run", e.runId());
-                } else if (event instanceof ClusterEvent.RunResumed e) {
-                        cacheManager.invalidate("workflow-run", e.runId());
-                } else if (event instanceof ClusterEvent.RunCancelled e) {
-                        cacheManager.invalidate("workflow-run", e.runId());
-                        activeRunsCache.remove(e.runId());
-                } else if (event instanceof ClusterEvent.RunCompleted e) {
-                        cacheManager.invalidate("workflow-run", e.runId());
-                        activeRunsCache.remove(e.runId());
+                try {
+                        if (event instanceof ClusterEvent.RunCreated e) {
+                                if (e.runId() != null) {
+                                        cacheManager.invalidate("workflow-run", e.runId());
+                                        // Optionally add to active runs cache if needed
+                                }
+                        } else if (event instanceof ClusterEvent.StatusChanged e) {
+                                if (e.runId() != null) {
+                                        cacheManager.invalidate("workflow-run", e.runId());
+                                        activeRunsCache.remove(e.runId());
+                                }
+                        } else if (event instanceof ClusterEvent.NodeExecuted e) {
+                                if (e.runId() != null) {
+                                        cacheManager.invalidate("workflow-run", e.runId());
+                                }
+                        } else if (event instanceof ClusterEvent.StateUpdated e) {
+                                if (e.runId() != null) {
+                                        cacheManager.invalidate("workflow-run", e.runId());
+                                }
+                        } else if (event instanceof ClusterEvent.RunResumed e) {
+                                if (e.runId() != null) {
+                                        cacheManager.invalidate("workflow-run", e.runId());
+                                }
+                        } else if (event instanceof ClusterEvent.RunCancelled e) {
+                                if (e.runId() != null) {
+                                        cacheManager.invalidate("workflow-run", e.runId());
+                                        activeRunsCache.remove(e.runId());
+                                }
+                        } else if (event instanceof ClusterEvent.RunCompleted e) {
+                                if (e.runId() != null) {
+                                        cacheManager.invalidate("workflow-run", e.runId());
+                                        activeRunsCache.remove(e.runId());
+                                }
+                        } else {
+                                log.debug("Unknown cluster event type: {}", event.getClass().getSimpleName());
+                        }
+                } catch (Exception ex) {
+                        log.error("Error processing cluster event: {}", event.getClass().getSimpleName(), ex);
                 }
         }
 
         @Scheduled(every = "30m")
-        @Transactional
-        void cleanupStaleRuns() {
+        Uni<Void> cleanupStaleRuns() {
                 log.info("Cleaning up stale runs");
                 Instant threshold = Instant.now().minus(STALE_RUN_THRESHOLD);
-                runRepository.findStaleRuns(threshold)
+                return Panache.withTransaction(() -> runRepository.findStaleRuns(threshold)
                                 .onItem().transformToMulti(runs -> Multi.createFrom().iterable(runs))
-                                .onItem()
-                                .transformToUniAndMerge(run -> cancelRun(run.getRunId(), run.getTenantId(), "Timeout")
-                                                .onFailure().recoverWithNull())
-                                .subscribe().with(v -> {
-                                }, error -> log.error("Cleanup failed", error));
+                                .onItem().transformToUniAndMerge(run -> {
+                                        if (run != null) {
+                                                return cancelRun(run.getRunId(), run.getTenantId(), "Timeout")
+                                                                .onFailure()
+                                                                .invoke(error -> log.warn(
+                                                                                "Failed to cancel stale run: {}",
+                                                                                run.getRunId(), error))
+                                                                .onItem()
+                                                                .invoke(v -> log.info("Cancelled stale run: {}",
+                                                                                run.getRunId()))
+                                                                .replaceWithVoid();
+                                        }
+                                        return Uni.createFrom().voidItem();
+                                })
+                                .collect().asList()
+                                .replaceWithVoid())
+                                .onFailure().invoke(error -> log.error("Cleanup failed", error));
         }
 
         private Uni<DistributedLock> acquireLock(String runId, String operation) {
                 String lockKey = "workflow-run:" + runId + ":" + operation;
-                return lockManager.acquire(lockKey, Duration.ofSeconds(30));
+                return lockManager.acquire(lockKey, Duration.ofSeconds(30))
+                                .onItem().ifNull()
+                                .failWith(() -> new IllegalStateException("Could not acquire lock for operation: "
+                                                + operation + " on run: " + runId));
         }
 
         private Uni<Void> releaseLock(DistributedLock lock) {
-                return lockManager.release(lock);
+                if (lock == null) {
+                        return Uni.createFrom().voidItem();
+                }
+                return lockManager.release(lock)
+                                .onFailure()
+                                .invoke(throwable -> log.warn("Failed to release lock: {}", lock.key(), throwable));
         }
 
         private void validateStateTransition(RunStatus from, RunStatus to) {
+                if (from == null) {
+                        throw new IllegalArgumentException("From state cannot be null");
+                }
+                if (to == null) {
+                        throw new IllegalArgumentException("To state cannot be null");
+                }
+
                 if (from == to) {
                         return; // No transition needed
                 }
@@ -772,22 +974,18 @@ public class WorkflowRunManager {
 
                 // Define valid state transitions
                 boolean isValidTransition = switch (from) {
-                        case PENDING ->
-                                to == RunStatus.RUNNING ||
-                                                to == RunStatus.CANCELLED ||
-                                                to == RunStatus.TIMED_OUT;
-                        case RUNNING ->
-                                to == RunStatus.SUCCEEDED ||
-                                                to == RunStatus.FAILED ||
-                                                to == RunStatus.SUSPENDED ||
-                                                to == RunStatus.CANCELLED ||
-                                                to == RunStatus.PAUSED;
-                        case SUSPENDED ->
-                                to == RunStatus.RUNNING ||
-                                                to == RunStatus.CANCELLED;
-                        case PAUSED ->
-                                to == RunStatus.RUNNING ||
-                                                to == RunStatus.CANCELLED;
+                        case PENDING -> to == RunStatus.RUNNING ||
+                                        to == RunStatus.CANCELLED ||
+                                        to == RunStatus.TIMED_OUT;
+                        case RUNNING -> to == RunStatus.SUCCEEDED ||
+                                        to == RunStatus.FAILED ||
+                                        to == RunStatus.SUSPENDED ||
+                                        to == RunStatus.CANCELLED ||
+                                        to == RunStatus.PAUSED;
+                        case SUSPENDED -> to == RunStatus.RUNNING ||
+                                        to == RunStatus.CANCELLED;
+                        case PAUSED -> to == RunStatus.RUNNING ||
+                                        to == RunStatus.CANCELLED;
                         default -> false;
                 };
 
@@ -798,6 +996,9 @@ public class WorkflowRunManager {
         }
 
         private boolean isTerminalState(RunStatus status) {
+                if (status == null) {
+                        return false; // null is not a terminal state
+                }
                 return switch (status) {
                         case SUCCEEDED, FAILED, CANCELLED, TIMED_OUT -> true;
                         default -> false;

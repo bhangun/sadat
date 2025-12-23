@@ -12,7 +12,6 @@ import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import tech.kayys.wayang.workflow.model.BackupMetadata;
-import tech.kayys.wayang.workflow.service.backup.BackupVerificationService.BackupVerificationResult;
 
 /**
  * Service for verifying backup integrity and consistency
@@ -39,14 +38,12 @@ public class BackupVerificationService {
                 .chain(metadataValid -> verifyFilesExist(metadata))
                 .chain(filesExist -> verifyChecksums(metadata))
                 .chain(checksumsValid -> verifyDataConsistency(metadata))
-                .onItem().transform(allValid -> BackupVerificationResult.builder()
-                        .backupId(backupId)
+                .onItem().transform(allValid -> BackupVerificationResult.builder(backupId)
                         .valid(allValid)
                         .verifiedAt(Instant.now())
                         .build())
                 .onFailure().recoverWithUni(error -> Uni.createFrom().item(
-                        BackupVerificationResult.builder()
-                                .backupId(backupId)
+                        BackupVerificationResult.builder(backupId)
                                 .valid(false)
                                 .verifiedAt(Instant.now())
                                 .addIssue("Verification failed: " + error.getMessage())
@@ -57,29 +54,30 @@ public class BackupVerificationService {
      * Verify backup metadata
      */
     private Uni<Boolean> verifyMetadata(BackupMetadata metadata) {
-        return Uni.createFrom().item(() -> {
-            List<String> issues = new ArrayList<>();
+        List<String> issues = new ArrayList<>();
 
-            if (metadata.getBackupId() == null || metadata.getBackupId().isEmpty()) {
-                issues.add("Backup ID is missing");
-            }
+        if (metadata.getBackupId() == null || metadata.getBackupId().isEmpty()) {
+            issues.add("Backup ID is missing");
+        }
 
-            if (metadata.getTimestamp() == null) {
-                issues.add("Timestamp is missing");
-            }
+        if (metadata.getTimestamp() == null) {
+            issues.add("Timestamp is missing");
+        }
 
-            if (metadata.getChecksum() == null || metadata.getChecksum().isEmpty()) {
-                issues.add("Checksum is missing");
-            }
+        if (metadata.getChecksum() == null || metadata.getChecksum().isEmpty()) {
+            issues.add("Checksum is missing");
+        }
 
-            if (metadata.getBackupFiles() == null || metadata.getBackupFiles().isEmpty()) {
-                issues.add("No backup files listed");
-            }
+        if (metadata.getBackupFiles() == null || metadata.getBackupFiles().isEmpty()) {
+            issues.add("No backup files listed");
+        }
 
-            return issues.isEmpty() ? Boolean.TRUE
-                    : Uni.createFrom().failure(new BackupVerificationException(
-                            "Metadata verification failed: " + String.join(", ", issues)));
-        });
+        if (!issues.isEmpty()) {
+            return Uni.createFrom().failure(new BackupVerificationException(
+                    "Metadata verification failed: " + String.join(", ", issues)));
+        }
+
+        return Uni.createFrom().item(true);
     }
 
     /**
@@ -119,7 +117,7 @@ public class BackupVerificationService {
      */
     public Uni<Boolean> verifyRestoreCapability(String backupId) {
         return storageService.loadMetadata(backupId)
-                .chain(metadata -> metadata.map(this::verifyBackup).orElse(
+                .chain(metadata -> metadata.map(m -> verifyBackup(backupId, m)).orElse(
                         Uni.createFrom().item(BackupVerificationResult.failed(backupId, "Metadata not found"))))
                 .onItem().transform(BackupVerificationResult::isValid);
     }

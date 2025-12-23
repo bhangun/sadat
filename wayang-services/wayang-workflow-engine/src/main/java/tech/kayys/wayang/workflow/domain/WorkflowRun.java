@@ -6,7 +6,6 @@ import java.util.Map;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
-import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -14,11 +13,12 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import tech.kayys.wayang.schema.execution.ErrorPayload;
 import tech.kayys.wayang.workflow.api.model.RunStatus;
 import tech.kayys.wayang.sdk.dto.NodeExecutionState;
 import tech.kayys.wayang.workflow.model.WorkflowExecutionState;
-import tech.kayys.wayang.workflow.service.JsonbConverter;
 import io.quarkus.hibernate.reactive.panache.PanacheEntityBase;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -112,15 +112,15 @@ public class WorkflowRun extends PanacheEntityBase {
      * Execution context and state
      */
     @Column(columnDefinition = "jsonb")
-    @Convert(converter = JsonbConverter.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     private Map<String, Object> inputs;
 
     @Column(columnDefinition = "jsonb")
-    @Convert(converter = JsonbConverter.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     private Map<String, Object> outputs;
 
     @Column(columnDefinition = "jsonb")
-    @Convert(converter = JsonbConverter.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     private WorkflowExecutionState executionState;
 
     /**
@@ -130,7 +130,7 @@ public class WorkflowRun extends PanacheEntityBase {
     private String errorMessage;
 
     @Column(columnDefinition = "jsonb")
-    @Convert(converter = JsonbConverter.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     private ErrorPayload lastError;
 
     /**
@@ -338,12 +338,12 @@ public class WorkflowRun extends PanacheEntityBase {
     // Map to store node execution states
     @lombok.Builder.Default
     @Column(columnDefinition = "jsonb")
-    @Convert(converter = JsonbConverter.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     private Map<String, NodeExecutionState> nodeStates = new java.util.HashMap<>();
 
     // Field to store checkpoint data
     @Column(columnDefinition = "jsonb")
-    @Convert(converter = JsonbConverter.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     private Map<String, Object> checkpointData;
 
     public void recordNodeState(String nodeId, NodeExecutionState nodeState) {

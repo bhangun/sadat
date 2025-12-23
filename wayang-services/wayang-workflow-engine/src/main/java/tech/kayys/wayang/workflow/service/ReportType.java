@@ -3,7 +3,7 @@ package tech.kayys.wayang.workflow.service;
 /**
  * Report types.
  */
-enum ReportType {
+public enum ReportType {
     SUMMARY,
     DETAILED,
     COMPLIANCE,

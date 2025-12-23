@@ -16,7 +16,7 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.smallrye.mutiny.Uni;
-import io.vertx.mutiny.ext.web.RequestBody;
+
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Any;
@@ -24,8 +24,19 @@ import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import tech.kayys.wayang.workflow.model.BackupMetadata;
-import tech.kayys.wayang.workflow.service.S3Client;
 import tech.kayys.wayang.workflow.service.backup.BackupManager.BackupFilter;
+import io.minio.MinioClient;
+import io.minio.PutObjectArgs;
+import io.minio.GetObjectArgs;
+import io.minio.RemoveObjectArgs;
+import io.minio.ListObjectsArgs;
+import io.minio.StatObjectArgs;
+import io.minio.Result;
+import io.minio.messages.Item;
+import java.io.ByteArrayInputStream;
+import java.util.Spliterator;
+import java.util.Spliterators;
+import java.util.stream.StreamSupport;
 
 /**
  * Service for storing backups to various storage providers
@@ -106,12 +117,12 @@ public class BackupStorageService {
                         return Optional.of(metadata);
                     } catch (Exception e) {
                         log.error("Failed to deserialize metadata for backup: {}", backupId, e);
-                        return Optional.empty();
+                        return Optional.<BackupMetadata>empty();
                     }
                 })
                 .onFailure().recoverWithItem(error -> {
                     log.error("Failed to load metadata for backup: {}", backupId, error);
-                    return Optional.empty();
+                    return Optional.<BackupMetadata>empty();
                 });
     }
 
@@ -312,49 +323,124 @@ public class BackupStorageService {
     }
 
     /**
-     * S3 storage provider (example implementation)
+     * MinIO storage provider
      */
     @ApplicationScoped
-    @Named("s3")
-    public static class S3StorageProvider implements StorageProvider {
+    @Named("minio")
+    public static class MinioStorageProvider implements StorageProvider {
 
         @Inject
-        S3Client s3Client;
+        MinioClient minioClient;
 
-        @ConfigProperty(name = "backup.storage.s3.bucket")
+        @ConfigProperty(name = "backup.storage.minio.bucket", defaultValue = "workflows-backup")
         String bucketName;
 
         @Override
         public String getProviderName() {
-            return "s3";
+            return "minio";
         }
 
         @Override
         public void initialize() {
-            // Check if bucket exists, create if not
-            log.info("S3 storage initialized with bucket: {}", bucketName);
+            log.info("MinIO storage initialized with bucket: {}", bucketName);
         }
 
         @Override
         public Uni<Boolean> store(String path, byte[] data) {
             return Uni.createFrom().item(() -> {
                 try {
-                    PutObjectRequest request = PutObjectRequest.builder()
-                            .bucket(bucketName)
-                            .key(path)
-                            .contentLength((long) data.length)
-                            .build();
-
-                    s3Client.putObject(request, RequestBody.fromBytes(data));
+                    minioClient.putObject(
+                            PutObjectArgs.builder()
+                                    .bucket(bucketName)
+                                    .object(path)
+                                    .stream(new ByteArrayInputStream(data), data.length, -1)
+                                    .contentType("application/octet-stream")
+                                    .build());
                     return true;
                 } catch (Exception e) {
-                    log.error("Failed to store file to S3: {}", path, e);
+                    log.error("Failed to store file to MinIO: {}", path, e);
                     return false;
                 }
             });
         }
 
-        // Other S3 implementation methods would go here
-        // (retrieve, delete, listObjects, getFileSize)
+        @Override
+        public Uni<byte[]> retrieve(String path) {
+            return Uni.createFrom().item(() -> {
+                try {
+                    return minioClient.getObject(
+                            GetObjectArgs.builder()
+                                    .bucket(bucketName)
+                                    .object(path)
+                                    .build())
+                            .readAllBytes();
+                } catch (Exception e) {
+                    log.error("Failed to retrieve file from MinIO: {}", path, e);
+                    throw new RuntimeException("MinIO retrieval failed", e);
+                }
+            });
+        }
+
+        @Override
+        public Uni<Boolean> delete(String path) {
+            return Uni.createFrom().item(() -> {
+                try {
+                    minioClient.removeObject(
+                            RemoveObjectArgs.builder()
+                                    .bucket(bucketName)
+                                    .object(path)
+                                    .build());
+                    return true;
+                } catch (Exception e) {
+                    log.error("Failed to delete file from MinIO: {}", path, e);
+                    return false;
+                }
+            });
+        }
+
+        @Override
+        public Uni<List<String>> listObjects(String prefix) {
+            return Uni.createFrom().item(() -> {
+                try {
+                    Iterable<Result<Item>> results = minioClient.listObjects(
+                            ListObjectsArgs.builder()
+                                    .bucket(bucketName)
+                                    .prefix(prefix)
+                                    .recursive(true)
+                                    .build());
+
+                    return StreamSupport.stream(
+                            Spliterators.spliteratorUnknownSize(results.iterator(), Spliterator.ORDERED), false)
+                            .map(itemResult -> {
+                                try {
+                                    return itemResult.get().objectName();
+                                } catch (Exception e) {
+                                    throw new RuntimeException(e);
+                                }
+                            })
+                            .collect(Collectors.toList());
+                } catch (Exception e) {
+                    log.error("Failed to list objects from MinIO with prefix: {}", prefix, e);
+                    return List.of();
+                }
+            });
+        }
+
+        @Override
+        public Uni<Long> getFileSize(String path) {
+            return Uni.createFrom().item(() -> {
+                try {
+                    return minioClient.statObject(
+                            StatObjectArgs.builder()
+                                    .bucket(bucketName)
+                                    .object(path)
+                                    .build())
+                            .size();
+                } catch (Exception e) {
+                    log.error("Failed to get file size from MinIO: {}", path, e);
+                    return 0L;
+                }
+            });
+        }
     }
 }

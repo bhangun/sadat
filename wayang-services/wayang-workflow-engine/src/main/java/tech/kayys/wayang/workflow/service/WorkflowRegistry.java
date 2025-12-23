@@ -5,7 +5,6 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import io.smallrye.mutiny.Uni;
-import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Singleton;
 
 import tech.kayys.wayang.schema.workflow.WorkflowDefinition;
@@ -30,12 +29,12 @@ public class WorkflowRegistry {
      * Register a new workflow definition
      */
     public Uni<WorkflowDefinition> register(WorkflowDefinition workflow) {
-        workflows.put(workflow.getId(), workflow);
-        
+        workflows.put(workflow.getId().getValue(), workflow);
+
         // Also store with version for version-specific retrieval
-        String versionedId = workflow.getId() + ":" + workflow.getVersion();
+        String versionedId = workflow.getId().getValue() + ":" + workflow.getVersion();
         workflowVersions.put(versionedId, workflow);
-        
+
         return Uni.createFrom().item(workflow);
     }
 
@@ -46,12 +45,12 @@ public class WorkflowRegistry {
         if (workflowId == null) {
             return Uni.createFrom().failure(new IllegalArgumentException("Workflow ID cannot be null"));
         }
-        
+
         WorkflowDefinition workflow = workflows.get(workflowId);
         if (workflow == null) {
             return Uni.createFrom().nullItem(); // Will be handled by composer with proper error
         }
-        
+
         return Uni.createFrom().item(workflow);
     }
 
@@ -61,11 +60,11 @@ public class WorkflowRegistry {
     public Uni<WorkflowDefinition> getWorkflowByVersion(String workflowId, String version) {
         String versionedId = workflowId + ":" + version;
         WorkflowDefinition workflow = workflowVersions.get(versionedId);
-        
+
         if (workflow == null) {
             return Uni.createFrom().nullItem();
         }
-        
+
         return Uni.createFrom().item(workflow);
     }
 
@@ -90,10 +89,10 @@ public class WorkflowRegistry {
     public Uni<Void> activate(String workflowId, String version) {
         String versionedId = workflowId + ":" + version;
         WorkflowDefinition workflow = workflowVersions.get(versionedId);
-        
+
         if (workflow == null) {
             return Uni.createFrom().failure(new IllegalArgumentException(
-                "Workflow not found: " + workflowId + " version " + version));
+                    "Workflow not found: " + workflowId + " version " + version));
         }
 
         // In a real implementation, there would be an 'active' flag
@@ -107,10 +106,10 @@ public class WorkflowRegistry {
     public Uni<Void> deactivate(String workflowId, String version) {
         String versionedId = workflowId + ":" + version;
         WorkflowDefinition workflow = workflowVersions.get(versionedId);
-        
+
         if (workflow == null) {
             return Uni.createFrom().failure(new IllegalArgumentException(
-                "Workflow not found: " + workflowId + " version " + version));
+                    "Workflow not found: " + workflowId + " version " + version));
         }
 
         // In a real implementation, there would be an 'active' flag
@@ -122,10 +121,10 @@ public class WorkflowRegistry {
      */
     public Uni<Void> delete(String workflowId, String version) {
         String versionedId = workflowId + ":" + version;
-        
+
         workflows.remove(workflowId);
         workflowVersions.remove(versionedId);
-        
+
         return Uni.createFrom().voidItem();
     }
 
@@ -136,12 +135,12 @@ public class WorkflowRegistry {
         // In a real implementation, this would parse content and create a workflow
         // For now, return a basic workflow definition
         WorkflowDefinition workflow = WorkflowDefinition.builder()
-            .id(workflowId)
-            .name("Imported Workflow: " + workflowId)
-            .version("1.0")
-            .description("Workflow imported from content")
-            .build();
-            
+                .id(workflowId)
+                .name("Imported Workflow: " + workflowId)
+                .version("1.0")
+                .description("Workflow imported from content")
+                .build();
+
         return register(workflow);
     }
 
@@ -164,9 +163,9 @@ public class WorkflowRegistry {
      */
     public Uni<List<WorkflowDefinition>> search(String tenantId, String namePattern) {
         List<WorkflowDefinition> result = workflows.values().stream()
-            .filter(wf -> namePattern == null || wf.getName().toLowerCase().contains(namePattern.toLowerCase()))
-            .toList();
-            
+                .filter(wf -> namePattern == null || wf.getName().toLowerCase().contains(namePattern.toLowerCase()))
+                .toList();
+
         return Uni.createFrom().item(result);
     }
 
@@ -178,12 +177,13 @@ public class WorkflowRegistry {
             if (workflow == null) {
                 return false;
             }
-            
+
             // Basic validation checks
-            if (workflow.getId() == null || workflow.getId().trim().isEmpty()) {
+            if (workflow.getId() == null || workflow.getId().getValue() == null
+                    || workflow.getId().getValue().trim().isEmpty()) {
                 return false;
             }
-            
+
             // More complex validations would go here (acyclic, connected nodes, etc.)
             return true;
         });

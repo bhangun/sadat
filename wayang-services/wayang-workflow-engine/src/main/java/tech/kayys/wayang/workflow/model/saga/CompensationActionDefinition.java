@@ -5,7 +5,6 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.annotations.Type;
 import org.hibernate.type.SqlTypes;
 
 import jakarta.persistence.Column;
@@ -33,7 +32,6 @@ public class CompensationActionDefinition implements Serializable {
     @Column(name = "compensation_method", length = 200)
     private String compensationMethod;
 
-    @Type(io.hypersistence.utils.hibernate.type.json.JsonBinaryType.class)
     @Column(name = "parameters", columnDefinition = "jsonb")
     @JdbcTypeCode(SqlTypes.JSON)
     private Map<String, Object> parameters = new HashMap<>();

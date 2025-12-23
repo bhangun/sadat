@@ -53,6 +53,7 @@ public class WorkflowSnapshotStore implements PanacheRepositoryBase<WorkflowSnap
         return find("runId = ?1 ORDER BY eventCount DESC", runId)
                 .page(keepCount, Integer.MAX_VALUE)
                 .list()
-                .onItem().transformToUni(entities -> delete("id IN ?1", entities.stream().map(e -> e.id).toList()));
+                .onItem().transformToUni(
+                        entities -> delete("id IN ?1", entities.stream().map(WorkflowSnapshotEntity::getId).toList()));
     }
 }

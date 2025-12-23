@@ -9,6 +9,8 @@ import tech.kayys.wayang.workflow.exception.NodeNotFoundException;
 import tech.kayys.wayang.workflow.model.NodeRegistration;
 import tech.kayys.wayang.common.spi.AbstractNode;
 import tech.kayys.wayang.common.spi.Node;
+import tech.kayys.wayang.schema.execution.ErrorPayload;
+import tech.kayys.wayang.schema.node.NodeDefinition;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -98,6 +100,22 @@ public class NodeExecutorRegistry {
     }
 
     /**
+     * Register a custom NodeExecutor directly
+     */
+    public void registerExecutor(String nodeType, NodeExecutor executor) {
+        NodeRegistration registration = NodeRegistration.builder()
+                .nodeType(nodeType)
+                .nodeClass((Class<? extends Node>) executor.getClass())
+                .registrationType(NodeRegistration.RegistrationType.CUSTOM)
+                .registeredAt(java.time.Instant.now())
+                .version("1.0.0")
+                .build();
+
+        registrations.put(nodeType, registration);
+        LOG.infof("Registered custom executor for node type: %s", nodeType);
+    }
+
+    /**
      * Register a node type with metadata
      */
     public void register(
@@ -141,6 +159,76 @@ public class NodeExecutorRegistry {
                             nodeType, pluginId);
                 })
                 .replaceWithVoid();
+    }
+
+    public NodeExecutor getExecutor(String nodeType) {
+        // Check if we have a specific executor for this node type
+        NodeExecutor executor = findSpecificExecutor(nodeType);
+        if (executor != null) {
+            return executor;
+        }
+
+        // Fall back to the generic approach if no specific executor found
+        return new GenericNodeExecutor(nodeType);
+    }
+
+    /**
+     * Find a specific executor for a node type
+     */
+    private NodeExecutor findSpecificExecutor(String nodeType) {
+        // Check if we have a registered executor for this type
+        NodeRegistration registration = registrations.get(nodeType);
+        if (registration != null) {
+            // Create and return the appropriate executor based on registration
+            try {
+                Class<? extends Node> nodeClass = (Class<? extends Node>) registration.getNodeClass();
+                Node nodeInstance = nodeFactory.create(nodeClass).await().indefinitely();
+                if (nodeInstance instanceof NodeExecutor) {
+                    return (NodeExecutor) nodeInstance;
+                }
+            } catch (Exception e) {
+                LOG.warnf("Could not create executor for node type %s: %s", nodeType, e.getMessage());
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Generic executor that can handle any node type through the registry
+     */
+    private class GenericNodeExecutor implements NodeExecutor {
+        private final String nodeType;
+
+        public GenericNodeExecutor(String nodeType) {
+            this.nodeType = nodeType;
+        }
+
+        @Override
+        public Uni<NodeExecutionResult> execute(NodeDefinition nodeDef, NodeContext context) {
+            return getNode(nodeType).flatMap(node -> {
+                if (node instanceof NodeExecutor) {
+                    return ((NodeExecutor) node).execute(nodeDef, context);
+                } else {
+                    // If the node is not a NodeExecutor, return an error
+                    return Uni.createFrom().item(
+                        NodeExecutionResult.error(nodeDef.getId(),
+                            ErrorPayload.builder()
+                                .type(ErrorPayload.ErrorType.EXECUTION_ERROR)
+                                .message("Node does not implement NodeExecutor interface: " + nodeDef.getType())
+                                .build()));
+                }
+            });
+        }
+
+        @Override
+        public String getNodeType() {
+            return nodeType;
+        }
+
+        @Override
+        public boolean canHandle(String nodeType) {
+            return this.nodeType.equals(nodeType);
+        }
     }
 
     /**

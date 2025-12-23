@@ -5,19 +5,16 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import io.quarkus.hibernate.reactive.panache.PanacheRepositoryBase;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.persistence.EntityManager;
 
 /**
  * Repository for managing system and tenant configurations
  */
 @ApplicationScoped
-public class ConfigurationRepository {
-
-    @Inject
-    EntityManager entityManager;
+public class ConfigurationRepository implements PanacheRepositoryBase<SystemConfig, String> {
 
     @Inject
     ConfigurationCache configCache;
@@ -25,66 +22,55 @@ public class ConfigurationRepository {
     /**
      * Find all configurations
      */
-    public Uni<List<SystemConfig>> findAll() {
-        return Uni.createFrom().item(() -> entityManager.createQuery("FROM SystemConfig", SystemConfig.class)
-                .getResultList());
+    public Uni<List<SystemConfig>> getAllConfigs() {
+        return listAll();
     }
 
     /**
      * Find configurations modified since a specific time
      */
     public Uni<List<SystemConfig>> findModifiedSince(Instant since) {
-        return Uni.createFrom().item(() -> entityManager.createQuery(
-                "FROM SystemConfig WHERE lastModified >= :since",
-                SystemConfig.class)
-                .setParameter("since", since)
-                .getResultList());
+        return find("modifiedAt >= ?1", since).list();
     }
 
     /**
      * Find configuration by key and tenant
      */
     public Uni<Optional<SystemConfig>> findByKey(String key, String tenantId) {
-        return Uni.createFrom().item(() -> entityManager.createQuery(
-                "FROM SystemConfig WHERE configKey = :key AND tenantId = :tenantId",
-                SystemConfig.class)
-                .setParameter("key", key)
-                .setParameter("tenantId", tenantId)
-                .getResultStream()
-                .findFirst());
+        return find("key = ?1 AND tenantId = ?2", key, tenantId)
+                .firstResult()
+                .map(Optional::ofNullable);
     }
 
     /**
      * Save or update configuration
      */
-    public Uni<SystemConfig> save(SystemConfig config) {
-        return Uni.createFrom().item(() -> {
-            config.setLastModified(Instant.now());
+    public Uni<SystemConfig> saveConfig(SystemConfig config) {
+        config.setLastModified(Instant.now());
 
-            if (config.getId() == null) {
-                config.setId(UUID.randomUUID().toString());
-                entityManager.persist(config);
-            } else {
-                config = entityManager.merge(config);
-            }
-
-            configCache.invalidate(config.getConfigKey(), config.getTenantId());
-            return config;
-        });
+        if (config.getId() == null) {
+            config.setId(UUID.randomUUID().toString());
+            return persist(config)
+                    .onItem().invoke(saved -> configCache.invalidate(saved.getConfigKey(), saved.getTenantId()));
+        } else {
+            return getSession().onItem().transformToUni(session -> session.merge(config))
+                    .onItem().invoke(saved -> configCache.invalidate(saved.getConfigKey(), saved.getTenantId()));
+        }
     }
 
     /**
      * Delete configuration
      */
-    public Uni<Boolean> delete(String configId) {
-        return Uni.createFrom().item(() -> {
-            SystemConfig config = entityManager.find(SystemConfig.class, configId);
-            if (config != null) {
-                entityManager.remove(config);
-                configCache.invalidate(config.getConfigKey(), config.getTenantId());
-                return true;
-            }
-            return false;
-        });
+    public Uni<Boolean> deleteConfig(String configId) {
+        return findById(configId)
+                .onItem().transformToUni(config -> {
+                    if (config != null) {
+                        return delete(config)
+                                .onItem()
+                                .invoke(() -> configCache.invalidate(config.getConfigKey(), config.getTenantId()))
+                                .replaceWith(true);
+                    }
+                    return Uni.createFrom().item(false);
+                });
     }
 }

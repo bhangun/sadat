@@ -3,8 +3,8 @@ package tech.kayys.wayang.workflow.domain;
 import java.time.Instant;
 import java.util.Map;
 
-import org.hibernate.annotations.Type;
-
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -23,6 +23,8 @@ import tech.kayys.wayang.workflow.api.model.WorkflowEventType;
         @Index(name = "idx_events_run_seq", columnList = "run_id, sequence"),
         @Index(name = "idx_events_created", columnList = "created_at")
 })
+@lombok.Getter
+@lombok.Setter
 public class WorkflowEventEntity {
 
     @Id
@@ -38,7 +40,7 @@ public class WorkflowEventEntity {
     @Column(nullable = false)
     WorkflowEventType type;
 
-    @Type(io.hypersistence.utils.hibernate.type.json.JsonBinaryType.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb", nullable = false)
     Map<String, Object> data;
 

@@ -4,7 +4,6 @@ import java.time.Instant;
 import java.util.Map;
 
 import jakarta.persistence.Column;
-import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -12,7 +11,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import tech.kayys.wayang.workflow.model.ActorType;
 import tech.kayys.wayang.workflow.model.EventType;
-import tech.kayys.wayang.workflow.service.JsonbConverter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * Audit Event Entity.
@@ -36,7 +36,7 @@ public class AuditEvent {
     private EventType eventType;
 
     @Column(columnDefinition = "jsonb")
-    @Convert(converter = JsonbConverter.class)
+    @JdbcTypeCode(SqlTypes.JSON)
     private Map<String, Object> eventData;
 
     @Enumerated(EnumType.STRING)

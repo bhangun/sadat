@@ -4,7 +4,7 @@ import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.helpers.test.UniAssertSubscriber;
 import tech.kayys.wayang.workflow.api.model.RunStatus;
 import io.quarkus.test.junit.QuarkusTest;
-import io.quarkus.test.junit.mockito.InjectMock;
+import io.quarkus.test.InjectMock;
 import jakarta.inject.Inject;
 import tech.kayys.wayang.schema.node.EdgeDefinition;
 import tech.kayys.wayang.schema.execution.ErrorPayload;
@@ -272,7 +272,7 @@ class WorkflowEngineTest {
                 when(stateStore.load("run-123"))
                                 .thenReturn(Uni.createFrom().item(suspendedRun));
 
-                when(workflowRepository.findById(anyString(), anyString()))
+                when(workflowRepository.findByIdAndTenant(anyString(), anyString()))
                                 .thenReturn(Uni.createFrom().item(suspendedRun)); // Mock loading by ID
 
                 when(nodeExecutor.execute(any(NodeDefinition.class),
@@ -281,7 +281,7 @@ class WorkflowEngineTest {
                                                 NodeExecutionResult.success("node-1", Map.of("output", "result"))));
 
                 // When
-                WorkflowRun result = workflowEngine.resume("run-123")
+                WorkflowRun result = workflowEngine.resume("run-123", tenantId)
                                 .subscribe().withSubscriber(UniAssertSubscriber.create())
                                 .awaitItem()
                                 .getItem();
@@ -329,7 +329,7 @@ class WorkflowEngineTest {
                                 .thenReturn(Uni.createFrom().voidItem());
 
                 // When
-                workflowEngine.pause(runId)
+                workflowEngine.pause(runId, tenantId)
                                 .subscribe().withSubscriber(UniAssertSubscriber.create())
                                 .awaitItem();
 
@@ -348,7 +348,7 @@ class WorkflowEngineTest {
                                 .thenReturn(Uni.createFrom().voidItem());
 
                 // When
-                workflowEngine.cancel(runId)
+                workflowEngine.cancel(runId, tenantId, "cancelled by test")
                                 .subscribe().withSubscriber(UniAssertSubscriber.create())
                                 .awaitItem();
 
@@ -435,8 +435,7 @@ class WorkflowEngineTest {
                 NodeDefinition node = new NodeDefinition();
                 node.setId("node-1");
                 node.setType("test-node");
-                node.setInputs(new HashMap<>());
-                node.setOutputs(new HashMap<>());
+                node.setDisplayName("Test Node");
 
                 WorkflowDefinition workflow = new WorkflowDefinition();
                 workflow.setId("test-workflow");

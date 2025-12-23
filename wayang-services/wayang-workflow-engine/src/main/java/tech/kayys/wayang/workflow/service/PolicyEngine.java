@@ -97,6 +97,11 @@ public class PolicyEngine {
         return Uni.createFrom().item(GuardrailResult.allow());
     }
 
+    public Uni<GuardrailResult> validateWorkflowStart(tech.kayys.wayang.schema.workflow.WorkflowDefinition workflow, String tenantId) {
+        LOG.debugf("Validating workflow start for %s in tenant %s", workflow.getId(), tenantId);
+        return Uni.createFrom().item(GuardrailResult.allow());
+    }
+
     private boolean checkAuthorization(
             String nodeId,
             String tenantId,

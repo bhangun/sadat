@@ -5,18 +5,20 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import tech.kayys.wayang.workflow.model.ExecutionContext;
 import tech.kayys.wayang.common.spi.ExecutionResult;
-import tech.kayys.wayang.workflow.service.NodeExecutionResult;
-import tech.kayys.wayang.workflow.service.NodeContext;
-import tech.kayys.wayang.workflow.model.ExecutionTrace;
+import tech.kayys.wayang.common.spi.ExecutionResult.Status;
 import tech.kayys.wayang.schema.workflow.WorkflowDefinition;
 import tech.kayys.wayang.schema.node.NodeDefinition;
 import tech.kayys.wayang.schema.node.EdgeDefinition;
 import tech.kayys.wayang.schema.execution.ErrorHandlingConfig;
+import tech.kayys.wayang.schema.execution.ErrorPayload;
 
 import org.jboss.logging.Logger;
 
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @ApplicationScoped
@@ -44,7 +46,7 @@ public class WorkflowRuntimeEngine {
             // Initialize context
             context.setWorkflow(workflow);
             context.setInput(input);
-            context.initializeVariables(workflow.getVariables());
+            // Input is already added to variables in setInput()
 
             // Find start node
             NodeDefinition startNode = findStartNode(workflow);
@@ -56,17 +58,27 @@ public class WorkflowRuntimeEngine {
         })
                 .chain(startNode -> executeNode(startNode, workflow, context))
                 .map(result -> new ExecutionResult(
-                        result.isSuccess(),
+                        result.isSuccess() ? Status.SUCCESS : Status.ERROR,
                         result.getOutput(),
-                        context.getExecutionTrace(),
-                        result.getError() != null ? result.getError().getMessage() : null))
+                        context.getExecutionTrace().toString(),
+                        result.getError() != null ? ErrorPayload.builder()
+                                .type(ErrorPayload.ErrorType.EXECUTION_ERROR)
+                                .message(result.getError().getMessage())
+                                .build() : null,
+                        null,
+                        new HashMap<>()))
                 .onFailure().recoverWithItem(error -> {
                     LOG.errorf(error, "Workflow execution failed: %s", workflow.getName());
                     return new ExecutionResult(
-                            false,
+                            Status.ERROR,
                             null,
-                            context.getExecutionTrace(),
-                            error.getMessage());
+                            context.getExecutionTrace().toString(),
+                            ErrorPayload.builder()
+                                    .type(ErrorPayload.ErrorType.SYSTEM_ERROR)
+                                    .message(error.getMessage())
+                                    .build(),
+                            null,
+                            new HashMap<>());
                 });
     }
 
@@ -78,7 +90,7 @@ public class WorkflowRuntimeEngine {
             WorkflowDefinition workflow,
             ExecutionContext context) {
 
-        LOG.debugf("Executing node: %s (%s)", node.getName(), node.getType());
+        LOG.debugf("Executing node: %s (%s)", node.getDisplayName(), node.getType());
 
         // Check if node already executed (prevent loops)
         if (context.isNodeExecuted(node.getId())) {
@@ -91,12 +103,7 @@ public class WorkflowRuntimeEngine {
         // Get appropriate executor for node type
         NodeExecutor executor = executorRegistry.getExecutor(node.getType());
 
-        NodeContext nodeContext = NodeContext.builder()
-                .nodeId(node.getId())
-                .runId(context.getExecutionId())
-                .workflow(workflow)
-                .inputs(context.getAllVariables())
-                .build();
+        NodeContext nodeContext = createNodeContext(node, context, workflow);
 
         return executor.execute(node, nodeContext)
                 .chain(result -> {
@@ -112,6 +119,15 @@ public class WorkflowRuntimeEngine {
                     return findAndExecuteNextNodes(node, workflow, context, result);
                 })
                 .onFailure().recoverWithUni(error -> handleNodeError(node, error, workflow, context));
+    }
+
+    private NodeContext createNodeContext(NodeDefinition node, ExecutionContext context, WorkflowDefinition workflow) {
+        return NodeContext.builder()
+                .nodeId(node.getId())
+                .runId(context.getExecutionId())
+                .workflow(workflow)
+                .inputs(context.getAllVariables())
+                .build();
     }
 
     /**
@@ -200,7 +216,7 @@ public class WorkflowRuntimeEngine {
             WorkflowDefinition workflow,
             ExecutionContext context) {
 
-        LOG.errorf(error, "Node execution failed: %s", node.getName());
+        LOG.errorf(error, "Node execution failed: %s", node.getDisplayName());
 
         ErrorHandlingConfig errorHandling = node.getErrorHandling();
 
@@ -235,10 +251,12 @@ public class WorkflowRuntimeEngine {
 
         NodeExecutor executor = executorRegistry.getExecutor(node.getType());
 
-        return executor.execute(node, context)
+        NodeContext nodeContext = createNodeContext(node, context, workflow);
+
+        return executor.execute(node, nodeContext)
                 .onFailure().retry()
                 .atMost(maxRetries)
-                .onFailure().invoke(error -> LOG.errorf(error, "Retry failed for node: %s", node.getName()));
+                .onFailure().invoke(error -> LOG.errorf(error, "Retry failed for node: %s", node.getDisplayName()));
     }
 
     /**
@@ -262,7 +280,7 @@ public class WorkflowRuntimeEngine {
                     new IllegalStateException("Fallback node not found: " + fallbackNodeId));
         }
 
-        LOG.infof("Executing fallback node: %s", fallbackNode.getName());
+        LOG.infof("Executing fallback node: %s", fallbackNode.getDisplayName());
         return executeNode(fallbackNode, workflow, context);
     }
 
@@ -286,9 +304,8 @@ public class WorkflowRuntimeEngine {
      * Check if nodes should execute in parallel
      */
     private boolean shouldExecuteInParallel(NodeDefinition node) {
-        return node.getType() == NodeDefinition.NodeType.PARALLEL ||
-                (node.getConfig() != null &&
-                        node.getConfig().getParallelConfig() != null);
+        return "PARALLEL".equalsIgnoreCase(node.getType()) ||
+                (node.getControlFlow() != null && Boolean.TRUE.equals(node.getControlFlow().getParallel()));
     }
 
     /**

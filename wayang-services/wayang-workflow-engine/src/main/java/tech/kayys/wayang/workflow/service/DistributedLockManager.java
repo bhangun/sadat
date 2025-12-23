@@ -2,7 +2,6 @@ package tech.kayys.wayang.workflow.service;
 
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 import tech.kayys.wayang.workflow.exception.LockAcquisitionException;
 import tech.kayys.wayang.workflow.model.DistributedLock;
 

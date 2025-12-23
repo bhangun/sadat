@@ -10,7 +10,6 @@ import java.util.UUID;
 import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.CacheConcurrencyStrategy;
 import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.annotations.Type;
 import org.hibernate.type.SqlTypes;
 import io.quarkus.hibernate.reactive.panache.PanacheEntityBase;
 import org.hibernate.annotations.UuidGenerator;
@@ -20,8 +19,6 @@ import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
@@ -88,7 +85,6 @@ public class SagaDefinitionEntity extends PanacheEntityBase {
     @Column(name = "pivot_node", nullable = false)
     private String pivotNode;
 
-    @Type(io.hypersistence.utils.hibernate.type.json.JsonBinaryType.class)
     @Column(name = "compensations", columnDefinition = "jsonb")
     @JdbcTypeCode(SqlTypes.JSON)
     private Map<String, CompensationActionDefinition> compensations = new HashMap<>();
@@ -116,11 +112,10 @@ public class SagaDefinitionEntity extends PanacheEntityBase {
     @Max(value = 300000, message = "Retry delay cannot exceed 5 minutes (300000ms)")
     private Long retryDelayMs = 1000L;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "compensation_strategy", length = 50)
+    @Column(name = "compensation_strategy", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
     private CompensationStrategy compensationStrategy = CompensationStrategy.BACKWARD;
 
-    @Type(io.hypersistence.utils.hibernate.type.json.JsonBinaryType.class)
     @Column(name = "metadata", columnDefinition = "jsonb")
     @JdbcTypeCode(SqlTypes.JSON)
     private Map<String, Object> metadata = new HashMap<>();

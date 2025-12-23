@@ -1,183 +1,124 @@
 package tech.kayys.wayang.workflow.service;
 
 import io.smallrye.mutiny.Uni;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
-import tech.kayys.wayang.workflow.api.model.RunStatus;
 import tech.kayys.wayang.workflow.domain.WorkflowRun;
-import tech.kayys.wayang.workflow.exception.WorkflowRunNotFoundException;
-import tech.kayys.wayang.workflow.repository.WorkflowRunRepository;
+import tech.kayys.wayang.workflow.model.ExecutionContext;
 
-import org.jboss.logging.Logger;
-import java.time.Instant;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
 
 /**
- * StateStore - Reactive persistence for workflow run state.
- *
- * Responsibilities:
- * - Save/load workflow run state
- * - Support checkpoint/resume for crash recovery
- * - Multi-tenant isolation
- * - Optimistic locking for concurrent updates
- * - Event sourcing support (optional)
- *
- * Design Principles:
- * - Reactive non-blocking persistence (Hibernate Reactive)
- * - Immutable state snapshots
- * - Audit trail for all state transitions
- * - Efficient query support for monitoring
+ * StateStore - Interface for storing and retrieving workflow execution state
+ * 
+ * This interface provides a generic contract for state persistence that can be
+ * implemented by different storage backends (database, memory, distributed
+ * store, etc.)
+ * making the workflow engine more use case agnostic.
  */
-@ApplicationScoped
-public class StateStore {
-
-    private static final Logger LOG = Logger.getLogger(StateStore.class);
-
-    @Inject
-    WorkflowRunRepository workflowRunRepository;
+public interface StateStore {
 
     /**
-     * Save workflow run state.
-     * Uses optimistic locking to prevent concurrent modification conflicts.
+     * Save a workflow run
+     * 
+     * @param run The workflow run to save
+     * @return A Uni containing the saved run
      */
-    public Uni<WorkflowRun> save(WorkflowRun run) {
-        if (run.getRunId() == null) {
-            return Uni.createFrom().failure(
-                    new IllegalArgumentException("WorkflowRun ID cannot be null"));
-        }
+    Uni<WorkflowRun> save(WorkflowRun run);
 
-        LOG.debugf("Saving workflow run: %s, status: %s", run.getRunId(), run.getStatus());
+    /**
+     * Get a workflow run by ID
+     * 
+     * @param runId The run ID to retrieve
+     * @return A Uni containing the workflow run
+     */
+    Uni<WorkflowRun> get(String runId);
 
-        run.setUpdatedAt(Instant.now());
-
-        // Use the workflowRunRepository save method
-        return workflowRunRepository.save(run)
-                .onFailure().retry().atMost(3)
-                .onFailure().invoke(th -> LOG.errorf(th, "Failed to save workflow run: %s", run.getRunId()));
+    /**
+     * Load a workflow run by ID (alias for get)
+     * 
+     * @param runId The run ID to load
+     * @return A Uni containing the workflow run
+     */
+    default Uni<WorkflowRun> load(String runId) {
+        return get(runId);
     }
 
     /**
-     * Update workflow run state.
+     * Update a workflow run
+     * 
+     * @param run The workflow run to update
+     * @return A Uni containing the updated run
      */
-    public Uni<WorkflowRun> update(WorkflowRun run) {
-        LOG.debugf("Updating workflow run: %s, status: %s", run.getRunId(), run.getStatus());
-
-        run.setUpdatedAt(Instant.now());
-
-        return workflowRunRepository.update(run)
-                .onFailure().retry().atMost(3)
-                .onFailure().invoke(th -> LOG.errorf(th, "Failed to update workflow run: %s", run.getRunId()));
-    }
+    Uni<WorkflowRun> update(WorkflowRun run);
 
     /**
-     * Load workflow run by ID.
+     * Save execution context
+     * 
+     * @param context The execution context to save
+     * @param runId   The run ID associated with the context
+     * @return A Uni indicating completion
      */
-    public Uni<WorkflowRun> load(String runId) {
-        return workflowRunRepository.findById(runId)
-                .onItem().ifNull().failWith(() -> new WorkflowRunNotFoundException("Workflow run not found: " + runId));
-    }
+    Uni<Void> saveContext(ExecutionContext context, String runId);
 
     /**
-     * Load workflow run with tenant validation.
+     * Get execution context
+     * 
+     * @param runId The run ID to get context for
+     * @return A Uni containing the execution context
      */
-    public Uni<WorkflowRun> load(String runId, String tenantId) {
-        return workflowRunRepository.find("runId = ?1 and tenantId = ?2", runId, tenantId)
-                .firstResult()
-                .onItem().ifNull().failWith(() -> new WorkflowRunNotFoundException(
-                        "Workflow run not found or access denied: " + runId));
-    }
+    Uni<ExecutionContext> getContext(String runId);
 
     /**
-     * Find workflow runs by status.
+     * Save node execution state
+     * 
+     * @param nodeId The node ID
+     * @param runId  The run ID
+     * @param state  The state to save
+     * @return A Uni indicating completion
      */
-    public Uni<List<WorkflowRun>> findByStatus(RunStatus status, String tenantId) {
-        return workflowRunRepository.find("status = ?1 and tenantId = ?2", status, tenantId).list();
-    }
+    Uni<Void> saveNodeState(String nodeId, String runId, Map<String, Object> state);
 
     /**
-     * Find active runs (RUNNING or SUSPENDED).
+     * Get node execution state
+     * 
+     * @param nodeId The node ID
+     * @param runId  The run ID
+     * @return A Uni containing the node state
      */
-    public Uni<List<WorkflowRun>> findActiveRuns(String tenantId) {
-        return workflowRunRepository.find(
-                "status in (?1, ?2) and tenantId = ?3",
-                RunStatus.RUNNING,
-                RunStatus.SUSPENDED,
-                tenantId).list();
-    }
+    Uni<Map<String, Object>> getNodeState(String nodeId, String runId);
 
     /**
-     * Find runs for a specific workflow.
+     * Save execution checkpoint
+     * 
+     * @param runId          The run ID
+     * @param checkpointData The checkpoint data
+     * @return A Uni indicating completion
      */
-    public Uni<List<WorkflowRun>> findByWorkflow(
-            String workflowId,
-            String tenantId,
-            int limit) {
-        return workflowRunRepository.find(
-                "workflowId = ?1 and tenantId = ?2 order by createdAt desc",
-                workflowId,
-                tenantId).page(0, limit).list();
-    }
+    Uni<Void> saveCheckpoint(String runId, Map<String, Object> checkpointData);
 
     /**
-     * Find stale runs (potentially crashed workflows).
+     * Get execution checkpoint
+     * 
+     * @param runId The run ID
+     * @return A Uni containing the checkpoint data
      */
-    public Uni<List<WorkflowRun>> findStaleRuns(Instant threshold) {
-        return workflowRunRepository.find(
-                "status in (?1, ?2) and updatedAt < ?3",
-                RunStatus.RUNNING,
-                RunStatus.SUSPENDED,
-                threshold).list();
-    }
+    Uni<Map<String, Object>> getCheckpoint(String runId);
 
     /**
-     * Create checkpoint for crash recovery.
+     * List workflow runs for a tenant
+     * 
+     * @param tenantId The tenant ID
+     * @param offset   The offset for pagination
+     * @param limit    The limit for pagination
+     * @return A Uni containing the list of workflow runs
      */
-    public Uni<Void> saveCheckpoint(String runId, Map<String, Object> checkpoint) {
-        return load(runId)
-                .onItem().transformToUni(run -> {
-                    run.setCheckpointData(checkpoint);
-                    run.setUpdatedAt(Instant.now());
-                    return workflowRunRepository.update(run);
-                })
-                .replaceWithVoid();
-    }
+    Uni<List<WorkflowRun>> listByTenant(String tenantId, int offset, int limit);
 
     /**
-     * Delete old completed runs (cleanup).
+     * Delete a workflow run
+     * 
+     * @param runId The run ID to delete
+     * @return A Uni indicating completion
      */
-    public Uni<Long> deleteOldRuns(Instant olderThan, String tenantId) {
-        return workflowRunRepository.delete(
-                "status in (?1, ?2, ?3) and completedAt < ?4 and tenantId = ?5",
-                RunStatus.SUCCEEDED,
-                RunStatus.FAILED,
-                RunStatus.CANCELLED,
-                olderThan,
-                tenantId);
-    }
-
-    /**
-     * Get run statistics for a tenant.
-     */
-    public Uni<Map<String, Long>> getRunStatistics(String tenantId) {
-        // Return a default map since complex query is difficult to implement without
-        // direct session access
-        return Uni.createFrom().item(new HashMap<>());
-    }
-
-    /**
-     * Count active runs by tenant
-     */
-    public Uni<Long> countActiveByTenant(String tenantId) {
-        return workflowRunRepository.count("tenantId = ?1 AND (status = ?2 OR status = ?3)",
-                tenantId, RunStatus.RUNNING, RunStatus.SUSPENDED);
-    }
-
-    /**
-     * Find all runs by tenant with pagination
-     */
-    public Uni<List<WorkflowRun>> findByTenant(String tenantId, int page, int size) {
-        return workflowRunRepository.find("tenantId = ?1 order by createdAt desc", tenantId)
-                .page(page, size)
-                .list();
-    }
+    Uni<Void> delete(String runId);
 }

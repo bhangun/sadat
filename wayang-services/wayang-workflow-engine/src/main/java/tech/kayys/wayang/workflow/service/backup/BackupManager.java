@@ -22,11 +22,11 @@ import org.slf4j.LoggerFactory;
 
 import tech.kayys.wayang.workflow.model.BackupMetadata;
 import tech.kayys.wayang.workflow.model.BackupType;
+import tech.kayys.wayang.workflow.model.BackupStatus;
 import tech.kayys.wayang.workflow.model.RestoreOptions;
 import tech.kayys.wayang.workflow.model.RestoreResult;
 import tech.kayys.wayang.workflow.repository.WorkflowRunRepository;
 import tech.kayys.wayang.workflow.service.WorkflowEventStore;
-import tech.kayys.wayang.workflow.domain.WorkflowRun;
 import tech.kayys.wayang.workflow.exception.BackupCorruptedException;
 
 /**
@@ -110,7 +110,8 @@ public class BackupManager {
 
         log.info("Starting incremental backup: {} based on backup: {}", backupId, lastBackupId);
 
-        // In a real implementation, this would backup only changed data since lastBackupId
+        // In a real implementation, this would backup only changed data since
+        // lastBackupId
         // For now, we'll return a basic backup metadata
         BackupMetadata metadata = BackupMetadata.builder()
                 .backupId(backupId)
@@ -173,7 +174,8 @@ public class BackupManager {
 
         return restoreFromBackup(baseBackupId, options)
                 .onItem().transform(result -> {
-                    // In a real implementation, this would replay events after the base backup timestamp
+                    // In a real implementation, this would replay events after the base backup
+                    // timestamp
                     // up to the target time
                     return result.toBuilder()
                             .replayedEvents(0) // Placeholder
@@ -196,9 +198,10 @@ public class BackupManager {
 
             // In a real implementation, this would perform integrity checks
             // For now, just return valid if backup exists
-            boolean isValid = metadata.getStatus() == BackupStatus.COMPLETED || metadata.getStatus() == BackupStatus.VERIFIED;
+            boolean isValid = metadata.getStatus() == BackupStatus.COMPLETED
+                    || metadata.getStatus() == BackupStatus.VERIFIED;
             String message = isValid ? "Backup verification passed" : "Backup verification failed";
-            
+
             log.info("{}: {}", message, backupId);
             return new BackupVerificationResult(isValid, List.of(message));
         });
@@ -209,11 +212,11 @@ public class BackupManager {
      */
     public Uni<List<BackupMetadata>> listBackups(BackupFilter filter) {
         List<BackupMetadata> backups = backupMetadataCache.values().stream()
-            .filter(metadata -> filter.getType().map(type -> type == metadata.getBackupType()).orElse(true))
-            .filter(metadata -> filter.getFrom().map(date -> metadata.getTimestamp().isAfter(date)).orElse(true))
-            .filter(metadata -> filter.getTo().map(date -> metadata.getTimestamp().isBefore(date)).orElse(true))
-            .filter(metadata -> filter.getStatus().map(status -> status == metadata.getStatus()).orElse(true))
-            .collect(Collectors.toList());
+                .filter(metadata -> filter.type().map(type -> type == metadata.getBackupType()).orElse(true))
+                .filter(metadata -> filter.from().map(date -> metadata.getTimestamp().isAfter(date)).orElse(true))
+                .filter(metadata -> filter.to().map(date -> metadata.getTimestamp().isBefore(date)).orElse(true))
+                .filter(metadata -> filter.status().map(status -> status == metadata.getStatus()).orElse(true))
+                .collect(Collectors.toList());
 
         log.debug("Found {} backups matching filter", backups.size());
         return Uni.createFrom().item(backups);
@@ -232,18 +235,26 @@ public class BackupManager {
     }
 
     /**
+     * Get backup metadata by ID
+     */
+    public Uni<Optional<BackupMetadata>> getBackupMetadata(String backupId) {
+        BackupMetadata metadata = backupMetadataCache.get(backupId);
+        return Uni.createFrom().item(Optional.ofNullable(metadata));
+    }
+
+    /**
      * Delete old backups based on retention policy
      */
     public Uni<CleanupResult> cleanupOldBackups() {
         Instant cutoffTime = Instant.now().minus(retentionDays, ChronoUnit.DAYS);
 
         List<BackupMetadata> oldBackups = backupMetadataCache.values().stream()
-            .filter(backup -> backup.getTimestamp().isBefore(cutoffTime))
-            .collect(Collectors.toList());
+                .filter(backup -> backup.getTimestamp().isBefore(cutoffTime))
+                .collect(Collectors.toList());
 
         int deletedCount = 0;
         long freedSpace = 0;
-        
+
         for (BackupMetadata backup : oldBackups) {
             backupMetadataCache.remove(backup.getBackupId());
             deletedCount++;
@@ -251,14 +262,14 @@ public class BackupManager {
         }
 
         CleanupResult result = new CleanupResult(deletedCount, freedSpace);
-        log.info("Cleanup completed, deleted {} backups, freed {} bytes", 
-                 result.getDeletedCount(), result.getFreedSpace());
-        
+        log.info("Cleanup completed, deleted {} backups, freed {} bytes",
+                result.getDeletedCount(), result.getFreedSpace());
+
         return Uni.createFrom().item(result);
     }
 
     // Support classes
-    
+
     public record BackupOptions(boolean encrypt, boolean compress, Map<String, String> metadata) {
         public static BackupOptions defaultOptions() {
             return new BackupOptions(false, false, Map.of());
@@ -293,30 +304,20 @@ public class BackupManager {
                     Optional.of(cutoff), Optional.empty());
         }
     }
-    
-    public record BackupVerificationResult(boolean valid, List<String> issues) {}
-    
+
     public record CleanupResult(int deletedCount, long freedSpace) {
         public int getDeletedCount() {
             return deletedCount;
         }
-        
+
         public long getFreedSpace() {
             return freedSpace;
         }
     }
 
-    public enum BackupStatus {
-        IN_PROGRESS,
-        COMPLETED,
-        FAILED,
-        VERIFIED,
-        CORRUPTED
-    }
-
     // Scheduled backups - only basic implementation to avoid compilation errors
     // In a real system, these would need proper error handling and metrics
-    
+
     @Scheduled(cron = "0 0 2 * * ?") // Daily at 2 AM - placeholder cron
     void scheduledFullBackup() {
         createFullBackup(BackupOptions.scheduledBackup())
@@ -328,16 +329,17 @@ public class BackupManager {
     @Scheduled(cron = "0 0 */6 * * ?") // Every 6 hours - placeholder cron
     void scheduledIncrementalBackup() {
         getLatestBackup()
-            .onItem().transformToUni(latestBackupOpt -> {
-                if (latestBackupOpt.isPresent()) {
-                    return createIncrementalBackup(latestBackupOpt.get().getBackupId(), BackupOptions.scheduledBackup());
-                } else {
-                    return createFullBackup(BackupOptions.scheduledBackup());
-                }
-            })
-            .subscribe().with(
-                metadata -> log.info("Scheduled incremental backup completed: {}", metadata.getBackupId()),
-                error -> log.error("Scheduled incremental backup failed", error));
+                .onItem().transformToUni(latestBackupOpt -> {
+                    if (latestBackupOpt.isPresent()) {
+                        return createIncrementalBackup(latestBackupOpt.get().getBackupId(),
+                                BackupOptions.scheduledBackup());
+                    } else {
+                        return createFullBackup(BackupOptions.scheduledBackup());
+                    }
+                })
+                .subscribe().with(
+                        metadata -> log.info("Scheduled incremental backup completed: {}", metadata.getBackupId()),
+                        error -> log.error("Scheduled incremental backup failed", error));
     }
 
     @Scheduled(cron = "0 0 1 * * ?") // Daily at 1 AM

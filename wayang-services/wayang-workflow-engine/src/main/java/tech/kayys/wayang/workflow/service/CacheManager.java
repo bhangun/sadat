@@ -6,7 +6,9 @@ import io.quarkus.redis.datasource.RedisDataSource;
 import io.quarkus.redis.datasource.value.ValueCommands;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,16 +34,34 @@ public class CacheManager {
     Cache workflowRunCache;
 
     @Inject
-    RedisDataSource redis;
+    @ConfigProperty(name = "wayang.workflow.distributed-cache.enabled", defaultValue = "false")
+    boolean distributedCacheEnabled;
+
+    @Inject
+    Instance<RedisDataSource> redisInstance;
+
+    private RedisDataSource redis;
 
     private ValueCommands<String, String> valueCommands;
 
     @jakarta.annotation.PostConstruct
     void init() {
-        this.valueCommands = redis.value(String.class, String.class);
-
-        // Subscribe to invalidation events
-        subscribeToInvalidations();
+        if (distributedCacheEnabled && redisInstance.isResolvable()) {
+            try {
+                this.redis = redisInstance.get();
+                this.valueCommands = redis.value(String.class, String.class);
+                // Subscribe to invalidation events
+                subscribeToInvalidations();
+                log.info("Distributed cache initialized via Redis");
+            } catch (Exception e) {
+                log.warn("Failed to initialize Redis distributed cache: {}. Falling back to local-only mode.",
+                        e.getMessage());
+                this.distributedCacheEnabled = false;
+            }
+        } else {
+            log.info("Distributed cache is disabled or Redis is not available. Using local-only mode.");
+            this.distributedCacheEnabled = false;
+        }
     }
 
     /**
@@ -56,7 +76,9 @@ public class CacheManager {
         }
 
         // Notify cluster
-        publishInvalidation(cacheName, key);
+        if (distributedCacheEnabled) {
+            publishInvalidation(cacheName, key);
+        }
     }
 
     /**
@@ -69,13 +91,18 @@ public class CacheManager {
             workflowRunCache.invalidateAll().await().indefinitely();
         }
 
-        publishInvalidation(cacheName, "*");
+        if (distributedCacheEnabled) {
+            publishInvalidation(cacheName, "*");
+        }
     }
 
     /**
      * Put value in distributed cache (Redis)
      */
     public Uni<Void> putDistributed(String key, String value, Duration ttl) {
+        if (!distributedCacheEnabled) {
+            return Uni.createFrom().voidItem();
+        }
         return Uni.createFrom().item(() -> {
             valueCommands.setex(key, ttl.getSeconds(), value);
             return null;
@@ -86,6 +113,9 @@ public class CacheManager {
      * Get value from distributed cache (Redis)
      */
     public Uni<String> getDistributed(String key) {
+        if (!distributedCacheEnabled) {
+            return Uni.createFrom().nullItem();
+        }
         return Uni.createFrom().item(() -> valueCommands.get(key));
     }
 
