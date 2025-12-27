@@ -1,4 +1,4 @@
-package tech.kayys.wayang.workflow.service;
+package tech.kayys.wayang.workflow.executor;
 
 /**
  * Registry statistics

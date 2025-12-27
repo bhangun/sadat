@@ -3,7 +3,6 @@ package tech.kayys.wayang.workflow.resource;
 import io.quarkus.security.Authenticated;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
-import jakarta.validation.Valid;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
 import org.eclipse.microprofile.openapi.annotations.Operation;
@@ -11,7 +10,6 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
 
 import tech.kayys.wayang.workflow.service.WorkflowComposer;
-import tech.kayys.wayang.schema.workflow.WorkflowDefinition;
 import tech.kayys.wayang.workflow.api.dto.ErrorResponse;
 
 import java.util.List;
@@ -46,7 +44,7 @@ public class WorkflowComposerResource {
         public Uni<Response> composeWorkflows(
                         @QueryParam("parentId") String parentId,
                         List<String> childIds) {
-
+                LOG.info("Composing workflows with parent ID: " + parentId + " and child IDs: " + childIds);
                 if (parentId == null || childIds == null || childIds.isEmpty()) {
                         return Uni.createFrom().item(Response.status(Response.Status.BAD_REQUEST)
                                         .entity(new ErrorResponse("INVALID_REQUEST",
@@ -70,7 +68,7 @@ public class WorkflowComposerResource {
         public Uni<Response> createForkJoin(
                         @QueryParam("id") String id,
                         List<String> branchIds) {
-
+                LOG.info("Creating fork-join workflow with ID: " + id + " and branch IDs: " + branchIds);
                 if (id == null || branchIds == null || branchIds.isEmpty()) {
                         return Uni.createFrom().item(Response.status(Response.Status.BAD_REQUEST)
                                         .entity(new ErrorResponse("INVALID_REQUEST", "ID and branch IDs are required"))
@@ -93,7 +91,7 @@ public class WorkflowComposerResource {
         public Uni<Response> createSequential(
                         @QueryParam("id") String id,
                         List<String> stepIds) {
-
+                LOG.info("Creating sequential workflow with ID: " + id + " and step IDs: " + stepIds);
                 if (id == null || stepIds == null || stepIds.isEmpty()) {
                         return Uni.createFrom().item(Response.status(Response.Status.BAD_REQUEST)
                                         .entity(new ErrorResponse("INVALID_REQUEST", "ID and step IDs are required"))
@@ -116,7 +114,7 @@ public class WorkflowComposerResource {
         public Uni<Response> createConditional(
                         @QueryParam("id") String id,
                         List<String> nodeIds) {
-
+                LOG.info("Creating conditional workflow with ID: " + id + " and node IDs: " + nodeIds);
                 if (id == null || nodeIds == null || nodeIds.isEmpty()) {
                         return Uni.createFrom().item(Response.status(Response.Status.BAD_REQUEST)
                                         .entity(new ErrorResponse("INVALID_REQUEST", "ID and node IDs are required"))

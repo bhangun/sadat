@@ -13,12 +13,11 @@ import java.util.regex.Pattern;
 
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
-import javax.script.ScriptException;
 
 import tech.kayys.wayang.schema.node.NodeDefinition;
 import tech.kayys.wayang.schema.execution.Variable;
 import tech.kayys.wayang.schema.workflow.WorkflowDefinition;
-import tech.kayys.wayang.workflow.service.NodeExecutionResult;
+import tech.kayys.wayang.workflow.executor.NodeExecutionResult;
 
 /**
  * Execution context for workflow runtime
@@ -153,9 +152,11 @@ public class ExecutionContext {
             }
 
             if (engine == null) {
-                // No JavaScript engine available - for simple cases, return true if expression is not empty
+                // No JavaScript engine available - for simple cases, return true if expression
+                // is not empty
                 // This is a fallback implementation when script engine is not available
-                return !expression.trim().isEmpty() && !("false".equals(expression.trim()) || "0".equals(expression.trim()));
+                return !expression.trim().isEmpty()
+                        && !("false".equals(expression.trim()) || "0".equals(expression.trim()));
             }
 
             // Add context variables to engine
@@ -172,9 +173,10 @@ public class ExecutionContext {
             // Convert to boolean
             return result != null && !result.equals(0) && !result.equals("");
 
-        } catch (Exception e) {  // Catch broader exception since javax.script might not exist
+        } catch (Exception e) { // Catch broader exception since javax.script might not exist
             // Fallback implementation for when script engine is not available
-            return !expression.trim().isEmpty() && !("false".equals(expression.trim()) || "0".equals(expression.trim()));
+            return !expression.trim().isEmpty()
+                    && !("false".equals(expression.trim()) || "0".equals(expression.trim()));
         }
     }
 
@@ -229,11 +231,11 @@ public class ExecutionContext {
      */
     private String getNodeName(String nodeId) {
         if (workflow != null && workflow.getNodes() != null) {
-            return workflow.getNodes().stream()
-                    .filter(n -> n.getId().equals(nodeId))
-                    .map(NodeDefinition::getDisplayName)
-                    .findFirst()
-                    .orElse(nodeId);
+            for (tech.kayys.wayang.schema.node.NodeDefinition node : workflow.getNodes()) {
+                if (node != null && nodeId.equals(node.getId())) {
+                    return node.getDisplayName() != null ? node.getDisplayName() : nodeId;
+                }
+            }
         }
         return nodeId;
     }

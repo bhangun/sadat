@@ -1,4 +1,4 @@
-package tech.kayys.wayang.workflow.service;
+package tech.kayys.wayang.workflow.executor;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import io.smallrye.mutiny.Uni;

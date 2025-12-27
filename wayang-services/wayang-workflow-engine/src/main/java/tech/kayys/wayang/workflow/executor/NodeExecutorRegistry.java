@@ -1,4 +1,4 @@
-package tech.kayys.wayang.workflow.service;
+package tech.kayys.wayang.workflow.executor;
 
 import io.smallrye.mutiny.Uni;
 import jakarta.annotation.PostConstruct;
@@ -7,6 +7,8 @@ import jakarta.inject.Inject;
 
 import tech.kayys.wayang.workflow.exception.NodeNotFoundException;
 import tech.kayys.wayang.workflow.model.NodeRegistration;
+import tech.kayys.wayang.workflow.service.NodeContext;
+import tech.kayys.wayang.workflow.service.PluginLoader;
 import tech.kayys.wayang.common.spi.AbstractNode;
 import tech.kayys.wayang.common.spi.Node;
 import tech.kayys.wayang.schema.execution.ErrorPayload;
@@ -211,11 +213,12 @@ public class NodeExecutorRegistry {
                 } else {
                     // If the node is not a NodeExecutor, return an error
                     return Uni.createFrom().item(
-                        NodeExecutionResult.error(nodeDef.getId(),
-                            ErrorPayload.builder()
-                                .type(ErrorPayload.ErrorType.EXECUTION_ERROR)
-                                .message("Node does not implement NodeExecutor interface: " + nodeDef.getType())
-                                .build()));
+                            NodeExecutionResult.error(nodeDef.getId(),
+                                    ErrorPayload.builder()
+                                            .type(ErrorPayload.ErrorType.EXECUTION_ERROR)
+                                            .message("Node does not implement NodeExecutor interface: "
+                                                    + nodeDef.getType())
+                                            .build()));
                 }
             });
         }

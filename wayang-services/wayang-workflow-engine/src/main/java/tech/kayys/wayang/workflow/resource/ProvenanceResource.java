@@ -11,10 +11,7 @@ import org.jboss.logging.Logger;
 
 import tech.kayys.wayang.workflow.service.ProvenanceService;
 import tech.kayys.wayang.workflow.api.dto.ErrorResponse;
-import tech.kayys.wayang.workflow.domain.WorkflowRun;
-import tech.kayys.wayang.workflow.service.WorkflowRunManager;
-
-import java.util.Map;
+import tech.kayys.wayang.workflow.engine.WorkflowRunManager;
 
 import tech.kayys.wayang.workflow.service.ReportType;
 
@@ -43,6 +40,7 @@ public class ProvenanceResource {
     @Path("/runs/{runId}/report")
     @Operation(summary = "Get provenance report", description = "Generate comprehensive provenance report for a run")
     public Uni<Response> getProvenanceReport(@PathParam("runId") String runId) {
+        LOG.info("Getting provenance report for run: " + runId);
         // Need to get the run first to pass to service
         return runManager.getRun(runId)
                 .onItem().transformToUni(run -> {

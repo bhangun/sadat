@@ -9,6 +9,8 @@ import tech.kayys.wayang.schema.workflow.WorkflowDefinition;
 import tech.kayys.wayang.workflow.domain.WorkflowRun;
 import tech.kayys.wayang.workflow.model.ExecutionContext;
 import tech.kayys.wayang.workflow.exception.WorkflowDeadlockException;
+import tech.kayys.wayang.workflow.executor.NodeExecutionResult;
+import tech.kayys.wayang.workflow.executor.NodeExecutor;
 
 import org.jboss.logging.Logger;
 
@@ -104,6 +106,7 @@ public class DAGWorkflowExecutionStrategy implements WorkflowExecutionStrategy {
                     // Check if any node is awaiting human interaction
                     if (results.stream().anyMatch(NodeExecutionResult::isAwaitingHuman)) {
                         context.setAwaitingHuman(true);
+                        context.getWorkflowRun().suspend("Awaiting human review");
                         return Uni.createFrom().item(context);
                     }
 

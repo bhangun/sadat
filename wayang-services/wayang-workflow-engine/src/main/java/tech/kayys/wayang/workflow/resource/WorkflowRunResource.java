@@ -9,7 +9,7 @@ import jakarta.ws.rs.core.*;
 import tech.kayys.wayang.workflow.domain.Checkpoint;
 import tech.kayys.wayang.workflow.domain.WorkflowRun;
 import tech.kayys.wayang.workflow.service.RunCheckpointService;
-import tech.kayys.wayang.workflow.service.WorkflowRunManager;
+import tech.kayys.wayang.workflow.engine.WorkflowRunManager;
 import tech.kayys.wayang.workflow.api.dto.*;
 import tech.kayys.wayang.workflow.api.model.RunStatus;
 import org.eclipse.microprofile.openapi.annotations.Operation;
@@ -56,6 +56,7 @@ public class WorkflowRunResource {
         @POST
         @Operation(summary = "Create workflow run", description = "Create a new workflow execution instance")
         public Uni<Response> createRun(@Valid CreateRunRequest request) {
+                LOG.info("Creating run for workflow: " + request.getWorkflowId());
                 String tenantId = getTenantId();
                 // Assuming user ID extraction needed for request if not in DTO, or Manager
                 // handles it
@@ -88,6 +89,7 @@ public class WorkflowRunResource {
         @Path("/{runId}")
         @Operation(summary = "Get run details", description = "Retrieve workflow run details by ID")
         public Uni<Response> getRun(@PathParam("runId") String runId) {
+                LOG.info("Getting run details for run ID: " + runId);
                 return runManager.getRun(runId)
                                 .map(run -> Response.ok(toResponse(run)).build())
                                 .onFailure().recoverWithItem(th -> Response.status(Response.Status.NOT_FOUND)
@@ -108,7 +110,7 @@ public class WorkflowRunResource {
                         @QueryParam("status") String statusStr,
                         @QueryParam("page") @DefaultValue("0") int page,
                         @QueryParam("size") @DefaultValue("20") int size) {
-
+                LOG.info("Listing runs for workflow ID: " + workflowId + " and status: " + statusStr);
                 String tenantId = getTenantId();
                 RunStatus status = statusStr != null
                                 ? RunStatus.valueOf(statusStr)
@@ -151,7 +153,7 @@ public class WorkflowRunResource {
         public Uni<Response> suspendRun(
                         @PathParam("runId") String runId,
                         @Valid SuspendRequest request) {
-
+                LOG.infof("Suspending run: %s", runId);
                 String tenantId = getTenantId();
 
                 return runManager.suspendRun(
@@ -174,7 +176,7 @@ public class WorkflowRunResource {
         public Uni<Response> resumeRun(
                         @PathParam("runId") String runId,
                         @Valid ResumeRequest request) {
-
+                LOG.infof("Resuming run: %s", runId);
                 String tenantId = getTenantId();
 
                 return runManager.resumeRun(
@@ -197,7 +199,7 @@ public class WorkflowRunResource {
         public Uni<Response> cancelRun(
                         @PathParam("runId") String runId,
                         @Valid CancelRequest request) {
-
+                LOG.infof("Canceling run: %s", runId);
                 String tenantId = getTenantId();
 
                 return runManager.cancelRun(runId, tenantId, request.getReason())
@@ -216,7 +218,7 @@ public class WorkflowRunResource {
         public Uni<Response> completeRun(
                         @PathParam("runId") String runId,
                         @Valid CompleteRunRequest request) {
-
+                LOG.infof("Completing run: %s", runId);
                 String tenantId = getTenantId();
 
                 return runManager.completeRun(runId, tenantId, request.getOutputs())
@@ -235,7 +237,7 @@ public class WorkflowRunResource {
         public Uni<Response> failRun(
                         @PathParam("runId") String runId,
                         @Valid FailRunRequest request) {
-
+                LOG.infof("Failing run: %s", runId);
                 String tenantId = getTenantId();
 
                 return runManager.failRun(runId, tenantId, request.getError())
@@ -252,6 +254,7 @@ public class WorkflowRunResource {
         @Path("/{runId}/checkpoints")
         @Operation(summary = "List checkpoints", description = "List execution checkpoints")
         public Uni<List<CheckpointResponse>> listCheckpoints(@PathParam("runId") String runId) {
+                LOG.infof("Listing checkpoints for run: %s", runId);
                 return checkpointService.listCheckpoints(runId)
                                 .map(checkpoints -> checkpoints.stream()
                                                 .map(this::toCheckpointResponse)
@@ -266,7 +269,7 @@ public class WorkflowRunResource {
         @Operation(summary = "Get active runs count", description = "Get count of active runs")
         public Uni<Response> getActiveCount() {
                 String tenantId = getTenantId();
-
+                LOG.infof("Getting active runs count for tenant: %s", tenantId);
                 return runManager.getActiveRunsCount(tenantId)
                                 .map(count -> Response.ok(Map.of("count", count)).build());
         }
@@ -286,6 +289,7 @@ public class WorkflowRunResource {
         // Mappers
 
         private RunResponse toResponse(WorkflowRun run) {
+                LOG.infof("Converting run to response: %s", run.getRunId());
                 return RunResponse.builder()
                                 .runId(run.getRunId())
                                 .workflowId(run.getWorkflowId())
@@ -306,6 +310,7 @@ public class WorkflowRunResource {
         }
 
         private CheckpointResponse toCheckpointResponse(Checkpoint checkpoint) {
+                LOG.infof("Converting checkpoint to response: %s", checkpoint.getCheckpointId());
                 return CheckpointResponse.builder()
                                 .checkpointId(checkpoint.getCheckpointId())
                                 .runId(checkpoint.getRunId())

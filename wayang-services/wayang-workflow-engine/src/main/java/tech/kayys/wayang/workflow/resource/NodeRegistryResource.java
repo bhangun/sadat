@@ -35,6 +35,7 @@ public class NodeRegistryResource {
     @Path("/types")
     @Operation(summary = "List node types", description = "List all available node types")
     public Uni<List<String>> listNodeTypes() {
+        LOG.info("Listing node types");
         return nodeRegistry.getRegisteredNodeTypes();
     }
 
@@ -42,6 +43,7 @@ public class NodeRegistryResource {
     @Path("/types/{type}")
     @Operation(summary = "Get node type info", description = "Get information about a node type")
     public Uni<Response> getNodeTypeInfo(@PathParam("type") String type) {
+        LOG.info("Getting node type info for " + type);
         return nodeRegistry.getNodeTypeSchema(type)
                 .map(schema -> {
                     if (schema == null) {
@@ -57,6 +59,7 @@ public class NodeRegistryResource {
     @Path("/validate")
     @Operation(summary = "Validate node", description = "Validate node definition against its schema")
     public Uni<Response> validateNode(NodeDefinition node) {
+        LOG.info("Validating node: " + node);
         return nodeRegistry.validateNode(node)
                 .map(isValid -> Response.ok(Map.of("valid", isValid)).build())
                 .onFailure().recoverWithItem(th -> Response.status(Response.Status.BAD_REQUEST)

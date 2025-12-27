@@ -1,4 +1,4 @@
-package tech.kayys.wayang.workflow.service;
+package tech.kayys.wayang.workflow.engine;
 
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -8,10 +8,18 @@ import tech.kayys.wayang.schema.node.NodeDefinition;
 import tech.kayys.wayang.schema.workflow.WorkflowDefinition;
 import tech.kayys.wayang.sdk.util.WorkflowValidator.ValidationResult;
 import tech.kayys.wayang.workflow.model.ExecutionContext; // Corrected import
-
+import tech.kayys.wayang.workflow.service.PolicyEngine;
+import tech.kayys.wayang.workflow.service.ProvenanceService;
+import tech.kayys.wayang.workflow.service.StateStore;
+import tech.kayys.wayang.workflow.service.TelemetryService;
+import tech.kayys.wayang.workflow.service.WorkflowExecutionStrategy;
 import tech.kayys.wayang.workflow.domain.WorkflowRun;
 import tech.kayys.wayang.workflow.api.model.RunStatus;
 import tech.kayys.wayang.workflow.exception.WorkflowValidationException;
+import tech.kayys.wayang.workflow.service.NodeContext;
+import tech.kayys.wayang.workflow.service.WorkflowValidator;
+import tech.kayys.wayang.workflow.executor.NodeExecutor;
+
 import org.jboss.logging.Logger;
 import java.time.Instant;
 import java.util.*;
@@ -168,9 +176,13 @@ public class WorkflowEngine {
                             .onItem().transformToUni(executedRun -> {
                                 // Check if workflow completed successfully
                                 ExecutionContext finalContext = ExecutionContext.create(executedRun, workflow);
-                                boolean hasFailures = finalContext.getAllVariables().containsKey("error");
+                                // Using node results to check for failures is more reliable than "error"
+                                // variable
+                                boolean hasFailures = executedRun.getNodeStates().values().stream()
+                                        .anyMatch(nodeState -> nodeState
+                                                .status() == tech.kayys.wayang.sdk.dto.NodeExecutionState.NodeStatus.FAILED);
 
-                                if (finalContext.isAwaitingHuman()) {
+                                if (finalContext.isAwaitingHuman() || executedRun.getStatus() == RunStatus.SUSPENDED) {
                                     // Workflow is suspended for HITL
                                     return suspendForHITL(savedRun, finalContext);
                                 }

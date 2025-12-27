@@ -1,4 +1,4 @@
-package tech.kayys.wayang.workflow.service;
+package tech.kayys.wayang.workflow.executor;
 
 import lombok.Builder;
 import lombok.Data;

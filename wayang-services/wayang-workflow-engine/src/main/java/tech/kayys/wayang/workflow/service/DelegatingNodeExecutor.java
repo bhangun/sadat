@@ -4,6 +4,9 @@ import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import tech.kayys.wayang.schema.node.NodeDefinition;
+import tech.kayys.wayang.workflow.executor.NodeExecutionResult;
+import tech.kayys.wayang.workflow.executor.NodeExecutor;
+import tech.kayys.wayang.workflow.executor.NodeExecutorRegistry;
 import tech.kayys.wayang.schema.execution.ExecutionConfig;
 
 /**

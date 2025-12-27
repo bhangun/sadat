@@ -1,38 +1,59 @@
 package tech.kayys.wayang.workflow;
 
+import io.quarkus.test.InjectMock;
+import io.quarkus.test.junit.QuarkusTest;
+import tech.kayys.wayang.workflow.engine.WorkflowEngine;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.helpers.test.UniAssertSubscriber;
-import tech.kayys.wayang.workflow.api.model.RunStatus;
-import io.quarkus.test.junit.QuarkusTest;
-import io.quarkus.test.InjectMock;
 import jakarta.inject.Inject;
-import tech.kayys.wayang.schema.node.EdgeDefinition;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.mockito.Mockito;
 import tech.kayys.wayang.schema.execution.ErrorPayload;
 import tech.kayys.wayang.schema.execution.ErrorPayload.ErrorType;
+import tech.kayys.wayang.schema.node.EdgeDefinition;
 import tech.kayys.wayang.schema.node.NodeDefinition;
 import tech.kayys.wayang.schema.workflow.WorkflowDefinition;
-import tech.kayys.wayang.workflow.service.WorkflowEngine;
-import tech.kayys.wayang.workflow.service.NodeExecutionResult;
-import tech.kayys.wayang.workflow.service.NodeExecutor;
-import tech.kayys.wayang.workflow.service.ProvenanceService;
-import tech.kayys.wayang.workflow.service.ProvenanceService.*;
 import tech.kayys.wayang.workflow.domain.WorkflowRun;
-import tech.kayys.wayang.workflow.repository.WorkflowRunRepository;
-import tech.kayys.wayang.workflow.service.*;
+import tech.kayys.wayang.workflow.executor.NodeExecutionResult;
+import tech.kayys.wayang.workflow.executor.NodeExecutor;
 import tech.kayys.wayang.workflow.model.GuardrailResult;
+import tech.kayys.wayang.workflow.api.model.RunStatus;
+import tech.kayys.wayang.workflow.repository.WorkflowRunRepository;
+import tech.kayys.wayang.workflow.service.PolicyEngine;
+import tech.kayys.wayang.workflow.service.ProvenanceService;
+import tech.kayys.wayang.workflow.service.StateStore;
+import tech.kayys.wayang.workflow.service.NodeContext;
+import tech.kayys.wayang.workflow.service.TelemetryService;
+import tech.kayys.wayang.workflow.engine.WorkflowRunManager;
+import tech.kayys.wayang.workflow.service.WorkflowValidator;
 
-import org.junit.jupiter.api.*;
-import org.mockito.Mockito;
-import org.mockito.ArgumentMatchers;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * Comprehensive test suite for WorkflowEngine.
@@ -42,35 +63,37 @@ import static org.mockito.Mockito.*;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class WorkflowEngineTest {
 
+        // Center Stage
         @Inject
         WorkflowEngine workflowEngine;
 
+        // Infrastructure Mocks
         @InjectMock
         StateStore stateStore;
-
-        @InjectMock
-        NodeExecutor nodeExecutor;
-
-        @InjectMock
-        ProvenanceService provenanceService;
-
-        @InjectMock
-        TelemetryService telemetryService;
-
-        @InjectMock
-        PolicyEngine policyEngine;
-
-        @InjectMock
-        WorkflowValidator workflowValidator;
-
         @InjectMock
         WorkflowRunRepository workflowRepository;
 
+        // Execution Mocks
+        @InjectMock
+        NodeExecutor nodeExecutor;
         @InjectMock
         WorkflowRunManager runManager;
 
+        // Policy & Validation Mocks
+        @InjectMock
+        PolicyEngine policyEngine;
+        @InjectMock
+        WorkflowValidator workflowValidator;
+
+        // Observability Mocks
+        @InjectMock
+        ProvenanceService provenanceService;
+        @InjectMock
+        TelemetryService telemetryService;
+
+        // Test Data
         private WorkflowDefinition testWorkflow;
-        private String tenantId = "test-tenant";
+        private final String tenantId = "test-tenant";
 
         @BeforeEach
         void setup() {
@@ -78,7 +101,9 @@ class WorkflowEngineTest {
                 setupDefaultMocks();
         }
 
-        // ========== Basic Workflow Execution Tests ==========
+        // ==========================================
+        // Section 1: Basic Workflow Execution
+        // ==========================================
 
         @Test
         @Order(1)
@@ -88,8 +113,7 @@ class WorkflowEngineTest {
                 Map<String, Object> inputs = Map.of("input_data", "test");
 
                 // Mock successful execution
-                when(nodeExecutor.execute(any(NodeDefinition.class),
-                                any(tech.kayys.wayang.workflow.service.NodeContext.class)))
+                when(nodeExecutor.execute(any(NodeDefinition.class), any(NodeContext.class)))
                                 .thenReturn(Uni.createFrom().item(
                                                 NodeExecutionResult.success("node-1", Map.of("output", "result"))));
 
@@ -121,8 +145,7 @@ class WorkflowEngineTest {
 
                 List<String> executionOrder = new ArrayList<>();
 
-                when(nodeExecutor.execute(any(NodeDefinition.class),
-                                any(tech.kayys.wayang.workflow.service.NodeContext.class)))
+                when(nodeExecutor.execute(any(NodeDefinition.class), any(NodeContext.class)))
                                 .thenAnswer(invocation -> {
                                         NodeDefinition nodeDef = invocation.getArgument(0);
                                         executionOrder.add(nodeDef.getId());
@@ -161,8 +184,7 @@ class WorkflowEngineTest {
 
                 Set<String> executedNodes = Collections.synchronizedSet(new HashSet<>());
 
-                when(nodeExecutor.execute(any(NodeDefinition.class),
-                                any(tech.kayys.wayang.workflow.service.NodeContext.class)))
+                when(nodeExecutor.execute(any(NodeDefinition.class), any(NodeContext.class)))
                                 .thenAnswer(invocation -> {
                                         NodeDefinition nodeDef = invocation.getArgument(0);
                                         executedNodes.add(nodeDef.getId());
@@ -186,7 +208,9 @@ class WorkflowEngineTest {
                 assertEquals(4, executedNodes.size()); // entry + 2 parallel + join
         }
 
-        // ========== Error Handling Tests ==========
+        // ==========================================
+        // Section 2: Error Handling & Resilience
+        // ==========================================
 
         @Test
         @Order(4)
@@ -206,8 +230,7 @@ class WorkflowEngineTest {
                                 .build();
 
                 // First call fails, second succeeds
-                when(nodeExecutor.execute(any(NodeDefinition.class),
-                                any(tech.kayys.wayang.workflow.service.NodeContext.class)))
+                when(nodeExecutor.execute(any(NodeDefinition.class), any(NodeContext.class)))
                                 .thenReturn(
                                                 Uni.createFrom().item(NodeExecutionResult.error("node-1", error)),
                                                 Uni.createFrom().item(NodeExecutionResult.success("node-1",
@@ -224,7 +247,9 @@ class WorkflowEngineTest {
                 verify(nodeExecutor, Mockito.atLeastOnce()).execute(any(), any());
         }
 
-        // ========== HITL Tests ==========
+        // ==========================================
+        // Section 3: Human-in-the-Loop (HITL)
+        // ==========================================
 
         @Test
         @Order(7)
@@ -233,17 +258,10 @@ class WorkflowEngineTest {
                 // Given
                 Map<String, Object> inputs = Map.of("input", "data");
 
-                ErrorPayload error = ErrorPayload.builder()
-                                .type(ErrorType.VALIDATION_ERROR)
-                                .message("Requires human review")
-                                .originNode("node-1")
-                                .retryable(false)
-                                .timestamp(LocalDateTime.now())
-                                .build();
 
-                when(nodeExecutor.execute(any(NodeDefinition.class),
-                                any(tech.kayys.wayang.workflow.service.NodeContext.class)))
-                                .thenReturn(Uni.createFrom().item(NodeExecutionResult.error("node-1", error)));
+                when(nodeExecutor.execute(any(NodeDefinition.class), any(NodeContext.class)))
+                                .thenReturn(Uni.createFrom()
+                                                .item(NodeExecutionResult.awaitingHuman("node-1", "task-1")));
 
                 // When
                 WorkflowRun result = workflowEngine.start(testWorkflow, inputs, tenantId)
@@ -269,16 +287,8 @@ class WorkflowEngineTest {
                                 .createdAt(Instant.now())
                                 .build();
 
-                when(stateStore.load("run-123"))
+                when(runManager.resumeRun(anyString(), anyString(), any(), any()))
                                 .thenReturn(Uni.createFrom().item(suspendedRun));
-
-                when(workflowRepository.findByIdAndTenant(anyString(), anyString()))
-                                .thenReturn(Uni.createFrom().item(suspendedRun)); // Mock loading by ID
-
-                when(nodeExecutor.execute(any(NodeDefinition.class),
-                                any(tech.kayys.wayang.workflow.service.NodeContext.class)))
-                                .thenReturn(Uni.createFrom().item(
-                                                NodeExecutionResult.success("node-1", Map.of("output", "result"))));
 
                 // When
                 WorkflowRun result = workflowEngine.resume("run-123", tenantId)
@@ -287,11 +297,13 @@ class WorkflowEngineTest {
                                 .getItem();
 
                 // Then
-                verify(stateStore, atLeast(1)).save(any(WorkflowRun.class));
-                verify(provenanceService).logRunResumed(any());
+                // Then
+                verify(runManager, atLeast(1)).resumeRun(eq("run-123"), eq(tenantId), any(), any());
         }
 
-        // ========== Policy and Validation Tests ==========
+        // ==========================================
+        // Section 4: Policy & Guardrails
+        // ==========================================
 
         @Test
         @Order(9)
@@ -316,7 +328,9 @@ class WorkflowEngineTest {
                 verify(nodeExecutor, never()).execute(any(), any());
         }
 
-        // ========== Pause/Resume/Cancel Tests ==========
+        // ==========================================
+        // Section 5: Lifecycle Management
+        // ==========================================
 
         @Test
         @Order(11)
@@ -356,7 +370,9 @@ class WorkflowEngineTest {
                 verify(runManager).cancelRun(eq(runId), anyString(), anyString());
         }
 
-        // ========== Edge Cases and Error Conditions ==========
+        // ==========================================
+        // Section 6: Edge Cases
+        // ==========================================
 
         @Test
         @Order(13)
@@ -377,7 +393,9 @@ class WorkflowEngineTest {
                 assertTrue(result.getErrorMessage().contains("No entry nodes"));
         }
 
-        // ========== Helper Methods ==========
+        // ==========================================
+        // Helpers & Factories
+        // ==========================================
 
         private void setupDefaultMocks() {
                 // State store mocks
