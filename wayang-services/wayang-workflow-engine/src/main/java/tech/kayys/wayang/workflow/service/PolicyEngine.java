@@ -4,6 +4,7 @@ import org.jboss.logging.Logger;
 
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import tech.kayys.wayang.schema.workflow.WorkflowDefinition;
 import tech.kayys.wayang.workflow.model.GuardrailResult;
 
 import java.util.Map;
@@ -97,7 +98,8 @@ public class PolicyEngine {
         return Uni.createFrom().item(GuardrailResult.allow());
     }
 
-    public Uni<GuardrailResult> validateWorkflowStart(tech.kayys.wayang.schema.workflow.WorkflowDefinition workflow, String tenantId) {
+    public Uni<GuardrailResult> validateWorkflowStart(WorkflowDefinition workflow,
+            String tenantId) {
         LOG.debugf("Validating workflow start for %s in tenant %s", workflow.getId(), tenantId);
         return Uni.createFrom().item(GuardrailResult.allow());
     }
@@ -120,15 +122,17 @@ public class PolicyEngine {
     static class RequestTracker {
         int requestCount;
         long windowStart;
+        final long timeWindowMs;
 
-        RequestTracker(long windowStart) {
+        RequestTracker(long windowStart, long timeWindowMs) {
             this.requestCount = 1;
             this.windowStart = windowStart;
+            this.timeWindowMs = timeWindowMs;
         }
 
         synchronized void addRequest(long currentTime) {
             // Reset window if time has passed
-            if (currentTime - windowStart >= 60000) { // Reset every minute as default
+            if (currentTime - windowStart >= timeWindowMs) {
                 requestCount = 1;
                 windowStart = currentTime;
             } else {
@@ -136,9 +140,9 @@ public class PolicyEngine {
             }
         }
 
-        boolean checkLimit(int maxRequests, long currentTime) {
+        synchronized boolean checkLimit(int maxRequests, long currentTime) {
             // Reset if window has passed
-            if (currentTime - windowStart >= 60000) { // Reset every minute as default
+            if (currentTime - windowStart >= timeWindowMs) {
                 requestCount = 0;
                 windowStart = currentTime;
             }
@@ -163,7 +167,8 @@ public class PolicyEngine {
 
         long currentTime = System.currentTimeMillis();
 
-        RequestTracker tracker = rateLimitTrackers.computeIfAbsent(key, k -> new RequestTracker(currentTime));
+        RequestTracker tracker = rateLimitTrackers.computeIfAbsent(key,
+                k -> new RequestTracker(currentTime, timeWindowMs));
 
         boolean withinLimit = tracker.checkLimit(maxRequests, currentTime);
 

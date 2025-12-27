@@ -766,11 +766,29 @@ public class ProvenanceService {
 
     @lombok.Builder
     public static class EventTimeline {
-        private final String runId;
-        private final List<TimelineEntry> entries;
+        private String runId;
+        private List<TimelineEntry> entries;
+
+        public String getRunId() {
+            return runId;
+        }
+
+        public void setRunId(String runId) {
+            this.runId = runId;
+        }
+
+        public List<TimelineEntry> getEntries() {
+            return entries;
+        }
+
+        public void setEntries(List<TimelineEntry> entries) {
+            this.entries = entries;
+        }
+
     }
 
     @lombok.Builder
+    @lombok.Getter
     public static class TimelineEntry {
         private final Instant timestamp;
         private final EventType eventType;
@@ -780,9 +798,11 @@ public class ProvenanceService {
         public Instant getTimestamp() {
             return timestamp;
         }
+
     }
 
     @lombok.Builder
+    @lombok.Getter
     public static class ChainVerification {
         private final String runId;
         private final boolean valid;
@@ -799,6 +819,38 @@ public class ProvenanceService {
         private long humanInterventions;
         private long errorCount;
         private Map<EventType, Long> eventBreakdown;
+
+        public String getRunId() {
+            return runId;
+        }
+
+        public ReportType getReportType() {
+            return reportType;
+        }
+
+        public Instant getGeneratedAt() {
+            return generatedAt;
+        }
+
+        public int getTotalEvents() {
+            return totalEvents;
+        }
+
+        public long getNodeExecutions() {
+            return nodeExecutions;
+        }
+
+        public long getHumanInterventions() {
+            return humanInterventions;
+        }
+
+        public long getErrorCount() {
+            return errorCount;
+        }
+
+        public Map<EventType, Long> getEventBreakdown() {
+            return eventBreakdown;
+        }
 
         public void setRunId(String runId) {
             this.runId = runId;

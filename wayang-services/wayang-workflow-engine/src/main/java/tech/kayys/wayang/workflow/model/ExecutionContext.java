@@ -11,10 +11,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import java.util.function.BooleanSupplier;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 
-import tech.kayys.wayang.schema.node.NodeDefinition;
 import tech.kayys.wayang.schema.execution.Variable;
 import tech.kayys.wayang.schema.workflow.WorkflowDefinition;
 import tech.kayys.wayang.workflow.executor.NodeExecutionResult;
@@ -36,6 +36,7 @@ public class ExecutionContext {
     private Map<String, NodeExecutionResult> nodeResults;
     private boolean awaitingHuman = false;
     private long startTime;
+    private BooleanSupplier cancellationChecker = () -> false;
 
     private static final ScriptEngineManager scriptEngineManager = new ScriptEngineManager();
     private static final Pattern VARIABLE_PATTERN = Pattern.compile("\\$\\{([^}]+)}");
@@ -312,5 +313,15 @@ public class ExecutionContext {
 
     public void setExecutionId(String executionId) {
         this.executionId = executionId;
+    }
+
+    public void setCancellationChecker(BooleanSupplier cancellationChecker) {
+        if (cancellationChecker != null) {
+            this.cancellationChecker = cancellationChecker;
+        }
+    }
+
+    public boolean isCancelled() {
+        return cancellationChecker.getAsBoolean();
     }
 }

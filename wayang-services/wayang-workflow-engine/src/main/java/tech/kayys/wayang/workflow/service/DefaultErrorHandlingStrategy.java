@@ -7,9 +7,11 @@ import tech.kayys.wayang.schema.execution.ErrorPayload;
 import tech.kayys.wayang.workflow.model.ExecutionContext;
 
 /**
- * DefaultErrorHandlingStrategy - Default implementation of error handling strategy
+ * DefaultErrorHandlingStrategy - Default implementation of error handling
+ * strategy
  * 
- * This implementation provides configurable error handling based on node configuration
+ * This implementation provides configurable error handling based on node
+ * configuration
  * including retry policies, fallback nodes, and compensation actions.
  */
 @ApplicationScoped
@@ -41,19 +43,22 @@ public class DefaultErrorHandlingStrategy implements ErrorHandlingStrategy {
             // Check if retry policy is configured
             if (errorHandling.getRetryPolicy() != null) {
                 int maxRetries = errorHandling.getRetryPolicy().getMaxAttempts() != null
-                    ? errorHandling.getRetryPolicy().getMaxAttempts() : 3;
+                        ? errorHandling.getRetryPolicy().getMaxAttempts()
+                        : 3;
 
                 // Check if we've exceeded max retries
                 String retryCountKey = "retry_count_" + nodeDef.getId();
                 int currentRetries = context.getVariable(retryCountKey) != null
-                    ? (Integer) context.getVariable(retryCountKey) : 0;
+                        ? (Integer) context.getVariable(retryCountKey)
+                        : 0;
 
                 if (currentRetries < maxRetries) {
                     // Increment retry count
                     context.setVariable(retryCountKey, currentRetries + 1);
 
                     long delay = errorHandling.getRetryPolicy().getInitialDelayMs() != null
-                        ? errorHandling.getRetryPolicy().getInitialDelayMs() : 1000;
+                            ? errorHandling.getRetryPolicy().getInitialDelayMs()
+                            : 1000;
 
                     // Apply exponential backoff if configured
                     if ("exponential".equals(errorHandling.getRetryPolicy().getBackoff())) {
@@ -69,10 +74,6 @@ public class DefaultErrorHandlingStrategy implements ErrorHandlingStrategy {
                 return Uni.createFrom().item(ErrorHandlingResult.fallback(errorHandling.getFallback().getNodeId()));
             }
 
-            // Check if fallback node ID is configured (deprecated but kept for compatibility)
-            if (errorHandling.getFallbackNodeId() != null && !errorHandling.getFallbackNodeId().isEmpty()) {
-                return Uni.createFrom().item(ErrorHandlingResult.fallback(errorHandling.getFallbackNodeId()));
-            }
         }
 
         // Default behavior: fail the workflow

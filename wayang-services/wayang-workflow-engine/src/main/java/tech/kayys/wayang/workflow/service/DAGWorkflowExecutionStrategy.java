@@ -78,6 +78,11 @@ public class DAGWorkflowExecutionStrategy implements WorkflowExecutionStrategy {
             ExecutionContext context,
             WorkflowDefinition workflow) {
 
+        if (context.isCancelled()) {
+            LOG.infof("Workflow execution cancelled for run: %s", context.getExecutionId());
+            return Uni.createFrom().item(context);
+        }
+
         if (currentLevel.isEmpty()) {
             LOG.debug("No more nodes to execute");
             return Uni.createFrom().item(context);

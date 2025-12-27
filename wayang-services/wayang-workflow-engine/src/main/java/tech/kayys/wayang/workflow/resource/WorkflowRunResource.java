@@ -17,7 +17,6 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
 
 import java.util.Map;
-import java.util.List;
 
 /**
  * WorkflowRunResource - REST API for workflow run management
@@ -50,36 +49,25 @@ public class WorkflowRunResource {
         @Context
         SecurityContext securityContext;
 
+        @Context
+        HttpHeaders httpHeaders;
+
         /**
          * Create a new workflow run
          */
         @POST
         @Operation(summary = "Create workflow run", description = "Create a new workflow execution instance")
         public Uni<Response> createRun(@Valid CreateRunRequest request) {
-                LOG.info("Creating run for workflow: " + request.getWorkflowId());
                 String tenantId = getTenantId();
-                // Assuming user ID extraction needed for request if not in DTO, or Manager
-                // handles it
-                // The current createRun in Manager takes CreateRunRequest.
+                LOG.infof("Creating run for workflow: %s, tenant: %s", request.getWorkflowId(), tenantId);
 
-                LOG.infof("Creating run for workflow: %s", request.getWorkflowId());
-
-                return runManager.createRun(request)
+                return runManager.createRun(request, tenantId)
                                 .map(run -> Response
                                                 .status(Response.Status.CREATED)
                                                 .entity(toResponse(run))
                                                 .build())
-                                .onFailure().recoverWithItem(th -> {
-                                        LOG.error("Failed to create run", th);
-                                        return Response
-                                                        .status(Response.Status.BAD_REQUEST)
-                                                        .entity(ErrorResponse.builder()
-                                                                        .errorCode("CREATE_FAILED")
-                                                                        .message(th.getMessage())
-                                                                        .timestamp(java.time.Instant.now())
-                                                                        .build())
-                                                        .build();
-                                });
+                                .onFailure()
+                                .recoverWithItem(th -> mapError(th, Response.Status.BAD_REQUEST, "CREATE_FAILED"));
         }
 
         /**
@@ -89,15 +77,11 @@ public class WorkflowRunResource {
         @Path("/{runId}")
         @Operation(summary = "Get run details", description = "Retrieve workflow run details by ID")
         public Uni<Response> getRun(@PathParam("runId") String runId) {
-                LOG.info("Getting run details for run ID: " + runId);
+                LOG.infof("Getting run details: %s", runId);
                 return runManager.getRun(runId)
                                 .map(run -> Response.ok(toResponse(run)).build())
-                                .onFailure().recoverWithItem(th -> Response.status(Response.Status.NOT_FOUND)
-                                                .entity(ErrorResponse.builder()
-                                                                .message(th.getMessage())
-                                                                .timestamp(java.time.Instant.now())
-                                                                .build())
-                                                .build());
+                                .onFailure()
+                                .recoverWithItem(th -> mapError(th, Response.Status.NOT_FOUND, "RUN_NOT_FOUND"));
         }
 
         /**
@@ -110,14 +94,19 @@ public class WorkflowRunResource {
                         @QueryParam("status") String statusStr,
                         @QueryParam("page") @DefaultValue("0") int page,
                         @QueryParam("size") @DefaultValue("20") int size) {
-                LOG.info("Listing runs for workflow ID: " + workflowId + " and status: " + statusStr);
+                LOG.infof("Listing runs: workflow=%s, status=%s", workflowId, statusStr);
                 String tenantId = getTenantId();
-                RunStatus status = statusStr != null
-                                ? RunStatus.valueOf(statusStr)
-                                : null;
 
-                return runManager.queryRuns(tenantId, workflowId, status, page, size)
-                                .map(response -> Response.ok(response).build());
+                return Uni.createFrom().item(() -> {
+                        try {
+                                return statusStr != null ? RunStatus.valueOf(statusStr) : null;
+                        } catch (IllegalArgumentException e) {
+                                throw new BadRequestException("Invalid run status: " + statusStr);
+                        }
+                }).chain(status -> runManager.queryRuns(tenantId, workflowId, status, page, size))
+                                .map(response -> Response.ok(response).build())
+                                .onFailure()
+                                .recoverWithItem(th -> mapError(th, Response.Status.BAD_REQUEST, "QUERY_FAILED"));
         }
 
         /**
@@ -127,21 +116,13 @@ public class WorkflowRunResource {
         @Path("/{runId}/start")
         @Operation(summary = "Start run", description = "Start workflow execution")
         public Uni<Response> startRun(@PathParam("runId") String runId) {
-                String tenantId = getTenantId();
-
                 LOG.infof("Starting run: %s", runId);
+                String tenantId = getTenantId();
 
                 return runManager.startRun(runId, tenantId)
                                 .map(run -> Response.ok(toResponse(run)).build())
-                                .onFailure().recoverWithItem(th -> {
-                                        LOG.error("Failed to start run", th);
-                                        return Response
-                                                        .status(Response.Status.BAD_REQUEST)
-                                                        .entity(ErrorResponse.builder()
-                                                                        .message(th.getMessage())
-                                                                        .build())
-                                                        .build();
-                                });
+                                .onFailure()
+                                .recoverWithItem(th -> mapError(th, Response.Status.BAD_REQUEST, "START_FAILED"));
         }
 
         /**
@@ -162,9 +143,8 @@ public class WorkflowRunResource {
                                 request.getReason(),
                                 request.getHumanTaskId())
                                 .map(run -> Response.ok(toResponse(run)).build())
-                                .onFailure().recoverWithItem(th -> Response.status(Response.Status.BAD_REQUEST)
-                                                .entity(ErrorResponse.builder().message(th.getMessage()).build())
-                                                .build());
+                                .onFailure()
+                                .recoverWithItem(th -> mapError(th, Response.Status.BAD_REQUEST, "SUSPEND_FAILED"));
         }
 
         /**
@@ -185,9 +165,8 @@ public class WorkflowRunResource {
                                 request.getHumanTaskId(),
                                 request.getResumeData())
                                 .map(run -> Response.ok(toResponse(run)).build())
-                                .onFailure().recoverWithItem(th -> Response.status(Response.Status.BAD_REQUEST)
-                                                .entity(ErrorResponse.builder().message(th.getMessage()).build())
-                                                .build());
+                                .onFailure()
+                                .recoverWithItem(th -> mapError(th, Response.Status.BAD_REQUEST, "RESUME_FAILED"));
         }
 
         /**
@@ -204,9 +183,8 @@ public class WorkflowRunResource {
 
                 return runManager.cancelRun(runId, tenantId, request.getReason())
                                 .map(v -> Response.noContent().build())
-                                .onFailure().recoverWithItem(th -> Response.status(Response.Status.BAD_REQUEST)
-                                                .entity(ErrorResponse.builder().message(th.getMessage()).build())
-                                                .build());
+                                .onFailure()
+                                .recoverWithItem(th -> mapError(th, Response.Status.BAD_REQUEST, "CANCEL_FAILED"));
         }
 
         /**
@@ -223,9 +201,8 @@ public class WorkflowRunResource {
 
                 return runManager.completeRun(runId, tenantId, request.getOutputs())
                                 .map(run -> Response.ok(toResponse(run)).build())
-                                .onFailure().recoverWithItem(th -> Response.status(Response.Status.BAD_REQUEST)
-                                                .entity(ErrorResponse.builder().message(th.getMessage()).build())
-                                                .build());
+                                .onFailure()
+                                .recoverWithItem(th -> mapError(th, Response.Status.BAD_REQUEST, "COMPLETE_FAILED"));
         }
 
         /**
@@ -242,9 +219,8 @@ public class WorkflowRunResource {
 
                 return runManager.failRun(runId, tenantId, request.getError())
                                 .map(run -> Response.ok(toResponse(run)).build())
-                                .onFailure().recoverWithItem(th -> Response.status(Response.Status.BAD_REQUEST)
-                                                .entity(ErrorResponse.builder().message(th.getMessage()).build())
-                                                .build());
+                                .onFailure()
+                                .recoverWithItem(th -> mapError(th, Response.Status.BAD_REQUEST, "FAIL_FAILED"));
         }
 
         /**
@@ -253,12 +229,15 @@ public class WorkflowRunResource {
         @GET
         @Path("/{runId}/checkpoints")
         @Operation(summary = "List checkpoints", description = "List execution checkpoints")
-        public Uni<List<CheckpointResponse>> listCheckpoints(@PathParam("runId") String runId) {
-                LOG.infof("Listing checkpoints for run: %s", runId);
+        public Uni<Response> listCheckpoints(@PathParam("runId") String runId) {
+                LOG.infof("Listing checkpoints: %s", runId);
                 return checkpointService.listCheckpoints(runId)
                                 .map(checkpoints -> checkpoints.stream()
                                                 .map(this::toCheckpointResponse)
-                                                .toList());
+                                                .toList())
+                                .map(items -> Response.ok(items).build())
+                                .onFailure().recoverWithItem(th -> mapError(th, Response.Status.INTERNAL_SERVER_ERROR,
+                                                "CHECKPOINT_QUERY_FAILED"));
         }
 
         /**
@@ -269,27 +248,45 @@ public class WorkflowRunResource {
         @Operation(summary = "Get active runs count", description = "Get count of active runs")
         public Uni<Response> getActiveCount() {
                 String tenantId = getTenantId();
-                LOG.infof("Getting active runs count for tenant: %s", tenantId);
+                LOG.infof("Getting active runs count: tenant=%s", tenantId);
                 return runManager.getActiveRunsCount(tenantId)
-                                .map(count -> Response.ok(Map.of("count", count)).build());
+                                .map(count -> Response.ok(Map.of("count", count)).build())
+                                .onFailure().recoverWithItem(th -> mapError(th, Response.Status.INTERNAL_SERVER_ERROR,
+                                                "COUNT_FAILED"));
         }
 
         // Helper methods
 
         private String getTenantId() {
-                // Extract from JWT or security context
-                // For now, return default
+                // 1. Try X-Tenant-Id header
+                String headerTenantId = httpHeaders.getHeaderString("X-Tenant-Id");
+                if (headerTenantId != null && !headerTenantId.trim().isEmpty()) {
+                        return headerTenantId;
+                }
+
+                // 2. Try SecurityContext principal name
+                if (securityContext != null && securityContext.getUserPrincipal() != null) {
+                        return securityContext.getUserPrincipal().getName();
+                }
+
+                // Default fallback
                 return "default-tenant";
         }
 
-        private String getUserId() {
-                return securityContext.getUserPrincipal().getName();
+        private Response mapError(Throwable th, Response.Status status, String errorCode) {
+                LOG.errorf(th, "Request failed: %s - %s", errorCode, th.getMessage());
+                return Response.status(status)
+                                .entity(ErrorResponse.builder()
+                                                .errorCode(errorCode)
+                                                .message(th.getMessage())
+                                                .timestamp(java.time.Instant.now())
+                                                .build())
+                                .build();
         }
 
         // Mappers
 
         private RunResponse toResponse(WorkflowRun run) {
-                LOG.infof("Converting run to response: %s", run.getRunId());
                 return RunResponse.builder()
                                 .runId(run.getRunId())
                                 .workflowId(run.getWorkflowId())
@@ -310,7 +307,6 @@ public class WorkflowRunResource {
         }
 
         private CheckpointResponse toCheckpointResponse(Checkpoint checkpoint) {
-                LOG.infof("Converting checkpoint to response: %s", checkpoint.getCheckpointId());
                 return CheckpointResponse.builder()
                                 .checkpointId(checkpoint.getCheckpointId())
                                 .runId(checkpoint.getRunId())

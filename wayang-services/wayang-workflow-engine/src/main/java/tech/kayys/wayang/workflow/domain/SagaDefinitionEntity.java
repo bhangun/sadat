@@ -32,8 +32,8 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import tech.kayys.wayang.workflow.model.saga.CompensationActionDefinition;
-import tech.kayys.wayang.workflow.model.saga.CompensationStrategy;
+import tech.kayys.wayang.workflow.saga.model.CompensationActionDefinition;
+import tech.kayys.wayang.workflow.saga.model.CompensationStrategy;
 
 /**
  * SagaDefinitionEntity - Represents a saga definition in the workflow engine

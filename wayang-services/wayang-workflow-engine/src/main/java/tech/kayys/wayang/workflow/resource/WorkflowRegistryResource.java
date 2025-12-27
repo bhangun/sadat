@@ -5,6 +5,9 @@ import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.SecurityContext;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
@@ -30,6 +33,12 @@ public class WorkflowRegistryResource {
 
     @Inject
     WorkflowRegistry registry;
+
+    @Context
+    SecurityContext securityContext;
+
+    @Context
+    HttpHeaders httpHeaders;
 
     @POST
     @Operation(summary = "Register workflow", description = "Register a new workflow definition")
@@ -164,9 +173,24 @@ public class WorkflowRegistryResource {
     @Operation(summary = "Search workflows", description = "Search workflows by name pattern")
     public Uni<List<WorkflowDefinition>> searchWorkflows(
             @QueryParam("name") String namePattern) {
-        // Use default tenant implementation for now
-        String tenantId = "default";
+        String tenantId = getTenantId();
         return registry.search(tenantId, namePattern);
+    }
+
+    private String getTenantId() {
+        // 1. Try X-Tenant-Id header
+        String headerTenantId = httpHeaders.getHeaderString("X-Tenant-Id");
+        if (headerTenantId != null && !headerTenantId.trim().isEmpty()) {
+            return headerTenantId;
+        }
+
+        // 2. Try SecurityContext principal name
+        if (securityContext != null && securityContext.getUserPrincipal() != null) {
+            return securityContext.getUserPrincipal().getName();
+        }
+
+        // Default fallback
+        return "default-tenant";
     }
 
     @GET

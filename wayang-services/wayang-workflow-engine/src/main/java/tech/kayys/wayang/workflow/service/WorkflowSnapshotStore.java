@@ -3,13 +3,8 @@ package tech.kayys.wayang.workflow.service;
 import io.quarkus.hibernate.reactive.panache.PanacheRepositoryBase;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.persistence.*;
 import tech.kayys.wayang.workflow.domain.WorkflowSnapshotEntity;
 import tech.kayys.wayang.workflow.model.WorkflowSnapshot;
-
-import org.hibernate.annotations.Type;
-
-import java.time.Instant;
 
 /**
  * Repository for workflow snapshots

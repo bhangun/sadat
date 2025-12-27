@@ -74,7 +74,7 @@ public class WorkflowBuilder {
      * Create a simple linear workflow
      */
     public WorkflowBuilder createLinearWorkflow(List<NodeConfig> nodeConfigs) {
-        int x = 100;
+        LOG.info("Create Linear workflow " + nodeConfigs);
         NodeDefinition previousNode = null;
 
         for (int i = 0; i < nodeConfigs.size(); i++) {
@@ -97,7 +97,6 @@ public class WorkflowBuilder {
             }
 
             previousNode = node;
-            x += 200;
         }
 
         return this;

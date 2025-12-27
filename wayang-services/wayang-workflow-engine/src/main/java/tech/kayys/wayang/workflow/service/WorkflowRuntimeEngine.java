@@ -17,6 +17,7 @@ import tech.kayys.wayang.schema.execution.ErrorPayload;
 
 import org.jboss.logging.Logger;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -229,7 +230,7 @@ public class WorkflowRuntimeEngine {
 
         if (errorHandling.getRetryPolicy() != null) {
             return retryNodeExecution(node, workflow, context, errorHandling);
-        } else if (errorHandling.getFallbackNodeId() != null) {
+        } else if (errorHandling.getFallback().getNodeId() != null) {
             return executeFallbackNode(node, workflow, context, errorHandling);
         } else {
             return Uni.createFrom().failure(new RuntimeException(error));
@@ -258,6 +259,7 @@ public class WorkflowRuntimeEngine {
 
         return executor.execute(node, nodeContext)
                 .onFailure().retry()
+                .withBackOff(Duration.ofMillis(retryDelay))
                 .atMost(maxRetries)
                 .onFailure().invoke(error -> LOG.errorf(error, "Retry failed for node: %s", node.getDisplayName()));
     }
@@ -271,7 +273,7 @@ public class WorkflowRuntimeEngine {
             ExecutionContext context,
             ErrorHandlingConfig errorHandling) {
 
-        String fallbackNodeId = errorHandling.getFallbackNodeId();
+        String fallbackNodeId = errorHandling.getFallback().getNodeId();
         if (fallbackNodeId == null) {
             return Uni.createFrom().failure(
                     new IllegalStateException("Fallback node not specified"));

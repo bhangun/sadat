@@ -7,8 +7,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import tech.kayys.wayang.workflow.model.saga.CompensationSnapshot;
-import tech.kayys.wayang.workflow.model.saga.SagaExecutionSnapshot;
+import tech.kayys.wayang.workflow.saga.model.CompensationSnapshot;
+import tech.kayys.wayang.workflow.saga.model.SagaExecutionSnapshot;
 
 /**
  * Execution state snapshot at checkpoint time

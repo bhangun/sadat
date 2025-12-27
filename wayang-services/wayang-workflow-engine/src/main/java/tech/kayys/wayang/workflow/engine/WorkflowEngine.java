@@ -4,7 +4,6 @@ import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
-import tech.kayys.wayang.schema.node.NodeDefinition;
 import tech.kayys.wayang.schema.workflow.WorkflowDefinition;
 import tech.kayys.wayang.sdk.util.WorkflowValidator.ValidationResult;
 import tech.kayys.wayang.workflow.model.ExecutionContext; // Corrected import
@@ -16,10 +15,9 @@ import tech.kayys.wayang.workflow.service.WorkflowExecutionStrategy;
 import tech.kayys.wayang.workflow.domain.WorkflowRun;
 import tech.kayys.wayang.workflow.api.model.RunStatus;
 import tech.kayys.wayang.workflow.exception.WorkflowValidationException;
-import tech.kayys.wayang.workflow.service.NodeContext;
+import tech.kayys.wayang.workflow.service.WorkflowRegistry;
 import tech.kayys.wayang.workflow.service.WorkflowValidator;
-import tech.kayys.wayang.workflow.executor.NodeExecutor;
-
+import tech.kayys.wayang.sdk.dto.TriggerWorkflowRequest;
 import org.jboss.logging.Logger;
 import java.time.Instant;
 import java.util.*;
@@ -53,13 +51,39 @@ public class WorkflowEngine {
     WorkflowValidator workflowValidator;
 
     @Inject
-    NodeExecutor nodeExecutor;
+    WorkflowRegistry registry;
 
     @Inject
     Instance<WorkflowExecutionStrategy> executionStrategies;
 
     // Active execution monitors
     private final Map<String, ExecutionMonitor> activeRuns = new ConcurrentHashMap<>();
+
+    /**
+     * Trigger a workflow execution based on a request.
+     * This is the primary entry point for external triggers (API, Scheduler,
+     * Events).
+     */
+    public Uni<TriggerWorkflowResponse> triggerWorkflow(TriggerWorkflowRequest request) {
+        LOG.infof("Triggering workflow: %s (version: %s)", request.workflowId(), request.workflowVersion());
+
+        Uni<WorkflowDefinition> workflowUni;
+        if (request.workflowVersion() != null && !request.workflowVersion().isBlank()) {
+            workflowUni = registry.getWorkflowByVersion(request.workflowId(), request.workflowVersion());
+        } else {
+            workflowUni = registry.getLatestVersion(request.workflowId());
+        }
+
+        return workflowUni
+                .onItem().ifNull()
+                .failWith(() -> new IllegalArgumentException("Workflow not found: " + request.workflowId()))
+                .flatMap(workflow -> start(workflow, request.inputs(), "default-tenant")) // Using default-tenant for
+                                                                                          // now
+                .map(run -> new TriggerWorkflowResponse(run.getRunId(), run.getStatus().toString()));
+    }
+
+    public record TriggerWorkflowResponse(String runId, String status) {
+    }
 
     /**
      * Start a new workflow execution with complete validation and setup.
@@ -69,140 +93,124 @@ public class WorkflowEngine {
             Map<String, Object> inputs,
             String tenantId) {
 
-        return Uni.createFrom().deferred(() -> {
-            LOG.infof("Starting workflow: %s (version: %s) for tenant: %s",
-                    workflow.getId().getValue(), workflow.getVersion(), tenantId);
+        LOG.infof("Starting workflow: %s (version: %s) for tenant: %s",
+                workflow.getId().getValue(), workflow.getVersion(), tenantId);
 
-            // 1. Validate workflow definition
-            return workflowValidator.validate(workflow)
-                    .onItem().transformToUni(validationResult -> {
-                        if (!validationResult.isValid()) {
-                            LOG.errorf("Workflow validation failed: %s", validationResult.getErrors());
-                            return Uni.createFrom().failure(
-                                    new WorkflowValidationException(
-                                            "Workflow validation failed: " + validationResult.getErrors()));
-                        }
+        return workflowValidator.validate(workflow)
+                .onItem().transformToUni(validationResult -> {
+                    if (!validationResult.isValid()) {
+                        LOG.errorf("Workflow validation failed for %s: %s", workflow.getId(),
+                                validationResult.getErrors());
+                        return Uni.createFrom().failure(
+                                new WorkflowValidationException(
+                                        "Workflow validation failed: " + validationResult.getErrors()));
+                    }
 
-                        // 2. Validate inputs against workflow input schema
-                        ValidationResult inputValidation = validateWorkflowInputs(workflow, inputs);
-                        if (!inputValidation.isValid()) {
-                            return Uni.createFrom().failure(
-                                    new WorkflowValidationException(
-                                            "Input validation failed: " + inputValidation.getMessage()));
-                        }
+                    ValidationResult inputValidation = validateWorkflowInputs(workflow, inputs);
+                    if (!inputValidation.isValid()) {
+                        LOG.errorf("Input validation failed for workflow %s: %s", workflow.getId(),
+                                inputValidation.getMessage());
+                        return Uni.createFrom().failure(
+                                new WorkflowValidationException(
+                                        "Input validation failed: " + inputValidation.getMessage()));
+                    }
 
-                        // 3. Create workflow run instance
-                        WorkflowRun run = WorkflowRun.builder()
-                                .runId(UUID.randomUUID().toString())
-                                .workflowId(workflow.getId().getValue())
-                                .workflowVersion(workflow.getVersion())
-                                .tenantId(tenantId)
-                                .status(RunStatus.PENDING)
-                                .inputs(new HashMap<>(inputs))
-                                .outputs(new HashMap<>())
-                                .createdAt(Instant.now())
-                                .updatedAt(Instant.now())
-                                .build();
+                    return policyEngine.validateWorkflowStart(workflow, tenantId);
+                })
+                .onItem().transformToUni(policyResult -> {
+                    if (!policyResult.isAllowed()) {
+                        LOG.warnf("Workflow start blocked by policy for tenant %s: %s", tenantId,
+                                policyResult.getReason());
+                        WorkflowRun blockedRun = createInitialRun(workflow, inputs, tenantId, RunStatus.BLOCKED);
+                        blockedRun.setErrorMessage("Policy violation: " + policyResult.getReason());
+                        return stateStore.save(blockedRun);
+                    }
 
-                        // 4. Check policy before execution
-                        return policyEngine.validateWorkflowStart(workflow, tenantId)
-                                .onItem().transformToUni(policyResult -> {
-                                    if (!policyResult.isAllowed()) {
-                                        run.setStatus(RunStatus.BLOCKED);
-                                        run.setErrorMessage("Policy violation: " + policyResult.getReason());
-                                        return stateStore.save(run)
-                                                .replaceWith(run);
-                                    }
+                    WorkflowRun run = createInitialRun(workflow, inputs, tenantId, RunStatus.PENDING);
+                    return stateStore.save(run)
+                            .onItem().call(savedRun -> provenanceService.logWorkflowStart(savedRun, workflow))
+                            .onItem().invoke(telemetryService::recordWorkflowStart)
+                            .onItem().transformToUni(savedRun -> executeWorkflow(savedRun, workflow));
+                })
+                .onFailure().recoverWithUni(th -> {
+                    LOG.errorf(th, "Error during workflow start: %s", workflow.getId());
+                    WorkflowRun failedRun = createInitialRun(workflow, inputs, tenantId, RunStatus.FAILED);
+                    failedRun.setErrorMessage(th.getMessage());
+                    failedRun.setStartedAt(Instant.now());
+                    failedRun.setCompletedAt(Instant.now());
+                    return stateStore.save(failedRun);
+                });
+    }
 
-                                    // 5. Persist initial state
-                                    return stateStore.save(run)
-                                            .onItem()
-                                            .call(savedRun -> provenanceService.logWorkflowStart(savedRun, workflow))
-                                            .onItem().invoke(savedRun -> telemetryService.recordWorkflowStart(savedRun))
-                                            .onItem().transformToUni(savedRun -> executeWorkflow(savedRun, workflow));
-                                });
-                    })
-                    .onFailure().recoverWithUni(th -> {
-                        LOG.errorf(th, "Failed to start workflow: %s", workflow.getId());
-                        WorkflowRun failedRun = WorkflowRun.builder()
-                                .runId(UUID.randomUUID().toString())
-                                .workflowId(workflow.getId().getValue())
-                                .tenantId(tenantId)
-                                .status(RunStatus.FAILED)
-                                .errorMessage(th.getMessage())
-                                .createdAt(Instant.now())
-                                .startedAt(Instant.now())
-                                .completedAt(Instant.now())
-                                .build();
-
-                        return stateStore.save(failedRun);
-                    });
-        });
+    private WorkflowRun createInitialRun(WorkflowDefinition workflow, Map<String, Object> inputs, String tenantId,
+            RunStatus status) {
+        return WorkflowRun.builder()
+                .runId(UUID.randomUUID().toString())
+                .workflowId(workflow.getId().getValue())
+                .workflowVersion(workflow.getVersion())
+                .tenantId(tenantId)
+                .status(status)
+                .inputs(inputs != null ? new HashMap<>(inputs) : new HashMap<>())
+                .outputs(new HashMap<>())
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
     }
 
     /**
-     * Main workflow execution logic with complete error handling.
+     * Main workflow execution logic.
      */
     private Uni<WorkflowRun> executeWorkflow(WorkflowRun run, WorkflowDefinition workflow) {
-        // Create execution monitor
+        LOG.infof("Executing workflow run: %s", run.getRunId());
+
         ExecutionMonitor monitor = new ExecutionMonitor(run.getRunId());
         activeRuns.put(run.getRunId(), monitor);
 
-        // Update status to RUNNING
         run.setStatus(RunStatus.RUNNING);
         run.setStartedAt(Instant.now());
         run.setUpdatedAt(Instant.now());
 
         return stateStore.save(run)
                 .onItem().transformToUni(savedRun -> {
-                    // Create execution context
                     ExecutionContext context = ExecutionContext.create(savedRun, workflow);
                     context.setWorkflowRun(savedRun);
                     context.setTenantId(run.getTenantId());
+                    context.setCancellationChecker(() -> monitor.isCancelled());
 
-                    // Select appropriate execution strategy
                     WorkflowExecutionStrategy strategy = selectExecutionStrategy(workflow);
                     if (strategy == null) {
                         LOG.errorf("No suitable execution strategy found for workflow: %s", workflow.getId());
                         return completeWorkflow(savedRun, context, WorkflowCompletionStatus.FAILED,
-                                "No suitable execution strategy found");
+                                "No execution strategy found");
                     }
 
-                    LOG.debugf("Using execution strategy: %s for workflow: %s",
-                            strategy.getStrategyType(), workflow.getId());
+                    LOG.debugf("Executing with strategy: %s", strategy.getStrategyType());
 
-                    // Execute using the selected strategy
                     return strategy.execute(workflow, savedRun.getInputs(), context)
-                            .onItem().transformToUni(executedRun -> {
-                                // Check if workflow completed successfully
-                                ExecutionContext finalContext = ExecutionContext.create(executedRun, workflow);
-                                // Using node results to check for failures is more reliable than "error"
-                                // variable
-                                boolean hasFailures = executedRun.getNodeStates().values().stream()
-                                        .anyMatch(nodeState -> nodeState
-                                                .status() == tech.kayys.wayang.sdk.dto.NodeExecutionState.NodeStatus.FAILED);
-
-                                if (finalContext.isAwaitingHuman() || executedRun.getStatus() == RunStatus.SUSPENDED) {
-                                    // Workflow is suspended for HITL
-                                    return suspendForHITL(savedRun, finalContext);
-                                }
-
-                                return completeWorkflow(savedRun, finalContext,
-                                        hasFailures ? WorkflowCompletionStatus.FAILED
-                                                : WorkflowCompletionStatus.COMPLETED,
-                                        null);
-                            })
+                            .onItem().transformToUni(executedRun -> handleExecutionResult(executedRun, workflow))
                             .onFailure().recoverWithUni(th -> {
-                                LOG.errorf(th, "Workflow execution failed: %s", run.getRunId());
-                                return completeWorkflow(savedRun, context,
-                                        WorkflowCompletionStatus.FAILED,
+                                LOG.errorf(th, "Execution failed for run: %s", run.getRunId());
+                                return completeWorkflow(savedRun, context, WorkflowCompletionStatus.FAILED,
                                         th.getMessage());
-                            })
-                            .eventually(() -> {
-                                // Cleanup
-                                activeRuns.remove(run.getRunId());
                             });
-                });
+                })
+                .eventually(() -> activeRuns.remove(run.getRunId()));
+    }
+
+    private Uni<WorkflowRun> handleExecutionResult(WorkflowRun executedRun, WorkflowDefinition workflow) {
+        ExecutionContext finalContext = ExecutionContext.create(executedRun, workflow);
+
+        boolean hasFailures = executedRun.getNodeStates().values().stream()
+                .anyMatch(ns -> ns.status() == tech.kayys.wayang.sdk.dto.NodeExecutionState.NodeStatus.FAILED);
+
+        if (finalContext.isAwaitingHuman() || executedRun.getStatus() == RunStatus.SUSPENDED) {
+            LOG.infof("Workflow run %s suspended for human intervention", executedRun.getRunId());
+            return suspendForHITL(executedRun, finalContext);
+        }
+
+        WorkflowCompletionStatus status = hasFailures ? WorkflowCompletionStatus.FAILED
+                : WorkflowCompletionStatus.COMPLETED;
+        return completeWorkflow(executedRun, finalContext, status, null);
     }
 
     /**
@@ -229,65 +237,70 @@ public class WorkflowEngine {
 
     private Uni<WorkflowRun> completeWorkflow(WorkflowRun run, ExecutionContext context,
             WorkflowCompletionStatus status, String msg) {
+
+        LOG.infof("Completing workflow %s with status: %s", run.getRunId(), status);
+
         run.setStatus(status == WorkflowCompletionStatus.COMPLETED ? RunStatus.COMPLETED : RunStatus.FAILED);
         run.setCompletedAt(Instant.now());
         run.setUpdatedAt(Instant.now());
-        // run.setOutputs(context.getOutputs()); // context.getOutputs() might be
-        // missing in model? 581 check?
-        // 581 has getOutput()? No?
-        // 581 has nodeResults.
-        // I'll assume context can derive outputs or I fix it later. For now omit.
-        if (msg != null)
+
+        if (msg != null) {
             run.setErrorMessage(msg);
+        }
 
-        return stateStore.save(run);
-    }
+        // Try to capture final outputs from context if available
+        if (context != null && context.getWorkflowRun() != null) {
+            run.setOutputs(context.getWorkflowRun().getOutputs());
+        }
 
-    // ... Copy remaining methods with minor fixes: id(), names, etc.
-    // Since this is getting long and I can't put everything in one tool call if it
-    // exceeds limits, I'll focus on just writing the whole file assuming simple
-    // stubs for missing parts.
-
-    private NodeContext createNodeContext(NodeDefinition nodeDef, ExecutionContext context,
-            WorkflowDefinition workflow) {
-        return NodeContext.builder()
-                .nodeId(nodeDef.getId())
-                .runId(context.getExecutionId())
-                .workflow(workflow)
-                .inputs(context.getAllVariables())
-                .build();
+        return stateStore.save(run)
+                .onItem().call(savedRun -> {
+                    if (status == WorkflowCompletionStatus.COMPLETED) {
+                        return provenanceService.logWorkflowComplete(savedRun);
+                    } else {
+                        return provenanceService.logRunFailed(savedRun, savedRun.getErrorMessage());
+                    }
+                })
+                .onItem().invoke(savedRun -> {
+                    long duration = savedRun.getCompletedAt() != null && savedRun.getStartedAt() != null
+                            ? java.time.Duration.between(savedRun.getStartedAt(), savedRun.getCompletedAt()).toMillis()
+                            : 0;
+                    telemetryService.recordWorkflowCompletion(savedRun, duration);
+                });
     }
 
     private ValidationResult validateWorkflowInputs(WorkflowDefinition w, Map<String, Object> i) {
+        // Placeholder for future schema-based input validation
         return ValidationResult.success();
     }
 
-    private void saveCheckpoint(ExecutionContext c) {
-    }
-
     private Uni<WorkflowRun> suspendForHITL(WorkflowRun run, ExecutionContext context) {
+        LOG.infof("Suspending workflow %s for Human-in-the-Loop", run.getRunId());
         run.setStatus(RunStatus.SUSPENDED);
         run.setUpdatedAt(Instant.now());
         return stateStore.save(run);
     }
 
-    // Missing dependencies
-    @Inject
-    tech.kayys.wayang.workflow.repository.WorkflowRepository workflowRepository; // added
-
     public Uni<WorkflowRun> resume(String runId, String tenantId) {
-        // ... implementation using api.RunStatus
+        LOG.infof("Resuming workflow run: %s", runId);
         return runManager.resumeRun(runId, tenantId, null, null);
     }
 
     public Uni<Void> pause(String runId, String tenantId) {
+        LOG.infof("Pausing workflow run: %s", runId);
         return runManager.updateRunStatus(runId, tenantId, RunStatus.PAUSED);
     }
 
     public Uni<Void> cancel(String runId, String tenantId, String reason) {
+        LOG.infof("Canceling workflow run: %s (reason: %s)", runId, reason);
+        ExecutionMonitor monitor = activeRuns.get(runId);
+        if (monitor != null) {
+            monitor.cancel();
+        }
         return runManager.cancelRun(runId, tenantId, reason).replaceWithVoid();
     }
 
+    @lombok.Getter
     private static class ExecutionMonitor {
         private final String runId;
         private volatile boolean cancelled = false;
@@ -296,12 +309,8 @@ public class WorkflowEngine {
             this.runId = runId;
         }
 
-        boolean isCancelled() {
-            return cancelled;
-        }
-
-        String getRunId() {
-            return runId;
+        void cancel() {
+            this.cancelled = true;
         }
     }
 

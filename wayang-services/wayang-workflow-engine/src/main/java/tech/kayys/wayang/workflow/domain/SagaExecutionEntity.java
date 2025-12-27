@@ -11,8 +11,8 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import tech.kayys.wayang.workflow.model.saga.CompensationStrategy;
-import tech.kayys.wayang.workflow.model.saga.SagaStatus;
+import tech.kayys.wayang.workflow.saga.model.CompensationStrategy;
+import tech.kayys.wayang.workflow.saga.model.SagaStatus;
 
 @Entity
 @Table(name = "saga_executions")

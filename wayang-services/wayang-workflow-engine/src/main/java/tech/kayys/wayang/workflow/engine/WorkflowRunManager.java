@@ -33,12 +33,12 @@ import tech.kayys.wayang.workflow.api.model.WorkflowEvent;
 import tech.kayys.wayang.workflow.model.WorkflowRunQuery;
 import tech.kayys.wayang.workflow.model.WorkflowSnapshot;
 import tech.kayys.wayang.workflow.repository.WorkflowRunRepository;
+import tech.kayys.wayang.workflow.saga.service.WorkflowSagaCoordinator;
 import tech.kayys.wayang.workflow.exception.RunNotFoundException;
 import tech.kayys.wayang.workflow.service.CacheManager;
 import tech.kayys.wayang.workflow.service.DistributedLockManager;
 import tech.kayys.wayang.workflow.service.ProvenanceService;
 import tech.kayys.wayang.workflow.service.WorkflowEventStore;
-import tech.kayys.wayang.workflow.service.WorkflowSagaCoordinator;
 import tech.kayys.wayang.workflow.service.WorkflowSnapshotStore;
 
 /**
@@ -82,14 +82,18 @@ public class WorkflowRunManager {
         // ========================================================================
 
         @Transactional
-        public Uni<WorkflowRun> createRun(CreateRunRequest request) {
+        public Uni<WorkflowRun> createRun(CreateRunRequest request, String tenantId) {
                 // Validate input
                 if (request == null) {
                         return Uni.createFrom()
                                         .failure(new IllegalArgumentException("CreateRunRequest cannot be null"));
                 }
 
-                String tenantId = "default-tenant";
+                if (tenantId == null || tenantId.trim().isEmpty()) {
+                        return Uni.createFrom()
+                                        .failure(new IllegalArgumentException("Tenant ID cannot be null or empty"));
+                }
+
                 log.info("Creating workflow run for workflow: {}, tenant: {}", request.getWorkflowId(), tenantId);
 
                 if (request.getWorkflowId() == null || request.getWorkflowId().trim().isEmpty()) {
