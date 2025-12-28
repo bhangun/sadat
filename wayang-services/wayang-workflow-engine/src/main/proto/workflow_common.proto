@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package tech.kayys.wayang.workflow.v1;
+
+option java_multiple_files = true;
+option java_package = "tech.kayys.wayang.workflow.v1";
+option java_outer_classname = "WorkflowCommonProto";
+
+// Common error response
+message ErrorResponse {
+  string error_code = 1;
+  string message = 2;
+  string timestamp = 3;
+}
+
+// Pagination parameters
+message PaginationRequest {
+  int32 page = 1;
+  int32 size = 2;
+}
+
+message PaginationResponse {
+  int32 page = 1;
+  int32 size = 2;
+  int64 total_elements = 3;
+  int32 total_pages = 4;
+}
+
+// Workflow Definition
+message WorkflowDefinition {
+  string id = 1;
+  string version = 2;
+  string name = 3;
+  string description = 4;
+  string definition_json = 5; // The JSON content of the workflow definition
+  int64 created_at = 6;
+  string tenant_id = 7;
+  bool active = 8;
+}

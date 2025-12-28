@@ -492,4 +492,39 @@ public class WorkflowScheduler {
 
         return scheduleStore.findExecutions(scheduleId, limit);
     }
+
+    /**
+     * Get a schedule by ID.
+     */
+    public Uni<WorkflowSchedule> getSchedule(String scheduleId) {
+        return scheduleStore.findById(scheduleId);
+    }
+
+    /**
+     * List schedules with filtering.
+     */
+    public Uni<List<WorkflowSchedule>> listSchedules(String tenantId, String workflowId, Boolean enabled) {
+        // Simple in-memory filtering for now
+        // If tenantId is provided, start with tenant search, else all?
+        // ScheduleStore doesn't expose "findAll".
+        // Assuming findByTenantId is best starting point if tenantId available.
+        // If not, maybe findByWorkflowId.
+
+        Uni<List<WorkflowSchedule>> baseQuery;
+        if (tenantId != null && !tenantId.isEmpty()) {
+            baseQuery = scheduleStore.findByTenantId(tenantId);
+        } else if (workflowId != null && !workflowId.isEmpty()) {
+            baseQuery = scheduleStore.findByWorkflowId(workflowId);
+        } else {
+            // No easy way to list all from current store API.
+            // Return empty list or fail?
+            // For now, return empty if no filter provided.
+            return Uni.createFrom().item(Collections.emptyList());
+        }
+
+        return baseQuery.map(list -> list.stream()
+                .filter(s -> workflowId == null || workflowId.isEmpty() || s.getWorkflowId().equals(workflowId))
+                .filter(s -> enabled == null || s.isEnabled() == enabled)
+                .collect(java.util.stream.Collectors.toList()));
+    }
 }

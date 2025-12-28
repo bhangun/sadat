@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:14
+    container_name: wayang-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-wayang}
+      POSTGRES_USER: ${POSTGRES_USER:-quarkus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quarkus}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - wayang-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quarkus} -d ${POSTGRES_DB:-wayang}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: wayang-redis
+    ports:
+      - "6380:6379"
+    environment:
+       - ALLOW_EMPTY_PASSWORD=yes
+    networks:
+      - wayang-network
+
+volumes:
+  postgres_data:
+
+networks:
+  wayang-network:
+    driver: bridge

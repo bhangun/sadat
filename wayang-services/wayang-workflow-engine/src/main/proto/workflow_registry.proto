@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package tech.kayys.wayang.workflow.v1;
+
+import "workflow_common.proto";
+import "google/protobuf/empty.proto";
+
+option java_multiple_files = true;
+option java_package = "tech.kayys.wayang.workflow.v1";
+option java_outer_classname = "WorkflowRegistryProto";
+
+service WorkflowRegistryService {
+  rpc RegisterWorkflow(WorkflowDefinition) returns (WorkflowDefinition);
+  rpc GetWorkflow(GetWorkflowRequest) returns (WorkflowDefinition);
+  rpc GetWorkflowVersion(GetWorkflowVersionRequest)
+      returns (WorkflowDefinition);
+  rpc ListWorkflows(ListWorkflowsRequest) returns (ListWorkflowsResponse);
+  rpc ActivateWorkflow(WorkflowVersionId) returns (google.protobuf.Empty);
+  rpc DeactivateWorkflow(WorkflowVersionId) returns (google.protobuf.Empty);
+  rpc DeleteWorkflow(WorkflowVersionId) returns (google.protobuf.Empty);
+  rpc ImportWorkflow(ImportWorkflowRequest) returns (WorkflowDefinition);
+  rpc ExportWorkflow(GetWorkflowRequest) returns (ExportWorkflowResponse);
+  rpc SearchWorkflows(SearchWorkflowsRequest) returns (ListWorkflowsResponse);
+  rpc ValidateWorkflow(GetWorkflowRequest) returns (ValidateWorkflowResponse);
+}
+
+message GetWorkflowRequest { string workflow_id = 1; }
+
+message GetWorkflowVersionRequest {
+  string workflow_id = 1;
+  string version = 2;
+}
+
+message WorkflowVersionId {
+  string workflow_id = 1;
+  string version = 2;
+}
+
+message ListWorkflowsRequest {
+  // Empty for now, maybe pagination later
+}
+
+message ListWorkflowsResponse { repeated WorkflowDefinition workflows = 1; }
+
+message ImportWorkflowRequest {
+  string id = 1;
+  string content = 2;
+}
+
+message ExportWorkflowResponse { string content = 1; }
+
+message SearchWorkflowsRequest {
+  string name_pattern = 1;
+  string tenant_id = 2;
+}
+
+message ValidateWorkflowResponse { bool valid = 1; }

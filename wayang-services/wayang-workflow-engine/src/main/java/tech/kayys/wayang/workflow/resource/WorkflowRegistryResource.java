@@ -52,7 +52,10 @@ public class WorkflowRegistryResource {
                 .onFailure().recoverWithItem(th -> {
                     LOG.error("Failed to register workflow", th);
                     return Response.status(Response.Status.BAD_REQUEST)
-                            .entity(new ErrorResponse("REGISTRATION_FAILED", th.getMessage()))
+                            .entity(ErrorResponse.builder()
+                                    .errorCode("REGISTRATION_FAILED")
+                                    .message(th.getMessage())
+                                    .build())
                             .build();
                 });
     }
@@ -65,26 +68,10 @@ public class WorkflowRegistryResource {
                 .map(w -> {
                     if (w == null) {
                         return Response.status(Response.Status.NOT_FOUND)
-                                .entity(new ErrorResponse("NOT_FOUND", "Workflow not found: " + workflowId))
-                                .build();
-                    }
-                    return Response.ok(w).build();
-                });
-    }
-
-    @GET
-    @Path("/{workflowId}/versions/{version}")
-    @Operation(summary = "Get workflow version", description = "Get specific version of workflow definition")
-    public Uni<Response> getWorkflowVersion(
-            @PathParam("workflowId") String workflowId,
-            @PathParam("version") String version) {
-
-        return registry.getWorkflowByVersion(workflowId, version)
-                .map(w -> {
-                    if (w == null) {
-                        return Response.status(Response.Status.NOT_FOUND)
-                                .entity(new ErrorResponse("NOT_FOUND",
-                                        "Workflow version not found: " + workflowId + ":" + version))
+                                .entity(ErrorResponse.builder()
+                                        .errorCode("NOT_FOUND")
+                                        .message("Workflow not found: " + workflowId)
+                                        .build())
                                 .build();
                     }
                     return Response.ok(w).build();
@@ -143,14 +130,20 @@ public class WorkflowRegistryResource {
     public Uni<Response> importWorkflow(@QueryParam("id") String id, String content) {
         if (id == null || content == null) {
             return Uni.createFrom().item(Response.status(Response.Status.BAD_REQUEST)
-                    .entity(new ErrorResponse("INVALID_REQUEST", "ID and content are required"))
+                    .entity(ErrorResponse.builder()
+                            .errorCode("INVALID_REQUEST")
+                            .message("ID and content are required")
+                            .build())
                     .build());
         }
 
         return registry.importWorkflow(id, content)
                 .map(w -> Response.status(Response.Status.CREATED).entity(w).build())
                 .onFailure().recoverWithItem(th -> Response.status(Response.Status.BAD_REQUEST)
-                        .entity(new ErrorResponse("IMPORT_FAILED", th.getMessage()))
+                        .entity(ErrorResponse.builder()
+                                .errorCode("IMPORT_FAILED")
+                                .message(th.getMessage())
+                                .build())
                         .build());
     }
 

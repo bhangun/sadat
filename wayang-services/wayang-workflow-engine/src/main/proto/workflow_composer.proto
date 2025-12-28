@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package tech.kayys.wayang.workflow.v1;
+
+import "workflow_common.proto";
+
+option java_multiple_files = true;
+option java_package = "tech.kayys.wayang.workflow.v1";
+option java_outer_classname = "WorkflowComposerProto";
+
+service WorkflowComposerService {
+  rpc ComposeWorkflows(ComposeRequest) returns (WorkflowDefinition);
+  rpc CreateForkJoin(ForkJoinRequest) returns (WorkflowDefinition);
+  rpc CreateSequential(SequentialRequest) returns (WorkflowDefinition);
+  rpc CreateConditional(ConditionalRequest) returns (WorkflowDefinition);
+}
+
+message ComposeRequest {
+  string parent_id = 1;
+  repeated string child_ids = 2;
+}
+
+message ForkJoinRequest {
+  string id = 1;
+  repeated string branch_ids = 2;
+}
+
+message SequentialRequest {
+  string id = 1;
+  repeated string step_ids = 2;
+}
+
+message ConditionalRequest {
+  string id = 1;
+  repeated string node_ids = 2;
+}

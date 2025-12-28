@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package tech.kayys.wayang.workflow.v1;
+
+option java_multiple_files = true;
+option java_package = "tech.kayys.wayang.workflow.v1";
+option java_outer_classname = "ProvenanceProto";
+
+service ProvenanceService {
+  rpc GetProvenanceReport(GetProvenanceReportRequest)
+      returns (ProvenanceReport);
+}
+
+message GetProvenanceReportRequest {
+  string run_id = 1;
+  string report_type = 2; // SUMMARY, FULL, etc.
+}
+
+message ProvenanceReport {
+  string run_id = 1;
+  int64 generated_at = 2;
+  string report_json = 3; // Complex structure, simplify as JSON for now
+}

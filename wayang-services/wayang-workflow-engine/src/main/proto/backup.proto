@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package tech.kayys.wayang.workflow.v1;
+
+import "google/protobuf/empty.proto";
+
+option java_multiple_files = true;
+option java_package = "tech.kayys.wayang.workflow.v1";
+option java_outer_classname = "BackupProto";
+
+service BackupService {
+  rpc CreateFullBackup(CreateBackupRequest) returns (BackupResponse);
+  rpc RestoreFromBackup(RestoreFromBackupRequest) returns (RestoreResponse);
+  rpc GetBackup(GetBackupRequest) returns (BackupResponse);
+  rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse);
+  rpc VerifyBackup(GetBackupRequest) returns (VerifyBackupResponse);
+  rpc PointInTimeRecovery(PointInTimeRecoveryRequest) returns (RestoreResponse);
+  rpc CleanupOldBackups(google.protobuf.Empty) returns (CleanupResultResponse);
+}
+
+message CreateBackupRequest {
+  bool encrypt = 1;
+  bool compress = 2;
+  map<string, string> metadata = 3;
+}
+
+message RestoreFromBackupRequest {
+  string backup_id = 1;
+  bool selective = 2;
+  repeated string selected_items = 3;
+  bool skip_verification = 4;
+  map<string, string> parameters = 5;
+}
+
+message GetBackupRequest { string backup_id = 1; }
+
+message ListBackupsRequest {
+  string type = 1;
+  string from_date = 2;
+  string to_date = 3;
+  string status = 4;
+  int32 limit = 5;
+}
+
+message PointInTimeRecoveryRequest {
+  string backup_id = 1;
+  string target_time = 2;
+}
+
+message BackupResponse {
+  string backup_id = 1;
+  string type = 2;
+  string status = 3;
+  int64 created_at = 4;
+  int64 size_bytes = 5;
+  map<string, string> metadata = 6;
+}
+
+message RestoreResponse {
+  string restore_id = 1;
+  string status = 2;
+  string message = 3;
+  int64 restored_at = 4;
+}
+
+message ListBackupsResponse {
+  repeated BackupResponse backups = 1;
+  int32 total_count = 2;
+}
+
+message VerifyBackupResponse {
+  string backup_id = 1;
+  bool valid = 2;
+  repeated string issues = 3;
+  int64 verified_at = 4;
+}
+
+message CleanupResultResponse {
+  int32 deleted_count = 1;
+  int64 freed_space = 2;
+  int64 cleaned_at = 3;
+}

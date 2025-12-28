@@ -370,6 +370,15 @@ public class WorkflowVersionManager {
         }
 
         /**
+         * Get a specific workflow version.
+         */
+        public Uni<WorkflowVersion> getVersion(String workflowId, String version) {
+                return versionStore.findByWorkflowAndVersion(workflowId, version)
+                                .onItem().ifNull().failWith(
+                                                () -> new IllegalArgumentException("Version not found: " + version));
+        }
+
+        /**
          * Compare two versions and generate diff.
          */
         public Uni<VersionDiff> compareVersions(

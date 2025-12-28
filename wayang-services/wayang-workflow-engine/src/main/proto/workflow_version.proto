@@ -1,0 +1,108 @@
+syntax = "proto3";
+
+package tech.kayys.wayang.workflow.v1;
+
+import "google/protobuf/empty.proto";
+
+option java_multiple_files = true;
+option java_package = "tech.kayys.wayang.workflow.v1";
+option java_outer_classname = "WorkflowVersionProto";
+
+service WorkflowVersionService {
+  rpc CreateVersion(CreateVersionRequest) returns (WorkflowVersion);
+  rpc ListVersions(ListVersionsRequest) returns (ListVersionsResponse);
+  rpc GetVersion(GetVersionRequest) returns (WorkflowVersion);
+  rpc PublishVersion(PublishVersionRequest) returns (WorkflowVersion);
+  rpc PromoteCanary(PromoteCanaryRequest) returns (WorkflowVersion);
+  rpc RollbackCanary(RollbackCanaryRequest) returns (google.protobuf.Empty);
+  rpc DeprecateVersion(DeprecateVersionRequest) returns (WorkflowVersion);
+  rpc MigrateVersion(MigrateVersionRequest) returns (MigrateVersionResponse);
+  rpc CompareVersions(CompareVersionsRequest) returns (CompareVersionsResponse);
+}
+
+message WorkflowVersion {
+  string version_id = 1;
+  string workflow_id = 2;
+  string version = 3;
+  string previous_version = 4;
+  string status = 5;
+  repeated string breaking_changes = 6;
+  repeated string deprecation_warnings = 7;
+  int32 canary_percentage = 8;
+  int64 created_at = 9;
+  int64 published_at = 10;
+}
+
+message CreateVersionRequest {
+  string workflow_id = 1;
+  string version = 2;
+  string previous_version = 3;
+  string created_by = 4;
+}
+
+message ListVersionsRequest { string workflow_id = 1; }
+
+message ListVersionsResponse { repeated WorkflowVersionListItem versions = 1; }
+
+message WorkflowVersionListItem {
+  string version_id = 1;
+  string version = 2;
+  string status = 3;
+  int32 breaking_changes_count = 4;
+  int64 created_at = 5;
+}
+
+message GetVersionRequest {
+  string workflow_id = 1;
+  string version = 2;
+}
+
+message PublishVersionRequest {
+  string workflow_id = 1;
+  string version_id = 2;
+  bool canary_deployment = 3;
+  int32 canary_percentage = 4;
+  bool auto_migrate = 5;
+  string published_by = 6;
+}
+
+message PromoteCanaryRequest {
+  string workflow_id = 1;
+  string version_id = 2;
+}
+
+message RollbackCanaryRequest {
+  string workflow_id = 1;
+  string version_id = 2;
+  string reason = 3;
+}
+
+message DeprecateVersionRequest {
+  string workflow_id = 1;
+  string version_id = 2;
+  string reason = 3;
+  int64 sunset_date = 4;
+}
+
+message MigrateVersionRequest {
+  string workflow_id = 1;
+  string from_version = 2;
+  string to_version = 3;
+}
+
+message MigrateVersionResponse {
+  bool success = 1;
+  string message = 2;
+  int32 migrated_count = 3;
+}
+
+message CompareVersionsRequest {
+  string workflow_id = 1;
+  string version1 = 2;
+  string version2 = 3;
+}
+
+message CompareVersionsResponse {
+  // Simplified diff representation
+  string diff = 1;
+}

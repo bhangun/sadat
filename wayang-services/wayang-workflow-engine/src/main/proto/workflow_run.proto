@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package tech.kayys.wayang.workflow.v1;
+
+import "workflow_common.proto";
+import "google/protobuf/empty.proto";
+
+option java_multiple_files = true;
+option java_package = "tech.kayys.wayang.workflow.v1";
+option java_outer_classname = "WorkflowRunProto";
+
+service WorkflowRunService {
+  rpc CreateRun(CreateRunRequest) returns (WorkflowRun);
+  rpc GetRun(GetRunRequest) returns (WorkflowRun);
+  rpc ListRuns(ListRunsRequest) returns (ListRunsResponse);
+  rpc StartRun(RunIdRequest) returns (WorkflowRun);
+  rpc SuspendRun(SuspendRunRequest) returns (WorkflowRun);
+  rpc ResumeRun(ResumeRunRequest) returns (WorkflowRun);
+  rpc CancelRun(CancelRunRequest) returns (google.protobuf.Empty);
+  rpc CompleteRun(CompleteRunRequest) returns (WorkflowRun);
+  rpc FailRun(FailRunRequest) returns (WorkflowRun);
+  rpc ListCheckpoints(RunIdRequest) returns (ListCheckpointsResponse);
+  rpc GetActiveCount(google.protobuf.Empty) returns (ActiveRunCount);
+}
+
+message WorkflowRun {
+  string run_id = 1;
+  string workflow_id = 2;
+  string workflow_version = 3;
+  string status = 4; // Enum as string for flexibility or define Enum
+  string phase = 5;
+  int64 created_at = 6;
+  int64 started_at = 7;
+  int64 completed_at = 8;
+  int64 duration_ms = 9;
+  map<string, string> nodes_executed = 10; // Simplified representation
+  int32 nodes_total = 11;
+  int32 attempt_number = 12;
+  int32 max_attempts = 13;
+  string error_message = 14;
+  map<string, string> outputs = 15; // JSON values as strings
+}
+
+message RunIdRequest { string run_id = 1; }
+
+message CreateRunRequest {
+  string workflow_id = 1;
+  map<string, string> inputs = 2;
+  string trigger_type = 3;
+}
+
+message GetRunRequest { string run_id = 1; }
+
+message ListRunsRequest {
+  string workflow_id = 1;
+  string status = 2;
+  PaginationRequest pagination = 3;
+}
+
+message ListRunsResponse {
+  repeated WorkflowRun runs = 1;
+  PaginationResponse pagination = 2;
+}
+
+message SuspendRunRequest {
+  string run_id = 1;
+  string reason = 2;
+  string human_task_id = 3;
+}
+
+message ResumeRunRequest {
+  string run_id = 1;
+  string human_task_id = 2;
+  map<string, string> resume_data = 3;
+}
+
+message CancelRunRequest {
+  string run_id = 1;
+  string reason = 2;
+}
+
+message CompleteRunRequest {
+  string run_id = 1;
+  map<string, string> outputs = 2;
+}
+
+message FailRunRequest {
+  string run_id = 1;
+  string error = 2;
+}
+
+// Checkpoints
+message Checkpoint {
+  string checkpoint_id = 1;
+  string run_id = 2;
+  int64 sequence_number = 3;
+  string status = 4;
+  int32 nodes_executed = 5;
+  int64 created_at = 6;
+}
+
+message ListCheckpointsResponse { repeated Checkpoint checkpoints = 1; }
+
+message ActiveRunCount { int64 count = 1; }

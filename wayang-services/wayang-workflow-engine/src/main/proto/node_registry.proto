@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package tech.kayys.wayang.workflow.v1;
+
+option java_multiple_files = true;
+option java_package = "tech.kayys.wayang.workflow.v1";
+option java_outer_classname = "NodeRegistryProto";
+
+service NodeRegistryService {
+  rpc ListNodeTypes(ListNodeTypesRequest) returns (ListNodeTypesResponse);
+  rpc GetNodeTypeInfo(GetNodeTypeInfoRequest) returns (NodeTypeSchema);
+  rpc ValidateNode(ValidateNodeRequest) returns (ValidateNodeResponse);
+}
+
+message ListNodeTypesRequest {
+  // Empty for now
+}
+
+message ListNodeTypesResponse { repeated string types = 1; }
+
+message GetNodeTypeInfoRequest { string type = 1; }
+
+// Map<String, Object> schema representation
+message NodeTypeSchema { string json_schema = 1; }
+
+message ValidateNodeRequest { string node_definition_json = 1; }
+
+message ValidateNodeResponse {
+  bool valid = 1;
+  string message = 2;
+}
