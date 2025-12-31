@@ -1,28 +1,31 @@
 package tech.kayys.wayang.workflow.api.grpc;
 
 import io.quarkus.grpc.GrpcService;
-import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import tech.kayys.wayang.workflow.engine.WorkflowRunManager;
 import tech.kayys.wayang.workflow.service.RunCheckpointService;
+import tech.kayys.wayang.workflow.engine.WorkflowEngine;
 import tech.kayys.wayang.workflow.v1.*;
 import tech.kayys.wayang.schema.execution.ErrorPayload;
 import com.google.protobuf.Empty;
 import io.grpc.Status;
+import tech.kayys.wayang.workflow.security.annotations.ControlPlaneSecured;
 
 import java.util.Collections;
-import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 @GrpcService
-@Authenticated
+@ControlPlaneSecured
 public class WorkflowRunGrpcService implements WorkflowRunService {
 
     @Inject
     WorkflowRunManager runManager;
+
+    @Inject
+    WorkflowEngine workflowEngine;
 
     @Inject
     RunCheckpointService checkpointService;
@@ -32,19 +35,8 @@ public class WorkflowRunGrpcService implements WorkflowRunService {
 
     private String getTenantId() {
         if (securityIdentity.isAnonymous()) {
-            // Should be caught by @Authenticated, but as a safeguard
             throw new IllegalStateException("Anonymous access not allowed");
         }
-
-        // Try to get tenant_id from attributes (mapped from claims)
-        // If using OIDC, claims are often available as attributes or via Principal if
-        // cast to JsonWebToken
-        // For simplicity/generality, we assume the Principal Name is the tenant or user
-        // effectively acting as a tenant in this context.
-        // In a real multi-tenant setup, you'd extract "tenant_id" claim.
-        // String tenantId = securityIdentity.getAttribute("tenant_id");
-        // if (tenantId != null) return tenantId;
-
         return securityIdentity.getPrincipal().getName();
     }
 
@@ -117,7 +109,7 @@ public class WorkflowRunGrpcService implements WorkflowRunService {
 
     @Override
     public Uni<WorkflowRun> startRun(RunIdRequest request) {
-        return runManager.startRun(request.getRunId(), getTenantId())
+        return workflowEngine.execute(request.getRunId(), getTenantId())
                 .map(this::toProto)
                 .onFailure().recoverWithUni(this::handleErrors);
     }
@@ -131,11 +123,8 @@ public class WorkflowRunGrpcService implements WorkflowRunService {
 
     @Override
     public Uni<WorkflowRun> resumeRun(ResumeRunRequest request) {
-        Map<String, Object> resumeData = request.getResumeDataMap() != null
-                ? new java.util.HashMap<>(request.getResumeDataMap())
-                : null;
-        return runManager
-                .resumeRun(request.getRunId(), getTenantId(), request.getHumanTaskId(), resumeData)
+        return workflowEngine
+                .resume(request.getRunId(), getTenantId())
                 .map(this::toProto)
                 .onFailure().recoverWithUni(this::handleErrors);
     }
@@ -180,10 +169,7 @@ public class WorkflowRunGrpcService implements WorkflowRunService {
 
     @Override
     public Uni<ListCheckpointsResponse> listCheckpoints(RunIdRequest request) {
-        // Assuming listCheckpoints logic also needs tenant check, but CheckpointService
-        // might not enforce it yet.
-        // Ideally we should check if the run belongs to the tenant first.
-        return runManager.getRun(request.getRunId()) // Check existence and tenant
+        return runManager.getRun(request.getRunId())
                 .chain(run -> {
                     if (!run.getTenantId().equals(getTenantId())) {
                         return Uni.createFrom().failure(new IllegalStateException("Tenant mismatch"));
@@ -202,8 +188,6 @@ public class WorkflowRunGrpcService implements WorkflowRunService {
                 .map(count -> ActiveRunCount.newBuilder().setCount(count).build())
                 .onFailure().recoverWithUni(this::handleErrors);
     }
-
-    // Mappers
 
     private WorkflowRun toProto(tech.kayys.wayang.workflow.domain.WorkflowRun domain) {
         if (domain == null)
@@ -232,10 +216,6 @@ public class WorkflowRunGrpcService implements WorkflowRunService {
                     builder.putOutputs(k, v.toString());
             });
         }
-
-        // Populate nodes_executed map if needed.
-        // Currently relying on Checkpoints for node history or separate call.
-
         return builder.build();
     }
 

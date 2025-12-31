@@ -6,8 +6,10 @@ import jakarta.inject.Inject;
 import tech.kayys.wayang.workflow.service.WorkflowComposer;
 import tech.kayys.wayang.workflow.v1.*;
 import tech.kayys.wayang.schema.workflow.WorkflowDefinition;
+import tech.kayys.wayang.workflow.security.annotations.ExecutionSecured;
 
 @GrpcService
+@ExecutionSecured
 public class WorkflowComposerGrpcService implements WorkflowComposerService {
 
     @Inject

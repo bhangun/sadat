@@ -81,6 +81,16 @@ public class WorkflowRunManager {
         // COMMAND SIDE: State Mutations
         // ========================================================================
 
+        private void verifyTenantAccess(String tenantId) {
+                if (tech.kayys.wayang.workflow.security.context.SecurityContextHolder.hasContext()) {
+                        String authenticatedTenant = tech.kayys.wayang.workflow.security.context.SecurityContextHolder
+                                        .getCurrentTenantId();
+                        if (!authenticatedTenant.equals(tenantId)) {
+                                throw new SecurityException("Access denied: Tenant mismatch");
+                        }
+                }
+        }
+
         @Transactional
         public Uni<WorkflowRun> createRun(CreateRunRequest request, String tenantId) {
                 // Validate input
@@ -93,6 +103,8 @@ public class WorkflowRunManager {
                         return Uni.createFrom()
                                         .failure(new IllegalArgumentException("Tenant ID cannot be null or empty"));
                 }
+
+                verifyTenantAccess(tenantId);
 
                 log.info("Creating workflow run for workflow: {}, tenant: {}", request.getWorkflowId(), tenantId);
 
@@ -148,6 +160,8 @@ public class WorkflowRunManager {
                                         .failure(new IllegalArgumentException("Tenant ID cannot be null or empty"));
                 }
 
+                verifyTenantAccess(tenantId);
+
                 return runRepository.findById(runId)
                                 .onItem().ifNull().failWith(() -> new RunNotFoundException(runId))
                                 .onItem().invoke(run -> {
@@ -171,6 +185,8 @@ public class WorkflowRunManager {
                                         .failure(new IllegalArgumentException("Tenant ID cannot be null or empty"));
                 }
 
+                verifyTenantAccess(tenantId);
+
                 return runRepository.findById(runId)
                                 .onItem().ifNull().failWith(() -> new RunNotFoundException(runId))
                                 .onItem().invoke(run -> {
@@ -193,6 +209,8 @@ public class WorkflowRunManager {
                         return Uni.createFrom()
                                         .failure(new IllegalArgumentException("Tenant ID cannot be null or empty"));
                 }
+
+                verifyTenantAccess(tenantId);
 
                 return acquireLock(runId, "status-update")
                                 .flatMap(lock -> runRepository.findById(runId)
@@ -250,6 +268,8 @@ public class WorkflowRunManager {
                         return Uni.createFrom()
                                         .failure(new IllegalArgumentException("Tenant ID cannot be null or empty"));
                 }
+
+                verifyTenantAccess(tenantId);
                 if (nodeState == null) {
                         return Uni.createFrom().failure(new IllegalArgumentException("Node state cannot be null"));
                 }
@@ -322,6 +342,8 @@ public class WorkflowRunManager {
                                         .failure(new IllegalArgumentException("Tenant ID cannot be null or empty"));
                 }
 
+                verifyTenantAccess(tenantId);
+
                 return acquireLock(runId, "completion")
                                 .flatMap(lock -> runRepository.findById(runId)
                                                 .onItem().ifNull().failWith(() -> new RunNotFoundException(runId))
@@ -375,6 +397,8 @@ public class WorkflowRunManager {
                         return Uni.createFrom()
                                         .failure(new IllegalArgumentException("Tenant ID cannot be null or empty"));
                 }
+
+                verifyTenantAccess(tenantId);
 
                 return acquireLock(runId, "failure")
                                 .flatMap(lock -> runRepository.findById(runId)
@@ -482,6 +506,8 @@ public class WorkflowRunManager {
                                         .failure(new IllegalArgumentException("Tenant ID cannot be null or empty"));
                 }
 
+                verifyTenantAccess(tenantId);
+
                 return acquireLock(runId, "resume")
                                 .flatMap(lock -> runRepository.findById(runId)
                                                 .onItem().ifNull().failWith(() -> new RunNotFoundException(runId))
@@ -534,6 +560,8 @@ public class WorkflowRunManager {
                         return Uni.createFrom()
                                         .failure(new IllegalArgumentException("Tenant ID cannot be null or empty"));
                 }
+
+                verifyTenantAccess(tenantId);
 
                 return acquireLock(runId, "cancel")
                                 .flatMap(lock -> runRepository.findById(runId)
@@ -620,6 +648,8 @@ public class WorkflowRunManager {
                                         .failure(new IllegalArgumentException("Tenant ID cannot be null or empty"));
                 }
 
+                verifyTenantAccess(tenantId);
+
                 // Normalize page and size values
                 int normalizedPage = Math.max(0, page);
                 int normalizedSize = Math.min(Math.max(1, size), 100); // Max 100 items per page
@@ -638,6 +668,8 @@ public class WorkflowRunManager {
                                         .failure(new IllegalArgumentException("Tenant ID cannot be null or empty"));
                 }
 
+                verifyTenantAccess(tenantId);
+
                 return runRepository.findActiveByTenant(tenantId)
                                 .onFailure().invoke(throwable -> {
                                         log.error("Error retrieving active runs for tenant: {}", tenantId, throwable);
@@ -649,6 +681,8 @@ public class WorkflowRunManager {
                         return Uni.createFrom()
                                         .failure(new IllegalArgumentException("Tenant ID cannot be null or empty"));
                 }
+
+                verifyTenantAccess(tenantId);
 
                 return runRepository.countActiveByTenant(tenantId);
         }

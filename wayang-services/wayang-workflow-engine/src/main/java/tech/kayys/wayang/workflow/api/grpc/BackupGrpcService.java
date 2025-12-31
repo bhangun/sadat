@@ -1,12 +1,15 @@
 package tech.kayys.wayang.workflow.api.grpc;
 
 import io.quarkus.grpc.GrpcService;
+import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
+import org.jboss.logging.Logger;
 import tech.kayys.wayang.workflow.backup.service.BackupManager;
 import tech.kayys.wayang.workflow.backup.service.BackupManager.BackupOptions;
 import tech.kayys.wayang.workflow.backup.service.BackupManager.BackupFilter;
 import tech.kayys.wayang.workflow.model.RestoreOptions;
+import tech.kayys.wayang.workflow.security.annotations.ControlPlaneSecured;
 
 import tech.kayys.wayang.workflow.v1.*;
 import java.util.HashMap;
@@ -14,13 +17,28 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @GrpcService
+@ControlPlaneSecured
 public class BackupGrpcService implements BackupService {
+
+    private static final Logger LOG = Logger.getLogger(BackupGrpcService.class);
 
     @Inject
     BackupManager backupManager;
 
+    @Inject
+    SecurityIdentity securityIdentity;
+
+    private String getTenantId() {
+        if (securityIdentity.isAnonymous()) {
+            throw new IllegalStateException("Anonymous access not allowed");
+        }
+        return securityIdentity.getPrincipal().getName();
+    }
+
     @Override
     public Uni<BackupResponse> createFullBackup(CreateBackupRequest request) {
+        String tenantId = getTenantId();
+        LOG.infof("Creating full backup for tenant: %s", tenantId);
         BackupOptions options = new BackupOptions(
                 request.getEncrypt(),
                 request.getCompress(),
@@ -40,8 +58,7 @@ public class BackupGrpcService implements BackupService {
 
         return backupManager.restoreFromBackup(request.getBackupId(), options)
                 .map(result -> RestoreResponse.newBuilder()
-                        .setRestoreId(result.getBackupId()) // Result doesn't have unique restore ID, using backup ID or
-                                                            // similar? Result has backupId.
+                        .setRestoreId(result.getBackupId())
                         .setStatus(result.getStatus().name())
                         .setMessage(result.getErrorMessage() != null ? result.getErrorMessage() : "")
                         .setRestoredAt(result.getRestoreTime() != null ? result.getRestoreTime().toEpochMilli() : 0)
@@ -52,14 +69,6 @@ public class BackupGrpcService implements BackupService {
     public Uni<BackupResponse> getBackup(GetBackupRequest request) {
         return backupManager.getBackupMetadata(request.getBackupId())
                 .map(opt -> opt.map(this::toProto).orElse(null));
-        // Note: if null, gRPC typically sends empty or error.
-        // Using .map(opt -> opt.orElse(null)) results in null passed to response
-        // observer which crashes or throws?
-        // Better: .flatMap(opt ->
-        // opt.map(this::toProto).map(Uni::createFrom::item).orElse(Uni.createFrom().failure(new
-        // RuntimeException("Not found"))));
-        // But for simplicity letting null propogate might cause issues.
-        // Let's return empty if null? Proto defined generic return.
     }
 
     @Override
@@ -98,21 +107,14 @@ public class BackupGrpcService implements BackupService {
         return backupManager.verifyBackup(request.getBackupId())
                 .map(result -> VerifyBackupResponse.newBuilder()
                         .setBackupId(request.getBackupId())
-                        .setValid(result.isValid()) // verify getter
-                        .addAllIssues(result.getIssues()) // verify getter
-                        // .setVerifiedAt(...) // Result doesn't have definition of verifiedAt, skipping
+                        .setValid(result.isValid())
+                        .addAllIssues(result.getIssues())
                         .setVerifiedAt(System.currentTimeMillis())
                         .build());
     }
 
     @Override
     public Uni<RestoreResponse> pointInTimeRecovery(PointInTimeRecoveryRequest request) {
-        // Not implemented in Manager as public simplified method matching this request
-        // directly without params?
-        // Manager has: performPointInTimeRecovery(baseBackupId, targetTime, options)
-        // Request has: backupId, timestamp, options?
-        // Need to parse Request to inputs.
-        // Assuming incomplete impl for now.
         return Uni.createFrom().item(RestoreResponse.newBuilder()
                 .setStatus("FAILED")
                 .setMessage("Not implemented in Adapter yet")
@@ -129,8 +131,6 @@ public class BackupGrpcService implements BackupService {
                         .build());
     }
 
-    // Mapper
-
     private BackupResponse toProto(tech.kayys.wayang.workflow.model.BackupMetadata domain) {
         if (domain == null)
             return null;
@@ -140,7 +140,6 @@ public class BackupGrpcService implements BackupService {
                 .setStatus(domain.getStatus().name())
                 .setCreatedAt(domain.getTimestamp() != null ? domain.getTimestamp().toEpochMilli() : 0)
                 .setSizeBytes(domain.getTotalSize())
-                // .putAllMetadata(domain.getMetadata()) // Not in POJO
                 .build();
     }
 }

@@ -1,17 +1,33 @@
 package tech.kayys.wayang.workflow.api.grpc;
 
 import io.quarkus.grpc.GrpcService;
+import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
+import org.jboss.logging.Logger;
 import tech.kayys.wayang.workflow.service.WorkflowEventStore;
 import tech.kayys.wayang.workflow.v1.*;
 import java.util.stream.Collectors;
+import tech.kayys.wayang.workflow.security.annotations.ControlPlaneSecured;
 
 @GrpcService
+@ControlPlaneSecured
 public class EventStoreGrpcService implements EventStoreService {
+
+    private static final Logger LOG = Logger.getLogger(EventStoreGrpcService.class);
 
     @Inject
     WorkflowEventStore eventStore;
+
+    @Inject
+    SecurityIdentity securityIdentity;
+
+    private String getTenantId() {
+        if (securityIdentity.isAnonymous()) {
+            // Safety check
+        }
+        return securityIdentity.getPrincipal().getName();
+    }
 
     @Override
     public Uni<GetEventsResponse> getRunEvents(GetRunEventsRequest request) {
@@ -23,9 +39,6 @@ public class EventStoreGrpcService implements EventStoreService {
 
     @Override
     public Uni<GetEventsResponse> getEventsByType(GetEventsByTypeRequest request) {
-        // Assuming WorkflowEventStore has filtering or we filter manually
-        // WorkflowEventStore usually has getEvents(runId)
-        // I will filter manually for now if no specific method exists
         return eventStore.getEvents(request.getRunId())
                 .map(list -> list.stream()
                         .filter(e -> e.type().name().equals(request.getEventType()))
@@ -34,8 +47,6 @@ public class EventStoreGrpcService implements EventStoreService {
                 .map(filtered -> GetEventsResponse.newBuilder().addAllEvents(filtered).build());
     }
 
-    // Mapper
-
     private WorkflowEvent toProto(tech.kayys.wayang.workflow.api.model.WorkflowEvent domain) {
         if (domain == null)
             return null;
@@ -43,7 +54,6 @@ public class EventStoreGrpcService implements EventStoreService {
                 .setId(domain.id())
                 .setType(domain.type().name())
                 .setTimestamp(domain.timestamp().toEpochMilli())
-                // .setPayloadJson(...) // Need json serialization or just toString for now
                 .setPayloadJson(domain.data() != null ? domain.data().toString() : "")
                 .build();
     }

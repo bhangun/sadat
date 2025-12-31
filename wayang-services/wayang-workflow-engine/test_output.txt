@@ -1,0 +1,1001 @@
+[INFO] Scanning for projects...
+[WARNING] 
+[WARNING] Some problems were encountered while building the effective model for tech.kayys.wayang:wayang-workflow-engine:jar:1.0.0-SNAPSHOT
+[WARNING] 'parent.relativePath' of POM tech.kayys.wayang:wayang-workflow-engine:1.0.0-SNAPSHOT (/Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/pom.xml) points at tech.kayys.wayang:wayang-services instead of tech.kayys.wayang:wayang-workflow, please verify your project structure @ line 6, column 13
+[WARNING] 
+[WARNING] It is highly recommended to fix these problems because they threaten the stability of your build.
+[WARNING] 
+[WARNING] For this reason, future Maven versions might no longer support building such malformed projects.
+[WARNING] 
+[INFO] 
+[INFO] --------------< tech.kayys.wayang:wayang-workflow-engine >--------------
+[INFO] Building wayang-workflow-engine 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ wayang-workflow-engine ---
+[INFO] Copying 2 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- quarkus:3.30.3:generate-code (default) @ wayang-workflow-engine ---
+[WARNING] [io.smallrye.config] SRCFG01007: Duplicate value found for name : quarkus.datasource.devservices.enabled, config source name : PropertiesConfigSource[source=file:/Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/target/classes/application.properties], (old value : true)
+[INFO] [io.quarkus.grpc.codegen.GrpcCodeGen] Successfully finished generating and post-processing sources from proto files
+[INFO] 
+[INFO] --- compiler:3.14.1:compile (default-compile) @ wayang-workflow-engine ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 435 source files with javac [debug parameters release 21] to target/classes
+[INFO] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/PolicyEngine.java: Some input files use unchecked or unsafe operations.
+[INFO] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/main/java/tech/kayys/wayang/workflow/service/PolicyEngine.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- quarkus:3.30.3:generate-code-tests (default) @ wayang-workflow-engine ---
+Downloading from local-repository: file:///Users/bhangun/.m2/repository/tech/kayys/wayang/wayang-workflow/1.0.0-SNAPSHOT/maven-metadata.xml
+Downloading from central: https://repo.maven.apache.org/maven2/tech/kayys/wayang/wayang-workflow/1.0.0-SNAPSHOT/maven-metadata.xml
+Downloading from jboss-public-repository-group: https://repository.jboss.org/nexus/content/groups/public/tech/kayys/wayang/wayang-workflow/1.0.0-SNAPSHOT/maven-metadata.xml
+[WARNING] [io.smallrye.config] SRCFG01007: Duplicate value found for name : quarkus.datasource.devservices.enabled, config source name : PropertiesConfigSource[source=file:/Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/target/classes/application.properties], (old value : true)
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ wayang-workflow-engine ---
+[INFO] skip non existing resourceDirectory /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.14.1:testCompile (default-testCompile) @ wayang-workflow-engine ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 2 source files with javac [debug parameters release 21] to target/test-classes
+[INFO] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/test/java/tech/kayys/wayang/workflow/WorkflowEngineTest.java: /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/test/java/tech/kayys/wayang/workflow/WorkflowEngineTest.java uses unchecked or unsafe operations.
+[INFO] /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/src/test/java/tech/kayys/wayang/workflow/WorkflowEngineTest.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ wayang-workflow-engine ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+2025-12-30 06:11:12,316 WARN  [io.sma.config] (main) SRCFG01007: Duplicate value found for name : quarkus.datasource.devservices.enabled, config source name : PropertiesConfigSource[source=file:/Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/target/classes/application.properties], (old value : true)
+2025-12-30 06:11:13,080 WARN  [io.sma.config] (main) SRCFG01007: Duplicate value found for name : quarkus.datasource.devservices.enabled, config source name : PropertiesConfigSource[source=file:/Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/target/classes/application.properties], (old value : true)
+2025-12-30 06:11:13,142 WARN  [io.sma.config] (main) SRCFG01007: Duplicate value found for name : quarkus.datasource.devservices.enabled, config source name : PropertiesConfigSource[source=file:/Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/target/classes/application.properties], (old value : true)
+2025-12-30 06:11:13,537 INFO  [io.qua.ely.sec.pro.dep.ElytronPropertiesProcessor] (build-9) Configuring from MPRealmConfig
+2025-12-30 06:11:14,634 INFO  [org.tes.DockerClientFactory] (build-7) Testcontainers version: 1.21.3
+2025-12-30 06:11:14,785 INFO  [org.tes.doc.DockerClientProviderStrategy] (build-7) Loaded org.testcontainers.dockerclient.UnixSocketClientProviderStrategy from ~/.testcontainers.properties, will try it first
+2025-12-30 06:11:15,052 INFO  [org.tes.doc.DockerClientProviderStrategy] (build-7) Found Docker environment with Docker accessed via Unix socket (/Users/bhangun/.docker/run/docker.sock)
+2025-12-30 06:11:15,054 INFO  [org.tes.DockerClientFactory] (build-7) Docker host IP address is localhost
+2025-12-30 06:11:15,104 INFO  [org.tes.DockerClientFactory] (build-7) Connected to docker: 
+  Server Version: 29.1.3
+  API Version: 1.52
+  Operating System: Docker Desktop
+  Total Memory: 7836 MB
+  Labels: 
+    com.docker.desktop.address=unix:///Users/bhangun/Library/Containers/com.docker.docker/Data/docker-cli.sock
+2025-12-30 06:11:15,116 INFO  [org.tes.ima.PullPolicy] (build-7) Image pull policy will be performed by: DefaultPullPolicy()
+2025-12-30 06:11:15,118 INFO  [org.tes.uti.ImageNameSubstitutor] (build-7) Image name substitution will be performed by: DefaultImageNameSubstitutor (composite of 'ConfigurationFileImageNameSubstitutor' and 'PrefixingImageNameSubstitutor')
+2025-12-30 06:11:15,123 INFO  [org.tes.DockerClientFactory] (build-7) Checking the system...
+2025-12-30 06:11:15,124 INFO  [org.tes.DockerClientFactory] (build-7) ✔︎ Docker server version should be at least 1.6.0
+2025-12-30 06:11:15,221 INFO  [tc.postgres:14] (build-7) Creating container for image: postgres:14
+2025-12-30 06:11:15,451 INFO  [org.tes.uti.RegistryAuthLocator] (build-7) Credential helper/store (docker-credential-desktop) does not have credentials for https://index.docker.io/v1/
+2025-12-30 06:11:15,460 WARN  [tc.postgres:14] (build-7) Reuse was requested but the environment does not support the reuse of containers
+To enable reuse of containers, you must set 'testcontainers.reuse.enable=true' in a file located at /Users/bhangun/.testcontainers.properties
+2025-12-30 06:11:15,461 INFO  [tc.tes.12.0] (build-7) Creating container for image: testcontainers/ryuk:0.12.0
+2025-12-30 06:11:15,636 INFO  [tc.tes.12.0] (build-7) Container testcontainers/ryuk:0.12.0 is starting: 743cb5907ffa5f2c26db32d0a4c0d73564d2932611a43da1588713d5f234853b
+2025-12-30 06:11:16,217 INFO  [tc.tes.12.0] (build-7) Container testcontainers/ryuk:0.12.0 started in PT0.755752S
+2025-12-30 06:11:16,316 INFO  [tc.postgres:14] (build-7) Container postgres:14 is starting: 503118bd4d9fb3b2441ceb1ca5ab7f240b5d5f01b2895996427d2019ed231374
+2025-12-30 06:11:17,823 INFO  [tc.postgres:14] (build-7) Container postgres:14 started in PT2.602792S
+2025-12-30 06:11:17,824 INFO  [tc.postgres:14] (build-7) Container is started (JDBC URL: jdbc:postgresql://localhost:57477/quarkus?loggerLevel=OFF)
+2025-12-30 06:11:17,824 INFO  [io.qua.dev.pos.dep.PostgresqlDevServicesProcessor] (build-7) Dev Services for PostgreSQL started.
+2025-12-30 06:11:17,825 INFO  [io.qua.dat.dep.dev.DevServicesDatasourceProcessor] (build-7) Dev Services for default datasource (postgresql) started - container ID is 503118bd4d9f
+java.lang.RuntimeException: io.quarkus.builder.BuildException: Build failure: Build failed due to errors
+	[error]: Build step io.quarkus.arc.deployment.ArcProcessor#validate threw an exception: jakarta.enterprise.inject.spi.DeploymentException: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.BeanDeployment.processErrors(BeanDeployment.java:1633)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:341)
+	at io.quarkus.arc.processor.BeanProcessor.initialize(BeanProcessor.java:177)
+	at io.quarkus.arc.deployment.ArcProcessor.validate(ArcProcessor.java:491)
+	at java.base/java.lang.invoke.MethodHandle.invokeWithArguments(MethodHandle.java:733)
+	at io.quarkus.deployment.ExtensionLoader$3.execute(ExtensionLoader.java:872)
+	at io.quarkus.builder.BuildContext.run(BuildContext.java:255)
+	at org.jboss.threads.ContextHandler$1.runWith(ContextHandler.java:18)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	at org.jboss.threads.JBossThread.run(JBossThread.java:501)
+Caused by: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.Beans.resolveInjectionPoint(Beans.java:547)
+	at io.quarkus.arc.processor.BeanInfo.init(BeanInfo.java:693)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:326)
+	... 12 more
+
+	at io.quarkus.runner.bootstrap.AugmentActionImpl.runAugment(AugmentActionImpl.java:388)
+	at io.quarkus.runner.bootstrap.AugmentActionImpl.createInitialRuntimeApplication(AugmentActionImpl.java:305)
+	at io.quarkus.runner.bootstrap.AugmentActionImpl.createInitialRuntimeApplication(AugmentActionImpl.java:61)
+	at io.quarkus.test.junit.AppMakerHelper.getStartupAction(AppMakerHelper.java:253)
+	at io.quarkus.test.junit.classloading.FacadeClassLoader.getOrCreateRuntimeClassLoader(FacadeClassLoader.java:589)
+	at io.quarkus.test.junit.classloading.FacadeClassLoader.getQuarkusClassLoader(FacadeClassLoader.java:486)
+	at io.quarkus.test.junit.classloading.FacadeClassLoader.loadClass(FacadeClassLoader.java:368)
+	at java.base/java.lang.Class.forName0(Native Method)
+	at java.base/java.lang.Class.forName(Class.java:536)
+	at java.base/java.lang.Class.forName(Class.java:515)
+	at org.junit.platform.commons.util.ReflectionUtils.lambda$tryToLoadClass$10(ReflectionUtils.java:886)
+	at org.junit.platform.commons.function.Try.lambda$call$0(Try.java:57)
+	at org.junit.platform.commons.function.Try.of(Try.java:93)
+	at org.junit.platform.commons.function.Try.call(Try.java:57)
+	at org.junit.platform.commons.util.ReflectionUtils.tryToLoadClass(ReflectionUtils.java:873)
+	at org.junit.platform.commons.util.ReflectionUtils.tryToLoadClass(ReflectionUtils.java:810)
+	at org.junit.platform.commons.support.ReflectionSupport.tryToLoadClass(ReflectionSupport.java:94)
+	at org.junit.platform.engine.discovery.ClassSelector.getJavaClass(ClassSelector.java:95)
+	at org.junit.jupiter.engine.discovery.ClassSelectorResolver.resolve(ClassSelectorResolver.java:87)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.lambda$resolve$2(EngineDiscoveryRequestResolution.java:135)
+	at java.base/java.util.stream.ReferencePipeline$3$1.accept(ReferencePipeline.java:197)
+	at java.base/java.util.ArrayList$ArrayListSpliterator.tryAdvance(ArrayList.java:1685)
+	at java.base/java.util.stream.ReferencePipeline.forEachWithCancel(ReferencePipeline.java:129)
+	at java.base/java.util.stream.AbstractPipeline.copyIntoWithCancel(AbstractPipeline.java:527)
+	at java.base/java.util.stream.AbstractPipeline.copyInto(AbstractPipeline.java:513)
+	at java.base/java.util.stream.AbstractPipeline.wrapAndCopyInto(AbstractPipeline.java:499)
+	at java.base/java.util.stream.FindOps$FindOp.evaluateSequential(FindOps.java:150)
+	at java.base/java.util.stream.AbstractPipeline.evaluate(AbstractPipeline.java:234)
+	at java.base/java.util.stream.ReferencePipeline.findFirst(ReferencePipeline.java:647)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.resolve(EngineDiscoveryRequestResolution.java:189)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.resolve(EngineDiscoveryRequestResolution.java:126)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.resolveCompletely(EngineDiscoveryRequestResolution.java:92)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.run(EngineDiscoveryRequestResolution.java:83)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolver.resolve(EngineDiscoveryRequestResolver.java:148)
+	at org.junit.jupiter.engine.discovery.DiscoverySelectorResolver.resolveSelectors(DiscoverySelectorResolver.java:63)
+	at org.junit.jupiter.engine.JupiterTestEngine.discover(JupiterTestEngine.java:70)
+	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discoverEngineRoot(EngineDiscoveryOrchestrator.java:195)
+	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discoverSafely(EngineDiscoveryOrchestrator.java:174)
+	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discover(EngineDiscoveryOrchestrator.java:119)
+	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discover(EngineDiscoveryOrchestrator.java:84)
+	at org.junit.platform.launcher.core.DefaultLauncher.discover(DefaultLauncher.java:104)
+	at org.junit.platform.launcher.core.DefaultLauncher.discover(DefaultLauncher.java:83)
+	at org.junit.platform.launcher.core.DelegatingLauncher.discover(DelegatingLauncher.java:42)
+	at org.junit.platform.launcher.core.InterceptingLauncher.lambda$discover$0(InterceptingLauncher.java:33)
+	at org.junit.platform.launcher.core.ClasspathAlignmentCheckingLauncherInterceptor.intercept(ClasspathAlignmentCheckingLauncherInterceptor.java:25)
+	at org.junit.platform.launcher.core.InterceptingLauncher.discover(InterceptingLauncher.java:33)
+	at org.junit.platform.launcher.core.DelegatingLauncher.discover(DelegatingLauncher.java:42)
+	at org.apache.maven.surefire.junitplatform.LauncherAdapter.discover(LauncherAdapter.java:47)
+	at org.apache.maven.surefire.junitplatform.TestPlanScannerFilter.accept(TestPlanScannerFilter.java:51)
+	at org.apache.maven.surefire.api.util.DefaultScanResult.applyFilter(DefaultScanResult.java:87)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.scanClasspath(JUnitPlatformProvider.java:156)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invoke(JUnitPlatformProvider.java:136)
+	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+Caused by: io.quarkus.builder.BuildException: Build failure: Build failed due to errors
+	[error]: Build step io.quarkus.arc.deployment.ArcProcessor#validate threw an exception: jakarta.enterprise.inject.spi.DeploymentException: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.BeanDeployment.processErrors(BeanDeployment.java:1633)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:341)
+	at io.quarkus.arc.processor.BeanProcessor.initialize(BeanProcessor.java:177)
+	at io.quarkus.arc.deployment.ArcProcessor.validate(ArcProcessor.java:491)
+	at java.base/java.lang.invoke.MethodHandle.invokeWithArguments(MethodHandle.java:733)
+	at io.quarkus.deployment.ExtensionLoader$3.execute(ExtensionLoader.java:872)
+	at io.quarkus.builder.BuildContext.run(BuildContext.java:255)
+	at org.jboss.threads.ContextHandler$1.runWith(ContextHandler.java:18)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	at org.jboss.threads.JBossThread.run(JBossThread.java:501)
+Caused by: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.Beans.resolveInjectionPoint(Beans.java:547)
+	at io.quarkus.arc.processor.BeanInfo.init(BeanInfo.java:693)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:326)
+	... 12 more
+
+	at io.quarkus.builder.Execution.run(Execution.java:139)
+	at io.quarkus.builder.BuildExecutionBuilder.execute(BuildExecutionBuilder.java:78)
+	at io.quarkus.deployment.QuarkusAugmentor.run(QuarkusAugmentor.java:160)
+	at io.quarkus.runner.bootstrap.AugmentActionImpl.runAugment(AugmentActionImpl.java:384)
+	... 55 more
+Caused by: jakarta.enterprise.inject.spi.DeploymentException: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.BeanDeployment.processErrors(BeanDeployment.java:1633)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:341)
+	at io.quarkus.arc.processor.BeanProcessor.initialize(BeanProcessor.java:177)
+	at io.quarkus.arc.deployment.ArcProcessor.validate(ArcProcessor.java:491)
+	at java.base/java.lang.invoke.MethodHandle.invokeWithArguments(MethodHandle.java:733)
+	at io.quarkus.deployment.ExtensionLoader$3.execute(ExtensionLoader.java:872)
+	at io.quarkus.builder.BuildContext.run(BuildContext.java:255)
+	at org.jboss.threads.ContextHandler$1.runWith(ContextHandler.java:18)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	at org.jboss.threads.JBossThread.run(JBossThread.java:501)
+Caused by: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.Beans.resolveInjectionPoint(Beans.java:547)
+	at io.quarkus.arc.processor.BeanInfo.init(BeanInfo.java:693)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:326)
+	... 12 more
+java.lang.RuntimeException: io.quarkus.builder.BuildException: Build failure: Build failed due to errors
+	[error]: Build step io.quarkus.arc.deployment.ArcProcessor#validate threw an exception: jakarta.enterprise.inject.spi.DeploymentException: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.BeanDeployment.processErrors(BeanDeployment.java:1633)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:341)
+	at io.quarkus.arc.processor.BeanProcessor.initialize(BeanProcessor.java:177)
+	at io.quarkus.arc.deployment.ArcProcessor.validate(ArcProcessor.java:491)
+	at java.base/java.lang.invoke.MethodHandle.invokeWithArguments(MethodHandle.java:733)
+	at io.quarkus.deployment.ExtensionLoader$3.execute(ExtensionLoader.java:872)
+	at io.quarkus.builder.BuildContext.run(BuildContext.java:255)
+	at org.jboss.threads.ContextHandler$1.runWith(ContextHandler.java:18)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	at org.jboss.threads.JBossThread.run(JBossThread.java:501)
+Caused by: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.Beans.resolveInjectionPoint(Beans.java:547)
+	at io.quarkus.arc.processor.BeanInfo.init(BeanInfo.java:693)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:326)
+	... 12 more
+
+	at io.quarkus.runner.bootstrap.AugmentActionImpl.runAugment(AugmentActionImpl.java:388)
+	at io.quarkus.runner.bootstrap.AugmentActionImpl.createInitialRuntimeApplication(AugmentActionImpl.java:305)
+	at io.quarkus.runner.bootstrap.AugmentActionImpl.createInitialRuntimeApplication(AugmentActionImpl.java:61)
+	at io.quarkus.test.junit.AppMakerHelper.getStartupAction(AppMakerHelper.java:253)
+	at io.quarkus.test.junit.classloading.FacadeClassLoader.getOrCreateRuntimeClassLoader(FacadeClassLoader.java:589)
+	at io.quarkus.test.junit.classloading.FacadeClassLoader.getQuarkusClassLoader(FacadeClassLoader.java:486)
+	at io.quarkus.test.junit.classloading.FacadeClassLoader.loadClass(FacadeClassLoader.java:368)
+	at java.base/java.lang.Class.forName0(Native Method)
+	at java.base/java.lang.Class.forName(Class.java:536)
+	at java.base/java.lang.Class.forName(Class.java:515)
+	at org.junit.platform.commons.util.ReflectionUtils.lambda$tryToLoadClass$10(ReflectionUtils.java:886)
+	at org.junit.platform.commons.function.Try.lambda$call$0(Try.java:57)
+	at org.junit.platform.commons.function.Try.of(Try.java:93)
+	at org.junit.platform.commons.function.Try.call(Try.java:57)
+	at org.junit.platform.commons.util.ReflectionUtils.tryToLoadClass(ReflectionUtils.java:873)
+	at org.junit.platform.commons.util.ReflectionUtils.tryToLoadClass(ReflectionUtils.java:810)
+	at org.junit.platform.commons.support.ReflectionSupport.tryToLoadClass(ReflectionSupport.java:94)
+	at org.junit.platform.engine.discovery.ClassSelector.getJavaClass(ClassSelector.java:95)
+	at org.junit.jupiter.engine.discovery.ClassSelectorResolver.resolve(ClassSelectorResolver.java:87)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.lambda$resolve$2(EngineDiscoveryRequestResolution.java:135)
+	at java.base/java.util.stream.ReferencePipeline$3$1.accept(ReferencePipeline.java:197)
+	at java.base/java.util.ArrayList$ArrayListSpliterator.tryAdvance(ArrayList.java:1685)
+	at java.base/java.util.stream.ReferencePipeline.forEachWithCancel(ReferencePipeline.java:129)
+	at java.base/java.util.stream.AbstractPipeline.copyIntoWithCancel(AbstractPipeline.java:527)
+	at java.base/java.util.stream.AbstractPipeline.copyInto(AbstractPipeline.java:513)
+	at java.base/java.util.stream.AbstractPipeline.wrapAndCopyInto(AbstractPipeline.java:499)
+	at java.base/java.util.stream.FindOps$FindOp.evaluateSequential(FindOps.java:150)
+	at java.base/java.util.stream.AbstractPipeline.evaluate(AbstractPipeline.java:234)
+	at java.base/java.util.stream.ReferencePipeline.findFirst(ReferencePipeline.java:647)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.resolve(EngineDiscoveryRequestResolution.java:189)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.resolve(EngineDiscoveryRequestResolution.java:126)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.resolveCompletely(EngineDiscoveryRequestResolution.java:92)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.run(EngineDiscoveryRequestResolution.java:83)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolver.resolve(EngineDiscoveryRequestResolver.java:148)
+	at org.junit.jupiter.engine.discovery.DiscoverySelectorResolver.resolveSelectors(DiscoverySelectorResolver.java:63)
+	at org.junit.jupiter.engine.JupiterTestEngine.discover(JupiterTestEngine.java:70)
+	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discoverEngineRoot(EngineDiscoveryOrchestrator.java:195)
+	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discoverSafely(EngineDiscoveryOrchestrator.java:174)
+	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discover(EngineDiscoveryOrchestrator.java:119)
+	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discover(EngineDiscoveryOrchestrator.java:84)
+	at org.junit.platform.launcher.core.DefaultLauncher.discover(DefaultLauncher.java:104)
+	at org.junit.platform.launcher.core.DefaultLauncher.discover(DefaultLauncher.java:83)
+	at org.junit.platform.launcher.core.DelegatingLauncher.discover(DelegatingLauncher.java:42)
+	at org.junit.platform.launcher.core.InterceptingLauncher.lambda$discover$0(InterceptingLauncher.java:33)
+	at org.junit.platform.launcher.core.ClasspathAlignmentCheckingLauncherInterceptor.intercept(ClasspathAlignmentCheckingLauncherInterceptor.java:25)
+	at org.junit.platform.launcher.core.InterceptingLauncher.discover(InterceptingLauncher.java:33)
+	at org.junit.platform.launcher.core.DelegatingLauncher.discover(DelegatingLauncher.java:42)
+	at org.apache.maven.surefire.junitplatform.LauncherAdapter.discover(LauncherAdapter.java:47)
+	at org.apache.maven.surefire.junitplatform.TestPlanScannerFilter.accept(TestPlanScannerFilter.java:51)
+	at org.apache.maven.surefire.api.util.DefaultScanResult.applyFilter(DefaultScanResult.java:87)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.scanClasspath(JUnitPlatformProvider.java:156)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invoke(JUnitPlatformProvider.java:136)
+	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+Caused by: io.quarkus.builder.BuildException: Build failure: Build failed due to errors
+	[error]: Build step io.quarkus.arc.deployment.ArcProcessor#validate threw an exception: jakarta.enterprise.inject.spi.DeploymentException: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.BeanDeployment.processErrors(BeanDeployment.java:1633)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:341)
+	at io.quarkus.arc.processor.BeanProcessor.initialize(BeanProcessor.java:177)
+	at io.quarkus.arc.deployment.ArcProcessor.validate(ArcProcessor.java:491)
+	at java.base/java.lang.invoke.MethodHandle.invokeWithArguments(MethodHandle.java:733)
+	at io.quarkus.deployment.ExtensionLoader$3.execute(ExtensionLoader.java:872)
+	at io.quarkus.builder.BuildContext.run(BuildContext.java:255)
+	at org.jboss.threads.ContextHandler$1.runWith(ContextHandler.java:18)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	at org.jboss.threads.JBossThread.run(JBossThread.java:501)
+Caused by: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.Beans.resolveInjectionPoint(Beans.java:547)
+	at io.quarkus.arc.processor.BeanInfo.init(BeanInfo.java:693)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:326)
+	... 12 more
+
+	at io.quarkus.builder.Execution.run(Execution.java:139)
+	at io.quarkus.builder.BuildExecutionBuilder.execute(BuildExecutionBuilder.java:78)
+	at io.quarkus.deployment.QuarkusAugmentor.run(QuarkusAugmentor.java:160)
+	at io.quarkus.runner.bootstrap.AugmentActionImpl.runAugment(AugmentActionImpl.java:384)
+	... 55 more
+Caused by: jakarta.enterprise.inject.spi.DeploymentException: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.BeanDeployment.processErrors(BeanDeployment.java:1633)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:341)
+	at io.quarkus.arc.processor.BeanProcessor.initialize(BeanProcessor.java:177)
+	at io.quarkus.arc.deployment.ArcProcessor.validate(ArcProcessor.java:491)
+	at java.base/java.lang.invoke.MethodHandle.invokeWithArguments(MethodHandle.java:733)
+	at io.quarkus.deployment.ExtensionLoader$3.execute(ExtensionLoader.java:872)
+	at io.quarkus.builder.BuildContext.run(BuildContext.java:255)
+	at org.jboss.threads.ContextHandler$1.runWith(ContextHandler.java:18)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	at org.jboss.threads.JBossThread.run(JBossThread.java:501)
+Caused by: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.Beans.resolveInjectionPoint(Beans.java:547)
+	at io.quarkus.arc.processor.BeanInfo.init(BeanInfo.java:693)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:326)
+	... 12 more
+2025-12-30 06:11:17,851 SEVERE [org.jun.pla.lau.cor.DiscoveryIssueNotifier] (main) TestEngine with ID 'junit-jupiter' encountered a critical issue during test discovery:
+
+(1) [ERROR] ClassSelector [className = 'tech.kayys.wayang.workflow.security.SecurityComponentsTest', classLoader = null] resolution failed
+    Source: ClassSource [className = 'tech.kayys.wayang.workflow.security.SecurityComponentsTest', filePosition = null]
+            at tech.kayys.wayang.workflow.security.SecurityComponentsTest.<no-method>(SourceFile:0)
+    Cause: org.junit.platform.commons.PreconditionViolationException: Could not load class with name: tech.kayys.wayang.workflow.security.SecurityComponentsTest
+	at org.junit.platform.engine.discovery.ClassSelector.lambda$getJavaClass$0(ClassSelector.java:98)
+	at org.junit.platform.commons.function.Try$Failure.getOrThrow(Try.java:335)
+	at org.junit.platform.engine.discovery.ClassSelector.getJavaClass(ClassSelector.java:97)
+	at org.junit.jupiter.engine.discovery.ClassSelectorResolver.resolve(ClassSelectorResolver.java:87)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.lambda$resolve$2(EngineDiscoveryRequestResolution.java:135)
+	at java.base/java.util.stream.ReferencePipeline$3$1.accept(ReferencePipeline.java:197)
+	at java.base/java.util.ArrayList$ArrayListSpliterator.tryAdvance(ArrayList.java:1685)
+	at java.base/java.util.stream.ReferencePipeline.forEachWithCancel(ReferencePipeline.java:129)
+	at java.base/java.util.stream.AbstractPipeline.copyIntoWithCancel(AbstractPipeline.java:527)
+	at java.base/java.util.stream.AbstractPipeline.copyInto(AbstractPipeline.java:513)
+	at java.base/java.util.stream.AbstractPipeline.wrapAndCopyInto(AbstractPipeline.java:499)
+	at java.base/java.util.stream.FindOps$FindOp.evaluateSequential(FindOps.java:150)
+	at java.base/java.util.stream.AbstractPipeline.evaluate(AbstractPipeline.java:234)
+	at java.base/java.util.stream.ReferencePipeline.findFirst(ReferencePipeline.java:647)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.resolve(EngineDiscoveryRequestResolution.java:189)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.resolve(EngineDiscoveryRequestResolution.java:126)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.resolveCompletely(EngineDiscoveryRequestResolution.java:92)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.run(EngineDiscoveryRequestResolution.java:83)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolver.resolve(EngineDiscoveryRequestResolver.java:148)
+	at org.junit.jupiter.engine.discovery.DiscoverySelectorResolver.resolveSelectors(DiscoverySelectorResolver.java:63)
+	at org.junit.jupiter.engine.JupiterTestEngine.discover(JupiterTestEngine.java:70)
+	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discoverEngineRoot(EngineDiscoveryOrchestrator.java:195)
+	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discoverSafely(EngineDiscoveryOrchestrator.java:174)
+	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discover(EngineDiscoveryOrchestrator.java:119)
+	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discover(EngineDiscoveryOrchestrator.java:84)
+	at org.junit.platform.launcher.core.DefaultLauncher.discover(DefaultLauncher.java:104)
+	at org.junit.platform.launcher.core.DefaultLauncher.discover(DefaultLauncher.java:83)
+	at org.junit.platform.launcher.core.DelegatingLauncher.discover(DelegatingLauncher.java:42)
+	at org.junit.platform.launcher.core.InterceptingLauncher.lambda$discover$0(InterceptingLauncher.java:33)
+	at org.junit.platform.launcher.core.ClasspathAlignmentCheckingLauncherInterceptor.intercept(ClasspathAlignmentCheckingLauncherInterceptor.java:25)
+	at org.junit.platform.launcher.core.InterceptingLauncher.discover(InterceptingLauncher.java:33)
+	at org.junit.platform.launcher.core.DelegatingLauncher.discover(DelegatingLauncher.java:42)
+	at org.apache.maven.surefire.junitplatform.LauncherAdapter.discover(LauncherAdapter.java:47)
+	at org.apache.maven.surefire.junitplatform.TestPlanScannerFilter.accept(TestPlanScannerFilter.java:51)
+	at org.apache.maven.surefire.api.util.DefaultScanResult.applyFilter(DefaultScanResult.java:87)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.scanClasspath(JUnitPlatformProvider.java:156)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invoke(JUnitPlatformProvider.java:136)
+	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+Caused by: java.lang.RuntimeException: io.quarkus.builder.BuildException: Build failure: Build failed due to errors
+	[error]: Build step io.quarkus.arc.deployment.ArcProcessor#validate threw an exception: jakarta.enterprise.inject.spi.DeploymentException: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.BeanDeployment.processErrors(BeanDeployment.java:1633)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:341)
+	at io.quarkus.arc.processor.BeanProcessor.initialize(BeanProcessor.java:177)
+	at io.quarkus.arc.deployment.ArcProcessor.validate(ArcProcessor.java:491)
+	at java.base/java.lang.invoke.MethodHandle.invokeWithArguments(MethodHandle.java:733)
+	at io.quarkus.deployment.ExtensionLoader$3.execute(ExtensionLoader.java:872)
+	at io.quarkus.builder.BuildContext.run(BuildContext.java:255)
+	at org.jboss.threads.ContextHandler$1.runWith(ContextHandler.java:18)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	at org.jboss.threads.JBossThread.run(JBossThread.java:501)
+Caused by: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.Beans.resolveInjectionPoint(Beans.java:547)
+	at io.quarkus.arc.processor.BeanInfo.init(BeanInfo.java:693)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:326)
+	... 12 more
+
+	at io.quarkus.runner.bootstrap.AugmentActionImpl.runAugment(AugmentActionImpl.java:388)
+	at io.quarkus.runner.bootstrap.AugmentActionImpl.createInitialRuntimeApplication(AugmentActionImpl.java:305)
+	at io.quarkus.runner.bootstrap.AugmentActionImpl.createInitialRuntimeApplication(AugmentActionImpl.java:61)
+	at io.quarkus.test.junit.AppMakerHelper.getStartupAction(AppMakerHelper.java:253)
+	at io.quarkus.test.junit.classloading.FacadeClassLoader.getOrCreateRuntimeClassLoader(FacadeClassLoader.java:589)
+	at io.quarkus.test.junit.classloading.FacadeClassLoader.getQuarkusClassLoader(FacadeClassLoader.java:486)
+	at io.quarkus.test.junit.classloading.FacadeClassLoader.loadClass(FacadeClassLoader.java:368)
+	at java.base/java.lang.Class.forName0(Native Method)
+	at java.base/java.lang.Class.forName(Class.java:536)
+	at java.base/java.lang.Class.forName(Class.java:515)
+	at org.junit.platform.commons.util.ReflectionUtils.lambda$tryToLoadClass$10(ReflectionUtils.java:886)
+	at org.junit.platform.commons.function.Try.lambda$call$0(Try.java:57)
+	at org.junit.platform.commons.function.Try.of(Try.java:93)
+	at org.junit.platform.commons.function.Try.call(Try.java:57)
+	at org.junit.platform.commons.util.ReflectionUtils.tryToLoadClass(ReflectionUtils.java:873)
+	at org.junit.platform.commons.util.ReflectionUtils.tryToLoadClass(ReflectionUtils.java:810)
+	at org.junit.platform.commons.support.ReflectionSupport.tryToLoadClass(ReflectionSupport.java:94)
+	at org.junit.platform.engine.discovery.ClassSelector.getJavaClass(ClassSelector.java:95)
+	... 38 more
+Caused by: io.quarkus.builder.BuildException: Build failure: Build failed due to errors
+	[error]: Build step io.quarkus.arc.deployment.ArcProcessor#validate threw an exception: jakarta.enterprise.inject.spi.DeploymentException: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.BeanDeployment.processErrors(BeanDeployment.java:1633)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:341)
+	at io.quarkus.arc.processor.BeanProcessor.initialize(BeanProcessor.java:177)
+	at io.quarkus.arc.deployment.ArcProcessor.validate(ArcProcessor.java:491)
+	at java.base/java.lang.invoke.MethodHandle.invokeWithArguments(MethodHandle.java:733)
+	at io.quarkus.deployment.ExtensionLoader$3.execute(ExtensionLoader.java:872)
+	at io.quarkus.builder.BuildContext.run(BuildContext.java:255)
+	at org.jboss.threads.ContextHandler$1.runWith(ContextHandler.java:18)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	at org.jboss.threads.JBossThread.run(JBossThread.java:501)
+Caused by: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.Beans.resolveInjectionPoint(Beans.java:547)
+	at io.quarkus.arc.processor.BeanInfo.init(BeanInfo.java:693)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:326)
+	... 12 more
+
+	at io.quarkus.builder.Execution.run(Execution.java:139)
+	at io.quarkus.builder.BuildExecutionBuilder.execute(BuildExecutionBuilder.java:78)
+	at io.quarkus.deployment.QuarkusAugmentor.run(QuarkusAugmentor.java:160)
+	at io.quarkus.runner.bootstrap.AugmentActionImpl.runAugment(AugmentActionImpl.java:384)
+	... 55 more
+Caused by: jakarta.enterprise.inject.spi.DeploymentException: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.BeanDeployment.processErrors(BeanDeployment.java:1633)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:341)
+	at io.quarkus.arc.processor.BeanProcessor.initialize(BeanProcessor.java:177)
+	at io.quarkus.arc.deployment.ArcProcessor.validate(ArcProcessor.java:491)
+	at java.base/java.lang.invoke.MethodHandle.invokeWithArguments(MethodHandle.java:733)
+	at io.quarkus.deployment.ExtensionLoader$3.execute(ExtensionLoader.java:872)
+	at io.quarkus.builder.BuildContext.run(BuildContext.java:255)
+	at org.jboss.threads.ContextHandler$1.runWith(ContextHandler.java:18)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	at org.jboss.threads.JBossThread.run(JBossThread.java:501)
+Caused by: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.Beans.resolveInjectionPoint(Beans.java:547)
+	at io.quarkus.arc.processor.BeanInfo.init(BeanInfo.java:693)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:326)
+	... 12 more
+
+[ERROR] TestEngine with ID 'junit-jupiter' encountered a critical issue during test discovery:
+
+(1) [ERROR] ClassSelector [className = 'tech.kayys.wayang.workflow.security.SecurityComponentsTest', classLoader = null] resolution failed
+    Source: ClassSource [className = 'tech.kayys.wayang.workflow.security.SecurityComponentsTest', filePosition = null]
+            at tech.kayys.wayang.workflow.security.SecurityComponentsTest.<no-method>(SourceFile:0)
+    Cause: org.junit.platform.commons.PreconditionViolationException: Could not load class with name: tech.kayys.wayang.workflow.security.SecurityComponentsTest
+	at org.junit.platform.engine.discovery.ClassSelector.lambda$getJavaClass$0(ClassSelector.java:98)
+	at org.junit.platform.commons.function.Try$Failure.getOrThrow(Try.java:335)
+	at org.junit.platform.engine.discovery.ClassSelector.getJavaClass(ClassSelector.java:97)
+	at org.junit.jupiter.engine.discovery.ClassSelectorResolver.resolve(ClassSelectorResolver.java:87)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.lambda$resolve$2(EngineDiscoveryRequestResolution.java:135)
+	at java.base/java.util.stream.ReferencePipeline$3$1.accept(ReferencePipeline.java:197)
+	at java.base/java.util.ArrayList$ArrayListSpliterator.tryAdvance(ArrayList.java:1685)
+	at java.base/java.util.stream.ReferencePipeline.forEachWithCancel(ReferencePipeline.java:129)
+	at java.base/java.util.stream.AbstractPipeline.copyIntoWithCancel(AbstractPipeline.java:527)
+	at java.base/java.util.stream.AbstractPipeline.copyInto(AbstractPipeline.java:513)
+	at java.base/java.util.stream.AbstractPipeline.wrapAndCopyInto(AbstractPipeline.java:499)
+	at java.base/java.util.stream.FindOps$FindOp.evaluateSequential(FindOps.java:150)
+	at java.base/java.util.stream.AbstractPipeline.evaluate(AbstractPipeline.java:234)
+	at java.base/java.util.stream.ReferencePipeline.findFirst(ReferencePipeline.java:647)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.resolve(EngineDiscoveryRequestResolution.java:189)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.resolve(EngineDiscoveryRequestResolution.java:126)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.resolveCompletely(EngineDiscoveryRequestResolution.java:92)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.run(EngineDiscoveryRequestResolution.java:83)
+	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolver.resolve(EngineDiscoveryRequestResolver.java:148)
+	at org.junit.jupiter.engine.discovery.DiscoverySelectorResolver.resolveSelectors(DiscoverySelectorResolver.java:63)
+	at org.junit.jupiter.engine.JupiterTestEngine.discover(JupiterTestEngine.java:70)
+	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discoverEngineRoot(EngineDiscoveryOrchestrator.java:195)
+	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discoverSafely(EngineDiscoveryOrchestrator.java:174)
+	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discover(EngineDiscoveryOrchestrator.java:119)
+	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discover(EngineDiscoveryOrchestrator.java:84)
+	at org.junit.platform.launcher.core.DefaultLauncher.discover(DefaultLauncher.java:104)
+	at org.junit.platform.launcher.core.DefaultLauncher.discover(DefaultLauncher.java:83)
+	at org.junit.platform.launcher.core.DelegatingLauncher.discover(DelegatingLauncher.java:42)
+	at org.junit.platform.launcher.core.InterceptingLauncher.lambda$discover$0(InterceptingLauncher.java:33)
+	at org.junit.platform.launcher.core.ClasspathAlignmentCheckingLauncherInterceptor.intercept(ClasspathAlignmentCheckingLauncherInterceptor.java:25)
+	at org.junit.platform.launcher.core.InterceptingLauncher.discover(InterceptingLauncher.java:33)
+	at org.junit.platform.launcher.core.DelegatingLauncher.discover(DelegatingLauncher.java:42)
+	at org.apache.maven.surefire.junitplatform.LauncherAdapter.discover(LauncherAdapter.java:47)
+	at org.apache.maven.surefire.junitplatform.TestPlanScannerFilter.accept(TestPlanScannerFilter.java:51)
+	at org.apache.maven.surefire.api.util.DefaultScanResult.applyFilter(DefaultScanResult.java:87)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.scanClasspath(JUnitPlatformProvider.java:156)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invoke(JUnitPlatformProvider.java:136)
+	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+Caused by: java.lang.RuntimeException: io.quarkus.builder.BuildException: Build failure: Build failed due to errors
+	[error]: Build step io.quarkus.arc.deployment.ArcProcessor#validate threw an exception: jakarta.enterprise.inject.spi.DeploymentException: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.BeanDeployment.processErrors(BeanDeployment.java:1633)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:341)
+	at io.quarkus.arc.processor.BeanProcessor.initialize(BeanProcessor.java:177)
+	at io.quarkus.arc.deployment.ArcProcessor.validate(ArcProcessor.java:491)
+	at java.base/java.lang.invoke.MethodHandle.invokeWithArguments(MethodHandle.java:733)
+	at io.quarkus.deployment.ExtensionLoader$3.execute(ExtensionLoader.java:872)
+	at io.quarkus.builder.BuildContext.run(BuildContext.java:255)
+	at org.jboss.threads.ContextHandler$1.runWith(ContextHandler.java:18)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	at org.jboss.threads.JBossThread.run(JBossThread.java:501)
+Caused by: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.Beans.resolveInjectionPoint(Beans.java:547)
+	at io.quarkus.arc.processor.BeanInfo.init(BeanInfo.java:693)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:326)
+	... 12 more
+
+	at io.quarkus.runner.bootstrap.AugmentActionImpl.runAugment(AugmentActionImpl.java:388)
+	at io.quarkus.runner.bootstrap.AugmentActionImpl.createInitialRuntimeApplication(AugmentActionImpl.java:305)
+	at io.quarkus.runner.bootstrap.AugmentActionImpl.createInitialRuntimeApplication(AugmentActionImpl.java:61)
+	at io.quarkus.test.junit.AppMakerHelper.getStartupAction(AppMakerHelper.java:253)
+	at io.quarkus.test.junit.classloading.FacadeClassLoader.getOrCreateRuntimeClassLoader(FacadeClassLoader.java:589)
+	at io.quarkus.test.junit.classloading.FacadeClassLoader.getQuarkusClassLoader(FacadeClassLoader.java:486)
+	at io.quarkus.test.junit.classloading.FacadeClassLoader.loadClass(FacadeClassLoader.java:368)
+	at java.base/java.lang.Class.forName0(Native Method)
+	at java.base/java.lang.Class.forName(Class.java:536)
+	at java.base/java.lang.Class.forName(Class.java:515)
+	at org.junit.platform.commons.util.ReflectionUtils.lambda$tryToLoadClass$10(ReflectionUtils.java:886)
+	at org.junit.platform.commons.function.Try.lambda$call$0(Try.java:57)
+	at org.junit.platform.commons.function.Try.of(Try.java:93)
+	at org.junit.platform.commons.function.Try.call(Try.java:57)
+	at org.junit.platform.commons.util.ReflectionUtils.tryToLoadClass(ReflectionUtils.java:873)
+	at org.junit.platform.commons.util.ReflectionUtils.tryToLoadClass(ReflectionUtils.java:810)
+	at org.junit.platform.commons.support.ReflectionSupport.tryToLoadClass(ReflectionSupport.java:94)
+	at org.junit.platform.engine.discovery.ClassSelector.getJavaClass(ClassSelector.java:95)
+	... 38 more
+Caused by: io.quarkus.builder.BuildException: Build failure: Build failed due to errors
+	[error]: Build step io.quarkus.arc.deployment.ArcProcessor#validate threw an exception: jakarta.enterprise.inject.spi.DeploymentException: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.BeanDeployment.processErrors(BeanDeployment.java:1633)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:341)
+	at io.quarkus.arc.processor.BeanProcessor.initialize(BeanProcessor.java:177)
+	at io.quarkus.arc.deployment.ArcProcessor.validate(ArcProcessor.java:491)
+	at java.base/java.lang.invoke.MethodHandle.invokeWithArguments(MethodHandle.java:733)
+	at io.quarkus.deployment.ExtensionLoader$3.execute(ExtensionLoader.java:872)
+	at io.quarkus.builder.BuildContext.run(BuildContext.java:255)
+	at org.jboss.threads.ContextHandler$1.runWith(ContextHandler.java:18)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	at org.jboss.threads.JBossThread.run(JBossThread.java:501)
+Caused by: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.Beans.resolveInjectionPoint(Beans.java:547)
+	at io.quarkus.arc.processor.BeanInfo.init(BeanInfo.java:693)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:326)
+	... 12 more
+
+	at io.quarkus.builder.Execution.run(Execution.java:139)
+	at io.quarkus.builder.BuildExecutionBuilder.execute(BuildExecutionBuilder.java:78)
+	at io.quarkus.deployment.QuarkusAugmentor.run(QuarkusAugmentor.java:160)
+	at io.quarkus.runner.bootstrap.AugmentActionImpl.runAugment(AugmentActionImpl.java:384)
+	... 55 more
+Caused by: jakarta.enterprise.inject.spi.DeploymentException: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.BeanDeployment.processErrors(BeanDeployment.java:1633)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:341)
+	at io.quarkus.arc.processor.BeanProcessor.initialize(BeanProcessor.java:177)
+	at io.quarkus.arc.deployment.ArcProcessor.validate(ArcProcessor.java:491)
+	at java.base/java.lang.invoke.MethodHandle.invokeWithArguments(MethodHandle.java:733)
+	at io.quarkus.deployment.ExtensionLoader$3.execute(ExtensionLoader.java:872)
+	at io.quarkus.builder.BuildContext.run(BuildContext.java:255)
+	at org.jboss.threads.ContextHandler$1.runWith(ContextHandler.java:18)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+	at org.jboss.threads.JBossThread.run(JBossThread.java:501)
+Caused by: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+	at io.quarkus.arc.processor.Beans.resolveInjectionPoint(Beans.java:547)
+	at io.quarkus.arc.processor.BeanInfo.init(BeanInfo.java:693)
+	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:326)
+	... 12 more
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  25.947 s
+[INFO] Finished at: 2025-12-30T06:11:17+07:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.4:test (default-test) on project wayang-workflow-engine: 
+[ERROR] 
+[ERROR] See /Users/bhangun/Workspace/workkayys/Products/Wayang/Backend/wayang/wayang-services/wayang-workflow-engine/target/surefire-reports for the individual test results.
+[ERROR] See dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] There was an error in the forked process
+[ERROR] TestEngine with ID 'junit-jupiter' encountered a critical issue during test discovery:
+[ERROR] 
+[ERROR] (1) [ERROR] ClassSelector [className = 'tech.kayys.wayang.workflow.security.SecurityComponentsTest', classLoader = null] resolution failed
+[ERROR]     Source: ClassSource [className = 'tech.kayys.wayang.workflow.security.SecurityComponentsTest', filePosition = null]
+[ERROR]             at tech.kayys.wayang.workflow.security.SecurityComponentsTest.<no-method>(SourceFile:0)
+[ERROR]     Cause: org.junit.platform.commons.PreconditionViolationException: Could not load class with name: tech.kayys.wayang.workflow.security.SecurityComponentsTest
+[ERROR] 	at org.junit.platform.engine.discovery.ClassSelector.lambda$getJavaClass$0(ClassSelector.java:98)
+[ERROR] 	at org.junit.platform.commons.function.Try$Failure.getOrThrow(Try.java:335)
+[ERROR] 	at org.junit.platform.engine.discovery.ClassSelector.getJavaClass(ClassSelector.java:97)
+[ERROR] 	at org.junit.jupiter.engine.discovery.ClassSelectorResolver.resolve(ClassSelectorResolver.java:87)
+[ERROR] 	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.lambda$resolve$2(EngineDiscoveryRequestResolution.java:135)
+[ERROR] 	at java.base/java.util.stream.ReferencePipeline$3$1.accept(ReferencePipeline.java:197)
+[ERROR] 	at java.base/java.util.ArrayList$ArrayListSpliterator.tryAdvance(ArrayList.java:1685)
+[ERROR] 	at java.base/java.util.stream.ReferencePipeline.forEachWithCancel(ReferencePipeline.java:129)
+[ERROR] 	at java.base/java.util.stream.AbstractPipeline.copyIntoWithCancel(AbstractPipeline.java:527)
+[ERROR] 	at java.base/java.util.stream.AbstractPipeline.copyInto(AbstractPipeline.java:513)
+[ERROR] 	at java.base/java.util.stream.AbstractPipeline.wrapAndCopyInto(AbstractPipeline.java:499)
+[ERROR] 	at java.base/java.util.stream.FindOps$FindOp.evaluateSequential(FindOps.java:150)
+[ERROR] 	at java.base/java.util.stream.AbstractPipeline.evaluate(AbstractPipeline.java:234)
+[ERROR] 	at java.base/java.util.stream.ReferencePipeline.findFirst(ReferencePipeline.java:647)
+[ERROR] 	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.resolve(EngineDiscoveryRequestResolution.java:189)
+[ERROR] 	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.resolve(EngineDiscoveryRequestResolution.java:126)
+[ERROR] 	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.resolveCompletely(EngineDiscoveryRequestResolution.java:92)
+[ERROR] 	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.run(EngineDiscoveryRequestResolution.java:83)
+[ERROR] 	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolver.resolve(EngineDiscoveryRequestResolver.java:148)
+[ERROR] 	at org.junit.jupiter.engine.discovery.DiscoverySelectorResolver.resolveSelectors(DiscoverySelectorResolver.java:63)
+[ERROR] 	at org.junit.jupiter.engine.JupiterTestEngine.discover(JupiterTestEngine.java:70)
+[ERROR] 	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discoverEngineRoot(EngineDiscoveryOrchestrator.java:195)
+[ERROR] 	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discoverSafely(EngineDiscoveryOrchestrator.java:174)
+[ERROR] 	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discover(EngineDiscoveryOrchestrator.java:119)
+[ERROR] 	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discover(EngineDiscoveryOrchestrator.java:84)
+[ERROR] 	at org.junit.platform.launcher.core.DefaultLauncher.discover(DefaultLauncher.java:104)
+[ERROR] 	at org.junit.platform.launcher.core.DefaultLauncher.discover(DefaultLauncher.java:83)
+[ERROR] 	at org.junit.platform.launcher.core.DelegatingLauncher.discover(DelegatingLauncher.java:42)
+[ERROR] 	at org.junit.platform.launcher.core.InterceptingLauncher.lambda$discover$0(InterceptingLauncher.java:33)
+[ERROR] 	at org.junit.platform.launcher.core.ClasspathAlignmentCheckingLauncherInterceptor.intercept(ClasspathAlignmentCheckingLauncherInterceptor.java:25)
+[ERROR] 	at org.junit.platform.launcher.core.InterceptingLauncher.discover(InterceptingLauncher.java:33)
+[ERROR] 	at org.junit.platform.launcher.core.DelegatingLauncher.discover(DelegatingLauncher.java:42)
+[ERROR] 	at org.apache.maven.surefire.junitplatform.LauncherAdapter.discover(LauncherAdapter.java:47)
+[ERROR] 	at org.apache.maven.surefire.junitplatform.TestPlanScannerFilter.accept(TestPlanScannerFilter.java:51)
+[ERROR] 	at org.apache.maven.surefire.api.util.DefaultScanResult.applyFilter(DefaultScanResult.java:87)
+[ERROR] 	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.scanClasspath(JUnitPlatformProvider.java:156)
+[ERROR] 	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invoke(JUnitPlatformProvider.java:136)
+[ERROR] 	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+[ERROR] 	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+[ERROR] 	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+[ERROR] 	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+[ERROR] Caused by: java.lang.RuntimeException: io.quarkus.builder.BuildException: Build failure: Build failed due to errors
+[ERROR] 	[error]: Build step io.quarkus.arc.deployment.ArcProcessor#validate threw an exception: jakarta.enterprise.inject.spi.DeploymentException: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+[ERROR] 	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+[ERROR] 	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+[ERROR] 	at io.quarkus.arc.processor.BeanDeployment.processErrors(BeanDeployment.java:1633)
+[ERROR] 	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:341)
+[ERROR] 	at io.quarkus.arc.processor.BeanProcessor.initialize(BeanProcessor.java:177)
+[ERROR] 	at io.quarkus.arc.deployment.ArcProcessor.validate(ArcProcessor.java:491)
+[ERROR] 	at java.base/java.lang.invoke.MethodHandle.invokeWithArguments(MethodHandle.java:733)
+[ERROR] 	at io.quarkus.deployment.ExtensionLoader$3.execute(ExtensionLoader.java:872)
+[ERROR] 	at io.quarkus.builder.BuildContext.run(BuildContext.java:255)
+[ERROR] 	at org.jboss.threads.ContextHandler$1.runWith(ContextHandler.java:18)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+[ERROR] 	at java.base/java.lang.Thread.run(Thread.java:1583)
+[ERROR] 	at org.jboss.threads.JBossThread.run(JBossThread.java:501)
+[ERROR] Caused by: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+[ERROR] 	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+[ERROR] 	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+[ERROR] 	at io.quarkus.arc.processor.Beans.resolveInjectionPoint(Beans.java:547)
+[ERROR] 	at io.quarkus.arc.processor.BeanInfo.init(BeanInfo.java:693)
+[ERROR] 	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:326)
+[ERROR] 	... 12 more
+[ERROR] 
+[ERROR] 	at io.quarkus.runner.bootstrap.AugmentActionImpl.runAugment(AugmentActionImpl.java:388)
+[ERROR] 	at io.quarkus.runner.bootstrap.AugmentActionImpl.createInitialRuntimeApplication(AugmentActionImpl.java:305)
+[ERROR] 	at io.quarkus.runner.bootstrap.AugmentActionImpl.createInitialRuntimeApplication(AugmentActionImpl.java:61)
+[ERROR] 	at io.quarkus.test.junit.AppMakerHelper.getStartupAction(AppMakerHelper.java:253)
+[ERROR] 	at io.quarkus.test.junit.classloading.FacadeClassLoader.getOrCreateRuntimeClassLoader(FacadeClassLoader.java:589)
+[ERROR] 	at io.quarkus.test.junit.classloading.FacadeClassLoader.getQuarkusClassLoader(FacadeClassLoader.java:486)
+[ERROR] 	at io.quarkus.test.junit.classloading.FacadeClassLoader.loadClass(FacadeClassLoader.java:368)
+[ERROR] 	at java.base/java.lang.Class.forName0(Native Method)
+[ERROR] 	at java.base/java.lang.Class.forName(Class.java:536)
+[ERROR] 	at java.base/java.lang.Class.forName(Class.java:515)
+[ERROR] 	at org.junit.platform.commons.util.ReflectionUtils.lambda$tryToLoadClass$10(ReflectionUtils.java:886)
+[ERROR] 	at org.junit.platform.commons.function.Try.lambda$call$0(Try.java:57)
+[ERROR] 	at org.junit.platform.commons.function.Try.of(Try.java:93)
+[ERROR] 	at org.junit.platform.commons.function.Try.call(Try.java:57)
+[ERROR] 	at org.junit.platform.commons.util.ReflectionUtils.tryToLoadClass(ReflectionUtils.java:873)
+[ERROR] 	at org.junit.platform.commons.util.ReflectionUtils.tryToLoadClass(ReflectionUtils.java:810)
+[ERROR] 	at org.junit.platform.commons.support.ReflectionSupport.tryToLoadClass(ReflectionSupport.java:94)
+[ERROR] 	at org.junit.platform.engine.discovery.ClassSelector.getJavaClass(ClassSelector.java:95)
+[ERROR] 	... 38 more
+[ERROR] Caused by: io.quarkus.builder.BuildException: Build failure: Build failed due to errors
+[ERROR] 	[error]: Build step io.quarkus.arc.deployment.ArcProcessor#validate threw an exception: jakarta.enterprise.inject.spi.DeploymentException: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+[ERROR] 	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+[ERROR] 	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+[ERROR] 	at io.quarkus.arc.processor.BeanDeployment.processErrors(BeanDeployment.java:1633)
+[ERROR] 	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:341)
+[ERROR] 	at io.quarkus.arc.processor.BeanProcessor.initialize(BeanProcessor.java:177)
+[ERROR] 	at io.quarkus.arc.deployment.ArcProcessor.validate(ArcProcessor.java:491)
+[ERROR] 	at java.base/java.lang.invoke.MethodHandle.invokeWithArguments(MethodHandle.java:733)
+[ERROR] 	at io.quarkus.deployment.ExtensionLoader$3.execute(ExtensionLoader.java:872)
+[ERROR] 	at io.quarkus.builder.BuildContext.run(BuildContext.java:255)
+[ERROR] 	at org.jboss.threads.ContextHandler$1.runWith(ContextHandler.java:18)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+[ERROR] 	at java.base/java.lang.Thread.run(Thread.java:1583)
+[ERROR] 	at org.jboss.threads.JBossThread.run(JBossThread.java:501)
+[ERROR] Caused by: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+[ERROR] 	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+[ERROR] 	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+[ERROR] 	at io.quarkus.arc.processor.Beans.resolveInjectionPoint(Beans.java:547)
+[ERROR] 	at io.quarkus.arc.processor.BeanInfo.init(BeanInfo.java:693)
+[ERROR] 	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:326)
+[ERROR] 	... 12 more
+[ERROR] 
+[ERROR] 	at io.quarkus.builder.Execution.run(Execution.java:139)
+[ERROR] 	at io.quarkus.builder.BuildExecutionBuilder.execute(BuildExecutionBuilder.java:78)
+[ERROR] 	at io.quarkus.deployment.QuarkusAugmentor.run(QuarkusAugmentor.java:160)
+[ERROR] 	at io.quarkus.runner.bootstrap.AugmentActionImpl.runAugment(AugmentActionImpl.java:384)
+[ERROR] 	... 55 more
+[ERROR] Caused by: jakarta.enterprise.inject.spi.DeploymentException: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+[ERROR] 	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+[ERROR] 	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+[ERROR] 	at io.quarkus.arc.processor.BeanDeployment.processErrors(BeanDeployment.java:1633)
+[ERROR] 	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:341)
+[ERROR] 	at io.quarkus.arc.processor.BeanProcessor.initialize(BeanProcessor.java:177)
+[ERROR] 	at io.quarkus.arc.deployment.ArcProcessor.validate(ArcProcessor.java:491)
+[ERROR] 	at java.base/java.lang.invoke.MethodHandle.invokeWithArguments(MethodHandle.java:733)
+[ERROR] 	at io.quarkus.deployment.ExtensionLoader$3.execute(ExtensionLoader.java:872)
+[ERROR] 	at io.quarkus.builder.BuildContext.run(BuildContext.java:255)
+[ERROR] 	at org.jboss.threads.ContextHandler$1.runWith(ContextHandler.java:18)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+[ERROR] 	at java.base/java.lang.Thread.run(Thread.java:1583)
+[ERROR] 	at org.jboss.threads.JBossThread.run(JBossThread.java:501)
+[ERROR] Caused by: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+[ERROR] 	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+[ERROR] 	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+[ERROR] 	at io.quarkus.arc.processor.Beans.resolveInjectionPoint(Beans.java:547)
+[ERROR] 	at io.quarkus.arc.processor.BeanInfo.init(BeanInfo.java:693)
+[ERROR] 	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:326)
+[ERROR] 	... 12 more
+[ERROR] 
+[ERROR] org.apache.maven.surefire.booter.SurefireBooterForkException: There was an error in the forked process
+[ERROR] TestEngine with ID 'junit-jupiter' encountered a critical issue during test discovery:
+[ERROR] 
+[ERROR] (1) [ERROR] ClassSelector [className = 'tech.kayys.wayang.workflow.security.SecurityComponentsTest', classLoader = null] resolution failed
+[ERROR]     Source: ClassSource [className = 'tech.kayys.wayang.workflow.security.SecurityComponentsTest', filePosition = null]
+[ERROR]             at tech.kayys.wayang.workflow.security.SecurityComponentsTest.<no-method>(SourceFile:0)
+[ERROR]     Cause: org.junit.platform.commons.PreconditionViolationException: Could not load class with name: tech.kayys.wayang.workflow.security.SecurityComponentsTest
+[ERROR] 	at org.junit.platform.engine.discovery.ClassSelector.lambda$getJavaClass$0(ClassSelector.java:98)
+[ERROR] 	at org.junit.platform.commons.function.Try$Failure.getOrThrow(Try.java:335)
+[ERROR] 	at org.junit.platform.engine.discovery.ClassSelector.getJavaClass(ClassSelector.java:97)
+[ERROR] 	at org.junit.jupiter.engine.discovery.ClassSelectorResolver.resolve(ClassSelectorResolver.java:87)
+[ERROR] 	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.lambda$resolve$2(EngineDiscoveryRequestResolution.java:135)
+[ERROR] 	at java.base/java.util.stream.ReferencePipeline$3$1.accept(ReferencePipeline.java:197)
+[ERROR] 	at java.base/java.util.ArrayList$ArrayListSpliterator.tryAdvance(ArrayList.java:1685)
+[ERROR] 	at java.base/java.util.stream.ReferencePipeline.forEachWithCancel(ReferencePipeline.java:129)
+[ERROR] 	at java.base/java.util.stream.AbstractPipeline.copyIntoWithCancel(AbstractPipeline.java:527)
+[ERROR] 	at java.base/java.util.stream.AbstractPipeline.copyInto(AbstractPipeline.java:513)
+[ERROR] 	at java.base/java.util.stream.AbstractPipeline.wrapAndCopyInto(AbstractPipeline.java:499)
+[ERROR] 	at java.base/java.util.stream.FindOps$FindOp.evaluateSequential(FindOps.java:150)
+[ERROR] 	at java.base/java.util.stream.AbstractPipeline.evaluate(AbstractPipeline.java:234)
+[ERROR] 	at java.base/java.util.stream.ReferencePipeline.findFirst(ReferencePipeline.java:647)
+[ERROR] 	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.resolve(EngineDiscoveryRequestResolution.java:189)
+[ERROR] 	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.resolve(EngineDiscoveryRequestResolution.java:126)
+[ERROR] 	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.resolveCompletely(EngineDiscoveryRequestResolution.java:92)
+[ERROR] 	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolution.run(EngineDiscoveryRequestResolution.java:83)
+[ERROR] 	at org.junit.platform.engine.support.discovery.EngineDiscoveryRequestResolver.resolve(EngineDiscoveryRequestResolver.java:148)
+[ERROR] 	at org.junit.jupiter.engine.discovery.DiscoverySelectorResolver.resolveSelectors(DiscoverySelectorResolver.java:63)
+[ERROR] 	at org.junit.jupiter.engine.JupiterTestEngine.discover(JupiterTestEngine.java:70)
+[ERROR] 	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discoverEngineRoot(EngineDiscoveryOrchestrator.java:195)
+[ERROR] 	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discoverSafely(EngineDiscoveryOrchestrator.java:174)
+[ERROR] 	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discover(EngineDiscoveryOrchestrator.java:119)
+[ERROR] 	at org.junit.platform.launcher.core.EngineDiscoveryOrchestrator.discover(EngineDiscoveryOrchestrator.java:84)
+[ERROR] 	at org.junit.platform.launcher.core.DefaultLauncher.discover(DefaultLauncher.java:104)
+[ERROR] 	at org.junit.platform.launcher.core.DefaultLauncher.discover(DefaultLauncher.java:83)
+[ERROR] 	at org.junit.platform.launcher.core.DelegatingLauncher.discover(DelegatingLauncher.java:42)
+[ERROR] 	at org.junit.platform.launcher.core.InterceptingLauncher.lambda$discover$0(InterceptingLauncher.java:33)
+[ERROR] 	at org.junit.platform.launcher.core.ClasspathAlignmentCheckingLauncherInterceptor.intercept(ClasspathAlignmentCheckingLauncherInterceptor.java:25)
+[ERROR] 	at org.junit.platform.launcher.core.InterceptingLauncher.discover(InterceptingLauncher.java:33)
+[ERROR] 	at org.junit.platform.launcher.core.DelegatingLauncher.discover(DelegatingLauncher.java:42)
+[ERROR] 	at org.apache.maven.surefire.junitplatform.LauncherAdapter.discover(LauncherAdapter.java:47)
+[ERROR] 	at org.apache.maven.surefire.junitplatform.TestPlanScannerFilter.accept(TestPlanScannerFilter.java:51)
+[ERROR] 	at org.apache.maven.surefire.api.util.DefaultScanResult.applyFilter(DefaultScanResult.java:87)
+[ERROR] 	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.scanClasspath(JUnitPlatformProvider.java:156)
+[ERROR] 	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invoke(JUnitPlatformProvider.java:136)
+[ERROR] 	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+[ERROR] 	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+[ERROR] 	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+[ERROR] 	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+[ERROR] Caused by: java.lang.RuntimeException: io.quarkus.builder.BuildException: Build failure: Build failed due to errors
+[ERROR] 	[error]: Build step io.quarkus.arc.deployment.ArcProcessor#validate threw an exception: jakarta.enterprise.inject.spi.DeploymentException: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+[ERROR] 	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+[ERROR] 	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+[ERROR] 	at io.quarkus.arc.processor.BeanDeployment.processErrors(BeanDeployment.java:1633)
+[ERROR] 	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:341)
+[ERROR] 	at io.quarkus.arc.processor.BeanProcessor.initialize(BeanProcessor.java:177)
+[ERROR] 	at io.quarkus.arc.deployment.ArcProcessor.validate(ArcProcessor.java:491)
+[ERROR] 	at java.base/java.lang.invoke.MethodHandle.invokeWithArguments(MethodHandle.java:733)
+[ERROR] 	at io.quarkus.deployment.ExtensionLoader$3.execute(ExtensionLoader.java:872)
+[ERROR] 	at io.quarkus.builder.BuildContext.run(BuildContext.java:255)
+[ERROR] 	at org.jboss.threads.ContextHandler$1.runWith(ContextHandler.java:18)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+[ERROR] 	at java.base/java.lang.Thread.run(Thread.java:1583)
+[ERROR] 	at org.jboss.threads.JBossThread.run(JBossThread.java:501)
+[ERROR] Caused by: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+[ERROR] 	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+[ERROR] 	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+[ERROR] 	at io.quarkus.arc.processor.Beans.resolveInjectionPoint(Beans.java:547)
+[ERROR] 	at io.quarkus.arc.processor.BeanInfo.init(BeanInfo.java:693)
+[ERROR] 	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:326)
+[ERROR] 	... 12 more
+[ERROR] 
+[ERROR] 	at io.quarkus.runner.bootstrap.AugmentActionImpl.runAugment(AugmentActionImpl.java:388)
+[ERROR] 	at io.quarkus.runner.bootstrap.AugmentActionImpl.createInitialRuntimeApplication(AugmentActionImpl.java:305)
+[ERROR] 	at io.quarkus.runner.bootstrap.AugmentActionImpl.createInitialRuntimeApplication(AugmentActionImpl.java:61)
+[ERROR] 	at io.quarkus.test.junit.AppMakerHelper.getStartupAction(AppMakerHelper.java:253)
+[ERROR] 	at io.quarkus.test.junit.classloading.FacadeClassLoader.getOrCreateRuntimeClassLoader(FacadeClassLoader.java:589)
+[ERROR] 	at io.quarkus.test.junit.classloading.FacadeClassLoader.getQuarkusClassLoader(FacadeClassLoader.java:486)
+[ERROR] 	at io.quarkus.test.junit.classloading.FacadeClassLoader.loadClass(FacadeClassLoader.java:368)
+[ERROR] 	at java.base/java.lang.Class.forName0(Native Method)
+[ERROR] 	at java.base/java.lang.Class.forName(Class.java:536)
+[ERROR] 	at java.base/java.lang.Class.forName(Class.java:515)
+[ERROR] 	at org.junit.platform.commons.util.ReflectionUtils.lambda$tryToLoadClass$10(ReflectionUtils.java:886)
+[ERROR] 	at org.junit.platform.commons.function.Try.lambda$call$0(Try.java:57)
+[ERROR] 	at org.junit.platform.commons.function.Try.of(Try.java:93)
+[ERROR] 	at org.junit.platform.commons.function.Try.call(Try.java:57)
+[ERROR] 	at org.junit.platform.commons.util.ReflectionUtils.tryToLoadClass(ReflectionUtils.java:873)
+[ERROR] 	at org.junit.platform.commons.util.ReflectionUtils.tryToLoadClass(ReflectionUtils.java:810)
+[ERROR] 	at org.junit.platform.commons.support.ReflectionSupport.tryToLoadClass(ReflectionSupport.java:94)
+[ERROR] 	at org.junit.platform.engine.discovery.ClassSelector.getJavaClass(ClassSelector.java:95)
+[ERROR] 	... 38 more
+[ERROR] Caused by: io.quarkus.builder.BuildException: Build failure: Build failed due to errors
+[ERROR] 	[error]: Build step io.quarkus.arc.deployment.ArcProcessor#validate threw an exception: jakarta.enterprise.inject.spi.DeploymentException: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+[ERROR] 	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+[ERROR] 	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+[ERROR] 	at io.quarkus.arc.processor.BeanDeployment.processErrors(BeanDeployment.java:1633)
+[ERROR] 	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:341)
+[ERROR] 	at io.quarkus.arc.processor.BeanProcessor.initialize(BeanProcessor.java:177)
+[ERROR] 	at io.quarkus.arc.deployment.ArcProcessor.validate(ArcProcessor.java:491)
+[ERROR] 	at java.base/java.lang.invoke.MethodHandle.invokeWithArguments(MethodHandle.java:733)
+[ERROR] 	at io.quarkus.deployment.ExtensionLoader$3.execute(ExtensionLoader.java:872)
+[ERROR] 	at io.quarkus.builder.BuildContext.run(BuildContext.java:255)
+[ERROR] 	at org.jboss.threads.ContextHandler$1.runWith(ContextHandler.java:18)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+[ERROR] 	at java.base/java.lang.Thread.run(Thread.java:1583)
+[ERROR] 	at org.jboss.threads.JBossThread.run(JBossThread.java:501)
+[ERROR] Caused by: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+[ERROR] 	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+[ERROR] 	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+[ERROR] 	at io.quarkus.arc.processor.Beans.resolveInjectionPoint(Beans.java:547)
+[ERROR] 	at io.quarkus.arc.processor.BeanInfo.init(BeanInfo.java:693)
+[ERROR] 	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:326)
+[ERROR] 	... 12 more
+[ERROR] 
+[ERROR] 	at io.quarkus.builder.Execution.run(Execution.java:139)
+[ERROR] 	at io.quarkus.builder.BuildExecutionBuilder.execute(BuildExecutionBuilder.java:78)
+[ERROR] 	at io.quarkus.deployment.QuarkusAugmentor.run(QuarkusAugmentor.java:160)
+[ERROR] 	at io.quarkus.runner.bootstrap.AugmentActionImpl.runAugment(AugmentActionImpl.java:384)
+[ERROR] 	... 55 more
+[ERROR] Caused by: jakarta.enterprise.inject.spi.DeploymentException: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+[ERROR] 	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+[ERROR] 	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+[ERROR] 	at io.quarkus.arc.processor.BeanDeployment.processErrors(BeanDeployment.java:1633)
+[ERROR] 	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:341)
+[ERROR] 	at io.quarkus.arc.processor.BeanProcessor.initialize(BeanProcessor.java:177)
+[ERROR] 	at io.quarkus.arc.deployment.ArcProcessor.validate(ArcProcessor.java:491)
+[ERROR] 	at java.base/java.lang.invoke.MethodHandle.invokeWithArguments(MethodHandle.java:733)
+[ERROR] 	at io.quarkus.deployment.ExtensionLoader$3.execute(ExtensionLoader.java:872)
+[ERROR] 	at io.quarkus.builder.BuildContext.run(BuildContext.java:255)
+[ERROR] 	at org.jboss.threads.ContextHandler$1.runWith(ContextHandler.java:18)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+[ERROR] 	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+[ERROR] 	at java.base/java.lang.Thread.run(Thread.java:1583)
+[ERROR] 	at org.jboss.threads.JBossThread.run(JBossThread.java:501)
+[ERROR] Caused by: jakarta.enterprise.inject.UnsatisfiedResolutionException: Unsatisfied dependency for type io.smallrye.jwt.auth.principal.JWTParser and qualifiers [@Default]
+[ERROR] 	- injection target: tech.kayys.wayang.workflow.security.service.ExecutionContextService#jwtParser
+[ERROR] 	- declared on CLASS bean [types=[java.lang.Object, tech.kayys.wayang.workflow.security.service.ExecutionContextService], qualifiers=[@Any, @Default], target=tech.kayys.wayang.workflow.security.service.ExecutionContextService]
+[ERROR] 	at io.quarkus.arc.processor.Beans.resolveInjectionPoint(Beans.java:547)
+[ERROR] 	at io.quarkus.arc.processor.BeanInfo.init(BeanInfo.java:693)
+[ERROR] 	at io.quarkus.arc.processor.BeanDeployment.init(BeanDeployment.java:326)
+[ERROR] 	... 12 more
+[ERROR] 
+[ERROR] 	at org.apache.maven.plugin.surefire.booterclient.ForkStarter.fork(ForkStarter.java:631)
+[ERROR] 	at org.apache.maven.plugin.surefire.booterclient.ForkStarter.run(ForkStarter.java:285)
+[ERROR] 	at org.apache.maven.plugin.surefire.booterclient.ForkStarter.run(ForkStarter.java:250)
+[ERROR] 	at org.apache.maven.plugin.surefire.AbstractSurefireMojo.executeProvider(AbstractSurefireMojo.java:1337)
+[ERROR] 	at org.apache.maven.plugin.surefire.AbstractSurefireMojo.executeAfterPreconditionsChecked(AbstractSurefireMojo.java:1135)
+[ERROR] 	at org.apache.maven.plugin.surefire.AbstractSurefireMojo.execute(AbstractSurefireMojo.java:969)
+[ERROR] 	at org.apache.maven.plugin.DefaultBuildPluginManager.executeMojo(DefaultBuildPluginManager.java:126)
+[ERROR] 	at org.apache.maven.lifecycle.internal.MojoExecutor.doExecute2(MojoExecutor.java:328)
+[ERROR] 	at org.apache.maven.lifecycle.internal.MojoExecutor.doExecute(MojoExecutor.java:316)
+[ERROR] 	at org.apache.maven.lifecycle.internal.MojoExecutor.execute(MojoExecutor.java:212)
+[ERROR] 	at org.apache.maven.lifecycle.internal.MojoExecutor.execute(MojoExecutor.java:174)
+[ERROR] 	at org.apache.maven.lifecycle.internal.MojoExecutor.access$000(MojoExecutor.java:75)
+[ERROR] 	at org.apache.maven.lifecycle.internal.MojoExecutor$1.run(MojoExecutor.java:162)
+[ERROR] 	at org.apache.maven.plugin.DefaultMojosExecutionStrategy.execute(DefaultMojosExecutionStrategy.java:39)
+[ERROR] 	at org.apache.maven.lifecycle.internal.MojoExecutor.execute(MojoExecutor.java:159)
+[ERROR] 	at org.apache.maven.lifecycle.internal.LifecycleModuleBuilder.buildProject(LifecycleModuleBuilder.java:105)
+[ERROR] 	at org.apache.maven.lifecycle.internal.LifecycleModuleBuilder.buildProject(LifecycleModuleBuilder.java:73)
+[ERROR] 	at org.apache.maven.lifecycle.internal.builder.singlethreaded.SingleThreadedBuilder.build(SingleThreadedBuilder.java:53)
+[ERROR] 	at org.apache.maven.lifecycle.internal.LifecycleStarter.execute(LifecycleStarter.java:118)
+[ERROR] 	at org.apache.maven.DefaultMaven.doExecute(DefaultMaven.java:261)
+[ERROR] 	at org.apache.maven.DefaultMaven.doExecute(DefaultMaven.java:173)
+[ERROR] 	at org.apache.maven.DefaultMaven.execute(DefaultMaven.java:101)
+[ERROR] 	at org.apache.maven.cli.MavenCli.execute(MavenCli.java:906)
+[ERROR] 	at org.apache.maven.cli.MavenCli.doMain(MavenCli.java:283)
+[ERROR] 	at org.apache.maven.cli.MavenCli.main(MavenCli.java:206)
+[ERROR] 	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+[ERROR] 	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+[ERROR] 	at org.codehaus.plexus.classworlds.launcher.Launcher.launchEnhanced(Launcher.java:255)
+[ERROR] 	at org.codehaus.plexus.classworlds.launcher.Launcher.launch(Launcher.java:201)
+[ERROR] 	at org.codehaus.plexus.classworlds.launcher.Launcher.mainWithExitCode(Launcher.java:361)
+[ERROR] 	at org.codehaus.plexus.classworlds.launcher.Launcher.main(Launcher.java:314)
+[ERROR] 
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException

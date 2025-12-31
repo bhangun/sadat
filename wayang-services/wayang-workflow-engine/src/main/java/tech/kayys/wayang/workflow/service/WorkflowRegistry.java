@@ -5,20 +5,11 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import io.smallrye.mutiny.Uni;
-import jakarta.inject.Singleton;
+import jakarta.enterprise.context.ApplicationScoped;
 
 import tech.kayys.wayang.schema.workflow.WorkflowDefinition;
 
-/**
- * Workflow Registry - Central registry for managing workflow definitions
- * 
- * Responsibilities:
- * - Register and retrieve workflow definitions
- * - Version management for workflows
- * - Multi-tenant isolation
- * - Lifecycle management (activate/deactivate)
- */
-@Singleton
+@ApplicationScoped
 public class WorkflowRegistry {
 
     // In-memory storage for workflow definitions

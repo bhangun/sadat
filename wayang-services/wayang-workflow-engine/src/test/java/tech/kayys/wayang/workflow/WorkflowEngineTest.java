@@ -31,6 +31,7 @@ import tech.kayys.wayang.workflow.service.NodeContext;
 import tech.kayys.wayang.workflow.service.TelemetryService;
 import tech.kayys.wayang.workflow.engine.WorkflowRunManager;
 import tech.kayys.wayang.workflow.service.WorkflowValidator;
+import tech.kayys.wayang.workflow.service.WorkflowRegistry;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -79,9 +80,12 @@ class WorkflowEngineTest {
         @InjectMock
         WorkflowRunManager runManager;
 
-        // Policy & Validation Mocks
+        @InjectMock
+        WorkflowRegistry registry;
+
         @InjectMock
         PolicyEngine policyEngine;
+
         @InjectMock
         WorkflowValidator workflowValidator;
 
@@ -99,6 +103,73 @@ class WorkflowEngineTest {
         void setup() {
                 testWorkflow = createSimpleWorkflow();
                 setupDefaultMocks();
+                // Ensure context is clear before each test
+                tech.kayys.wayang.workflow.security.context.SecurityContextHolder.clear();
+        }
+
+        @Test
+        @Order(100)
+        @DisplayName("Should block access on tenant mismatch")
+        void testSecurityTenantMismatch() {
+                // Given
+                Map<String, Object> inputs = Map.of("input", "data");
+
+                // Simulate authenticated context for "other-tenant"
+                io.quarkus.security.identity.SecurityIdentity identity = Mockito
+                                .mock(io.quarkus.security.identity.SecurityIdentity.class);
+                java.security.Principal principal = Mockito.mock(java.security.Principal.class);
+                Mockito.when(principal.getName()).thenReturn("alice");
+                Mockito.when(identity.getPrincipal()).thenReturn(principal);
+
+                tech.kayys.wayang.workflow.security.context.SecurityContextHolder.setContext(
+                                tech.kayys.wayang.workflow.security.context.SecurityContextHolder.SecurityContext
+                                                .fromUserAuth("other-tenant", identity));
+
+                try {
+                        // When calling with "test-tenant"
+                        org.junit.jupiter.api.Assertions.assertThrows(SecurityException.class, () -> {
+                                workflowEngine.start(testWorkflow, inputs, tenantId)
+                                                .await().indefinitely();
+                        });
+                } finally {
+                        tech.kayys.wayang.workflow.security.context.SecurityContextHolder.clear();
+                }
+        }
+
+        @Test
+        @Order(101)
+        @DisplayName("Should allow access on tenant match")
+        void testSecurityTenantMatch() {
+                // Given
+                Map<String, Object> inputs = Map.of("input", "data");
+
+                // Simulate authenticated context for "test-tenant"
+                io.quarkus.security.identity.SecurityIdentity identity = Mockito
+                                .mock(io.quarkus.security.identity.SecurityIdentity.class);
+                java.security.Principal principal = Mockito.mock(java.security.Principal.class);
+                Mockito.when(principal.getName()).thenReturn("alice");
+                Mockito.when(identity.getPrincipal()).thenReturn(principal);
+
+                tech.kayys.wayang.workflow.security.context.SecurityContextHolder.setContext(
+                                tech.kayys.wayang.workflow.security.context.SecurityContextHolder.SecurityContext
+                                                .fromUserAuth(tenantId, identity));
+
+                // Mock successful execution
+                when(nodeExecutor.execute(any(NodeDefinition.class), any(NodeContext.class)))
+                                .thenReturn(Uni.createFrom().item(
+                                                NodeExecutionResult.success("node-1", Map.of("output", "result"))));
+
+                try {
+                        // When
+                        WorkflowRun result = workflowEngine.start(testWorkflow, inputs, tenantId)
+                                        .await().indefinitely();
+
+                        // Then
+                        assertNotNull(result);
+                        assertEquals(RunStatus.COMPLETED, result.getStatus());
+                } finally {
+                        tech.kayys.wayang.workflow.security.context.SecurityContextHolder.clear();
+                }
         }
 
         // ==========================================
@@ -258,7 +329,6 @@ class WorkflowEngineTest {
                 // Given
                 Map<String, Object> inputs = Map.of("input", "data");
 
-
                 when(nodeExecutor.execute(any(NodeDefinition.class), any(NodeContext.class)))
                                 .thenReturn(Uni.createFrom()
                                                 .item(NodeExecutionResult.awaitingHuman("node-1", "task-1")));
@@ -290,13 +360,16 @@ class WorkflowEngineTest {
                 when(runManager.resumeRun(anyString(), anyString(), any(), any()))
                                 .thenReturn(Uni.createFrom().item(suspendedRun));
 
+                // Mock Registry to return the test workflow
+                when(registry.getWorkflowByVersion(eq("test-workflow"), eq("1.0.0")))
+                                .thenReturn(Uni.createFrom().item(testWorkflow));
+
                 // When
                 WorkflowRun result = workflowEngine.resume("run-123", tenantId)
                                 .subscribe().withSubscriber(UniAssertSubscriber.create())
                                 .awaitItem()
                                 .getItem();
 
-                // Then
                 // Then
                 verify(runManager, atLeast(1)).resumeRun(eq("run-123"), eq(tenantId), any(), any());
         }

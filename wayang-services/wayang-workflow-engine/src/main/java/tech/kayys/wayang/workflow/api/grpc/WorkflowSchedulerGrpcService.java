@@ -9,8 +9,10 @@ import com.google.protobuf.Empty;
 import java.util.stream.Collectors;
 import tech.kayys.wayang.workflow.scheduler.dto.ScheduleRequest;
 import tech.kayys.wayang.workflow.scheduler.dto.ScheduleUpdateRequest;
+import tech.kayys.wayang.workflow.security.annotations.ControlPlaneSecured;
 
 @GrpcService
+@ControlPlaneSecured
 public class WorkflowSchedulerGrpcService implements WorkflowSchedulerService {
 
         @Inject
@@ -18,29 +20,25 @@ public class WorkflowSchedulerGrpcService implements WorkflowSchedulerService {
 
         @Override
         public Uni<WorkflowSchedule> createSchedule(CreateScheduleRequest request) {
-                // Map proto request to record
-                // Defaults: ScheduleType CRON (if unset), etc.
                 tech.kayys.wayang.workflow.scheduler.dto.ScheduleType type = tech.kayys.wayang.workflow.scheduler.dto.ScheduleType.CRON;
 
-                // Assuming inputs is Map<String, String>, need Map<String, Object>
                 java.util.Map<String, Object> inputs = new java.util.HashMap<>(request.getInputsMap());
 
                 ScheduleRequest domainRequest = new ScheduleRequest(
                                 request.getWorkflowId(),
-                                null, // workflowVersion
-                                null, // tenantId (or extract from context if available)
+                                null,
+                                null,
                                 type,
                                 request.getCronExpression(),
-                                null, // interval
-                                null, // startDate
-                                null, // endDate
+                                null,
+                                null,
+                                null,
                                 request.getTimezone(),
-                                0, // hour
-                                0, // minute
+                                0,
+                                0,
                                 inputs,
-                                null, // missedExecutionStrategy
-                                "grpc" // createdBy
-                );
+                                null,
+                                "grpc");
 
                 return scheduler.createSchedule(domainRequest)
                                 .map(this::toProto);
@@ -48,8 +46,6 @@ public class WorkflowSchedulerGrpcService implements WorkflowSchedulerService {
 
         @Override
         public Uni<ListSchedulesResponse> listSchedules(ListSchedulesRequest request) {
-                // Pass null for enabled to list all, unless we want to filter.
-                // Proto boolean default is false.
                 return scheduler.listSchedules(request.getTenantId(), request.getWorkflowId(), null)
                                 .map(list -> ListSchedulesResponse.newBuilder()
                                                 .addAllSchedules(list.stream().map(this::toProto)
@@ -69,9 +65,9 @@ public class WorkflowSchedulerGrpcService implements WorkflowSchedulerService {
 
                 ScheduleUpdateRequest domainRequest = new ScheduleUpdateRequest(
                                 request.getCronExpression(),
-                                null, // interval
+                                null,
                                 inputs,
-                                request.getEnabled()); // enabled
+                                request.getEnabled());
 
                 return scheduler.updateSchedule(request.getScheduleId(), domainRequest)
                                 .map(this::toProto);
@@ -117,7 +113,6 @@ public class WorkflowSchedulerGrpcService implements WorkflowSchedulerService {
                 return ExecutionHistoryItem.newBuilder()
                                 .setScheduleId(domain.getScheduleId())
                                 .setRunId(domain.getRunId())
-                                // Assuming domain has these fields
                                 .setScheduledAt(domain.getScheduledFor() != null
                                                 ? domain.getScheduledFor().toEpochMilli()
                                                 : 0)

@@ -6,8 +6,10 @@ import jakarta.inject.Inject;
 import tech.kayys.wayang.workflow.service.NodeRegistry;
 import tech.kayys.wayang.workflow.v1.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import tech.kayys.wayang.workflow.security.annotations.ExecutionSecured;
 
 @GrpcService
+@ExecutionSecured
 public class NodeRegistryGrpcService implements NodeRegistryService {
 
     @Inject

@@ -1,18 +1,34 @@
 package tech.kayys.wayang.workflow.api.grpc;
 
 import io.quarkus.grpc.GrpcService;
+import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
+import org.jboss.logging.Logger;
 import tech.kayys.wayang.workflow.service.WorkflowRegistry;
 import tech.kayys.wayang.workflow.v1.*;
+import tech.kayys.wayang.workflow.security.annotations.ControlPlaneSecured;
 import com.google.protobuf.Empty;
 import java.util.stream.Collectors;
 
 @GrpcService
+@ControlPlaneSecured
 public class WorkflowRegistryGrpcService implements WorkflowRegistryService {
+
+    private static final Logger LOG = Logger.getLogger(WorkflowRegistryGrpcService.class);
 
     @Inject
     WorkflowRegistry registry;
+
+    @Inject
+    SecurityIdentity securityIdentity;
+
+    private String getTenantId() {
+        if (securityIdentity.isAnonymous()) {
+            throw new IllegalStateException("Anonymous access not allowed");
+        }
+        return securityIdentity.getPrincipal().getName();
+    }
 
     @Override
     public Uni<WorkflowDefinition> registerWorkflow(WorkflowDefinition request) {
@@ -96,9 +112,6 @@ public class WorkflowRegistryGrpcService implements WorkflowRegistryService {
                 .setVersion(domain.getVersion())
                 .setName(domain.getName() != null ? domain.getName() : "")
                 .setDescription(domain.getDescription() != null ? domain.getDescription() : "")
-                // Map other fields as available/needed
-                // .setDefinitionJson(...)
-                // .setCreatedAt(...)
                 .build();
     }
 
@@ -108,7 +121,6 @@ public class WorkflowRegistryGrpcService implements WorkflowRegistryService {
                 .version(proto.getVersion())
                 .name(proto.getName())
                 .description(proto.getDescription())
-                // Map other fields
                 .build();
     }
 }

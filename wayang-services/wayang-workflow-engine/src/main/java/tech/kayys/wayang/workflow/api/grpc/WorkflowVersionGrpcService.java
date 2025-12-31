@@ -4,14 +4,17 @@ import io.quarkus.grpc.GrpcService;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import java.time.Instant;
+import java.util.stream.Collectors;
+
 import tech.kayys.wayang.workflow.version.service.WorkflowVersionManager;
 import tech.kayys.wayang.workflow.v1.*;
 import com.google.protobuf.Empty;
-import java.util.stream.Collectors;
 import tech.kayys.wayang.workflow.version.dto.VersionRequest;
 import tech.kayys.wayang.workflow.version.dto.PublishOptions;
+import tech.kayys.wayang.workflow.security.annotations.ControlPlaneSecured;
 
 @GrpcService
+@ControlPlaneSecured
 public class WorkflowVersionGrpcService implements WorkflowVersionService {
 
         @Inject
@@ -40,14 +43,6 @@ public class WorkflowVersionGrpcService implements WorkflowVersionService {
 
         @Override
         public Uni<WorkflowVersion> getVersion(GetVersionRequest request) {
-                // Manager doesn't seem to have getVersion(id, version) explicit method in the
-                // Resource analysis comments?
-                // Resource had a TODO.
-                // Assuming it exists or using registry?
-                // Wait, WorkflowRegistry has getWorkflowByVersion. WorkflowVersionManager
-                // manages lifecycle.
-                // Let's assume getVersion exists in versionManager or use Registry?
-                // Let's try versionManager.getVersion(wfId, version)
                 return versionManager.getVersion(request.getWorkflowId(), request.getVersion())
                                 .map(this::toProto);
         }
@@ -105,7 +100,7 @@ public class WorkflowVersionGrpcService implements WorkflowVersionService {
                 return versionManager
                                 .compareVersions(request.getWorkflowId(), request.getVersion1(), request.getVersion2())
                                 .map(diff -> CompareVersionsResponse.newBuilder()
-                                                .setDiff(diff.toString()) // Simplify for now
+                                                .setDiff(diff.toString())
                                                 .build());
         }
 

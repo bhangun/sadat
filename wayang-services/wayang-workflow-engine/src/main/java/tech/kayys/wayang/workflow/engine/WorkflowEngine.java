@@ -59,6 +59,20 @@ public class WorkflowEngine {
     // Active execution monitors
     private final Map<String, ExecutionMonitor> activeRuns = new ConcurrentHashMap<>();
 
+    private void verifyTenantAccess(String tenantId) {
+        if (tech.kayys.wayang.workflow.security.context.SecurityContextHolder.hasContext()) {
+            String authenticatedTenant = tech.kayys.wayang.workflow.security.context.SecurityContextHolder
+                    .getCurrentTenantId();
+            if (!authenticatedTenant.equals(tenantId)) {
+                throw new SecurityException("Access denied: Tenant mismatch");
+            }
+        }
+        // If no context (e.g. strict internal call without context), we might log a
+        // warning or enforce policy.
+        // For defense in depth, we assume context should be present for all external
+        // triggers.
+    }
+
     /**
      * Trigger a workflow execution based on a request.
      * This is the primary entry point for external triggers (API, Scheduler,
@@ -77,8 +91,11 @@ public class WorkflowEngine {
         return workflowUni
                 .onItem().ifNull()
                 .failWith(() -> new IllegalArgumentException("Workflow not found: " + request.workflowId()))
-                .flatMap(workflow -> start(workflow, request.inputs(), "default-tenant")) // Using default-tenant for
-                                                                                          // now
+                .flatMap(workflow -> {
+                    String tenantId = tech.kayys.wayang.workflow.security.context.SecurityContextHolder
+                            .getCurrentTenantId();
+                    return start(workflow, request.inputs(), tenantId);
+                })
                 .map(run -> new TriggerWorkflowResponse(run.getRunId(), run.getStatus().toString()));
     }
 
@@ -93,6 +110,7 @@ public class WorkflowEngine {
             Map<String, Object> inputs,
             String tenantId) {
 
+        verifyTenantAccess(tenantId);
         LOG.infof("Starting workflow: %s (version: %s) for tenant: %s",
                 workflow.getId().getValue(), workflow.getVersion(), tenantId);
 
@@ -217,21 +235,39 @@ public class WorkflowEngine {
      * Select the appropriate execution strategy for the given workflow
      */
     private WorkflowExecutionStrategy selectExecutionStrategy(WorkflowDefinition workflow) {
-        // Iterate through all available strategies
+        // First, check if workflow explicitly specifies a strategy via metadata
+        if (workflow.getMetadata() != null && workflow.getMetadata().containsKey("executionStrategy")) {
+            String requestedStrategy = (String) workflow.getMetadata().get("executionStrategy");
+            LOG.debugf("Workflow %s requests execution strategy: %s", workflow.getId(), requestedStrategy);
+
+            for (WorkflowExecutionStrategy strategy : executionStrategies) {
+                if (requestedStrategy.equals(strategy.getStrategyType())) {
+                    LOG.infof("Selected %s strategy for workflow %s", requestedStrategy, workflow.getId());
+                    return strategy;
+                }
+            }
+
+            LOG.warnf("Requested strategy %s not found for workflow %s", requestedStrategy, workflow.getId());
+        }
+
+        // Second, let strategies determine if they can handle this workflow
         for (WorkflowExecutionStrategy strategy : executionStrategies) {
             if (strategy.canHandle(workflow)) {
+                LOG.infof("Strategy %s can handle workflow %s", strategy.getStrategyType(), workflow.getId());
                 return strategy;
             }
         }
 
-        // If no specific strategy found, look for DAG strategy
+        // Finally, use DAG strategy as default fallback
         for (WorkflowExecutionStrategy strategy : executionStrategies) {
             if ("DAG".equals(strategy.getStrategyType())) {
+                LOG.debugf("Using default DAG strategy for workflow %s", workflow.getId());
                 return strategy;
             }
         }
 
         // If no strategy matches, return null
+        LOG.errorf("No execution strategy found for workflow: %s", workflow.getId());
         return null;
     }
 
@@ -281,17 +317,40 @@ public class WorkflowEngine {
         return stateStore.save(run);
     }
 
+    public Uni<WorkflowRun> execute(String runId, String tenantId) {
+        LOG.infof("Executing workflow run: %s", runId);
+
+        return runManager.getRun(runId)
+                .onItem().ifNull().failWith(() -> new IllegalArgumentException("Run not found: " + runId))
+                .flatMap(run -> {
+                    if (!run.getTenantId().equals(tenantId)) {
+                        return Uni.createFrom().failure(new IllegalStateException("Tenant mismatch for run: " + runId));
+                    }
+                    verifyTenantAccess(tenantId);
+                    return registry.getWorkflowByVersion(run.getWorkflowId(), run.getWorkflowVersion())
+                            .onItem().ifNull()
+                            .failWith(() -> new IllegalArgumentException(
+                                    "Workflow definition not found for run: " + runId))
+                            .flatMap(workflow -> executeWorkflow(run, workflow));
+                });
+    }
+
     public Uni<WorkflowRun> resume(String runId, String tenantId) {
+        verifyTenantAccess(tenantId);
         LOG.infof("Resuming workflow run: %s", runId);
-        return runManager.resumeRun(runId, tenantId, null, null);
+        return runManager.resumeRun(runId, tenantId, null, null)
+                .flatMap(run -> registry.getWorkflowByVersion(run.getWorkflowId(), run.getWorkflowVersion())
+                        .flatMap(workflow -> executeWorkflow(run, workflow)));
     }
 
     public Uni<Void> pause(String runId, String tenantId) {
+        verifyTenantAccess(tenantId);
         LOG.infof("Pausing workflow run: %s", runId);
         return runManager.updateRunStatus(runId, tenantId, RunStatus.PAUSED);
     }
 
     public Uni<Void> cancel(String runId, String tenantId, String reason) {
+        verifyTenantAccess(tenantId);
         LOG.infof("Canceling workflow run: %s (reason: %s)", runId, reason);
         ExecutionMonitor monitor = activeRuns.get(runId);
         if (monitor != null) {
