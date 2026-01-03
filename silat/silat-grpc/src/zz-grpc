@@ -1,0 +1,1179 @@
+// ============================================================================
+// SILAT WORKFLOW ENGINE - gRPC SERVICE DEFINITIONS
+// ============================================================================
+// Protocol Buffer definitions for high-performance RPC communication
+//
+// File: workflow_service.proto
+// Package: tech.kayys.silat.grpc.v1
+
+syntax = "proto3";
+
+package tech.kayys.silat.grpc.v1;
+
+option java_multiple_files = true;
+option java_package = "tech.kayys.silat.grpc.v1";
+option java_outer_classname = "WorkflowServiceProto";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/empty.proto";
+
+// ==================== WORKFLOW SERVICE ====================
+
+/**
+ * Workflow Run Management Service
+ * Provides gRPC endpoints for workflow lifecycle operations
+ */
+service WorkflowService {
+  // Create a new workflow run
+  rpc CreateRun(CreateRunRequest) returns (RunResponse);
+  
+  // Get workflow run details
+  rpc GetRun(GetRunRequest) returns (RunResponse);
+  
+  // Start a workflow run
+  rpc StartRun(StartRunRequest) returns (RunResponse);
+  
+  // Suspend a workflow run
+  rpc SuspendRun(SuspendRunRequest) returns (RunResponse);
+  
+  // Resume a workflow run
+  rpc ResumeRun(ResumeRunRequest) returns (RunResponse);
+  
+  // Cancel a workflow run
+  rpc CancelRun(CancelRunRequest) returns (google.protobuf.Empty);
+  
+  // Send signal to workflow
+  rpc SignalRun(SignalRequest) returns (google.protobuf.Empty);
+  
+  // Get execution history
+  rpc GetExecutionHistory(GetExecutionHistoryRequest) returns (ExecutionHistoryResponse);
+  
+  // Query workflow runs
+  rpc QueryRuns(QueryRunsRequest) returns (QueryRunsResponse);
+  
+  // Get active runs count
+  rpc GetActiveRunsCount(GetActiveRunsCountRequest) returns (CountResponse);
+  
+  // Stream run status updates (server streaming)
+  rpc StreamRunStatus(StreamRunStatusRequest) returns (stream RunStatusUpdate);
+}
+
+// ==================== EXECUTOR SERVICE ====================
+
+/**
+ * Executor Service
+ * Used by executors to receive tasks and report results
+ */
+service ExecutorService {
+  // Register executor
+  rpc RegisterExecutor(RegisterExecutorRequest) returns (ExecutorRegistration);
+  
+  // Unregister executor
+  rpc UnregisterExecutor(UnregisterExecutorRequest) returns (google.protobuf.Empty);
+  
+  // Heartbeat
+  rpc Heartbeat(HeartbeatRequest) returns (google.protobuf.Empty);
+  
+  // Stream tasks to executor (server streaming)
+  rpc StreamTasks(StreamTasksRequest) returns (stream ExecutionTask);
+  
+  // Report task result (client streaming)
+  rpc ReportResults(stream TaskResult) returns (google.protobuf.Empty);
+  
+  // Bidirectional streaming for real-time communication
+  rpc ExecuteStream(stream ExecutorMessage) returns (stream EngineMessage);
+}
+
+// ==================== REQUEST MESSAGES ====================
+
+message CreateRunRequest {
+  string tenant_id = 1;
+  string workflow_definition_id = 2;
+  google.protobuf.Struct inputs = 3;
+  map<string, string> labels = 4;
+  TriggerInfo trigger = 5;
+}
+
+message GetRunRequest {
+  string tenant_id = 1;
+  string run_id = 2;
+}
+
+message StartRunRequest {
+  string tenant_id = 1;
+  string run_id = 2;
+}
+
+message SuspendRunRequest {
+  string tenant_id = 1;
+  string run_id = 2;
+  string reason = 3;
+  string waiting_on_node_id = 4;
+}
+
+message ResumeRunRequest {
+  string tenant_id = 1;
+  string run_id = 2;
+  google.protobuf.Struct resume_data = 3;
+  string human_task_id = 4;
+}
+
+message CancelRunRequest {
+  string tenant_id = 1;
+  string run_id = 2;
+  string reason = 3;
+}
+
+message SignalRequest {
+  string run_id = 1;
+  string signal_name = 2;
+  string target_node_id = 3;
+  google.protobuf.Struct payload = 4;
+}
+
+message GetExecutionHistoryRequest {
+  string tenant_id = 1;
+  string run_id = 2;
+}
+
+message QueryRunsRequest {
+  string tenant_id = 1;
+  string workflow_definition_id = 2;
+  string status = 3;
+  int32 page = 4;
+  int32 size = 5;
+}
+
+message GetActiveRunsCountRequest {
+  string tenant_id = 1;
+}
+
+message StreamRunStatusRequest {
+  string tenant_id = 1;
+  repeated string run_ids = 2;
+}
+
+// ==================== RESPONSE MESSAGES ====================
+
+message RunResponse {
+  string run_id = 1;
+  string tenant_id = 2;
+  string workflow_definition_id = 3;
+  string workflow_version = 4;
+  RunStatus status = 5;
+  google.protobuf.Struct variables = 6;
+  map<string, NodeExecution> node_executions = 7;
+  repeated string execution_path = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp started_at = 10;
+  google.protobuf.Timestamp completed_at = 11;
+  int64 duration_ms = 12;
+  map<string, string> labels = 13;
+  map<string, string> metadata = 14;
+}
+
+message ExecutionHistoryResponse {
+  string run_id = 1;
+  repeated ExecutionEvent events = 2;
+  int32 total_events = 3;
+}
+
+message QueryRunsResponse {
+  repeated RunResponse runs = 1;
+  int32 page = 2;
+  int32 size = 3;
+  int32 total_elements = 4;
+  bool has_more = 5;
+}
+
+message CountResponse {
+  int64 count = 1;
+}
+
+message RunStatusUpdate {
+  string run_id = 1;
+  RunStatus status = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  string message = 4;
+}
+
+// ==================== EXECUTOR MESSAGES ====================
+
+message RegisterExecutorRequest {
+  string executor_id = 1;
+  string executor_type = 2;
+  CommunicationType communication_type = 3;
+  string endpoint = 4;
+  map<string, string> metadata = 5;
+  repeated string supported_node_types = 6;
+  int32 max_concurrent_tasks = 7;
+}
+
+message ExecutorRegistration {
+  string executor_id = 1;
+  string status = 2;
+  google.protobuf.Timestamp registered_at = 3;
+}
+
+message UnregisterExecutorRequest {
+  string executor_id = 1;
+}
+
+message HeartbeatRequest {
+  string executor_id = 1;
+  int32 current_task_count = 2;
+  ExecutorHealth health = 3;
+}
+
+message StreamTasksRequest {
+  string executor_id = 1;
+  int32 max_concurrent = 2;
+}
+
+message ExecutionTask {
+  string task_id = 1;
+  string run_id = 2;
+  string node_id = 3;
+  string node_name = 4;
+  string node_type = 5;
+  int32 attempt = 6;
+  string execution_token = 7;
+  google.protobuf.Struct context = 8;
+  google.protobuf.Struct configuration = 9;
+  int64 timeout_seconds = 10;
+  google.protobuf.Timestamp scheduled_at = 11;
+}
+
+message TaskResult {
+  string task_id = 1;
+  string run_id = 2;
+  string node_id = 3;
+  int32 attempt = 4;
+  string execution_token = 5;
+  TaskStatus status = 6;
+  google.protobuf.Struct output = 7;
+  ErrorInfo error = 8;
+  google.protobuf.Timestamp completed_at = 9;
+}
+
+// Bidirectional streaming messages
+message ExecutorMessage {
+  oneof message {
+    HeartbeatRequest heartbeat = 1;
+    TaskResult result = 2;
+    TaskAcknowledgement ack = 3;
+  }
+}
+
+message EngineMessage {
+  oneof message {
+    ExecutionTask task = 1;
+    TaskCancellation cancellation = 2;
+    ConfigurationUpdate config_update = 3;
+  }
+}
+
+message TaskAcknowledgement {
+  string task_id = 1;
+  google.protobuf.Timestamp acknowledged_at = 2;
+}
+
+message TaskCancellation {
+  string task_id = 1;
+  string reason = 2;
+}
+
+message ConfigurationUpdate {
+  google.protobuf.Struct configuration = 1;
+}
+
+// ==================== NESTED MESSAGES ====================
+
+message TriggerInfo {
+  string type = 1;
+  string triggered_by = 2;
+  google.protobuf.Timestamp triggered_at = 3;
+  map<string, string> metadata = 4;
+}
+
+message NodeExecution {
+  string node_id = 1;
+  string node_name = 2;
+  string status = 3;
+  int32 attempt = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp completed_at = 6;
+  int64 duration_ms = 7;
+  google.protobuf.Struct output = 8;
+  ErrorInfo error = 9;
+}
+
+message ErrorInfo {
+  string code = 1;
+  string message = 2;
+  string stack_trace = 3;
+  google.protobuf.Struct context = 4;
+}
+
+message ExecutionEvent {
+  string event_id = 1;
+  string event_type = 2;
+  int64 sequence_number = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+  google.protobuf.Struct event_data = 5;
+}
+
+message ExecutorHealth {
+  string status = 1;
+  int32 current_tasks = 2;
+  int32 completed_tasks = 3;
+  int32 failed_tasks = 4;
+  double cpu_usage = 5;
+  double memory_usage = 6;
+}
+
+// ==================== ENUMS ====================
+
+enum RunStatus {
+  RUN_STATUS_UNSPECIFIED = 0;
+  RUN_STATUS_CREATED = 1;
+  RUN_STATUS_PENDING = 2;
+  RUN_STATUS_RUNNING = 3;
+  RUN_STATUS_SUSPENDED = 4;
+  RUN_STATUS_COMPLETED = 5;
+  RUN_STATUS_FAILED = 6;
+  RUN_STATUS_CANCELLED = 7;
+  RUN_STATUS_COMPENSATING = 8;
+  RUN_STATUS_COMPENSATED = 9;
+}
+
+enum TaskStatus {
+  TASK_STATUS_UNSPECIFIED = 0;
+  TASK_STATUS_PENDING = 1;
+  TASK_STATUS_RUNNING = 2;
+  TASK_STATUS_COMPLETED = 3;
+  TASK_STATUS_FAILED = 4;
+  TASK_STATUS_SKIPPED = 5;
+  TASK_STATUS_RETRYING = 6;
+  TASK_STATUS_CANCELLED = 7;
+}
+
+enum CommunicationType {
+  COMMUNICATION_TYPE_UNSPECIFIED = 0;
+  COMMUNICATION_TYPE_GRPC = 1;
+  COMMUNICATION_TYPE_KAFKA = 2;
+  COMMUNICATION_TYPE_REST = 3;
+}
+
+// ============================================================================
+// WORKFLOW DEFINITION SERVICE
+// ============================================================================
+// File: workflow_definition_service.proto
+
+/**
+ * Workflow Definition Management Service
+ */
+service WorkflowDefinitionService {
+  // Create workflow definition
+  rpc CreateDefinition(CreateDefinitionRequest) returns (DefinitionResponse);
+  
+  // Get workflow definition
+  rpc GetDefinition(GetDefinitionRequest) returns (DefinitionResponse);
+  
+  // List workflow definitions
+  rpc ListDefinitions(ListDefinitionsRequest) returns (ListDefinitionsResponse);
+  
+  // Update workflow definition
+  rpc UpdateDefinition(UpdateDefinitionRequest) returns (DefinitionResponse);
+  
+  // Delete workflow definition
+  rpc DeleteDefinition(DeleteDefinitionRequest) returns (google.protobuf.Empty);
+  
+  // Validate workflow definition
+  rpc ValidateDefinition(ValidateDefinitionRequest) returns (ValidationResponse);
+}
+
+message CreateDefinitionRequest {
+  string tenant_id = 1;
+  string name = 2;
+  string version = 3;
+  string description = 4;
+  repeated NodeDefinition nodes = 5;
+  map<string, InputDefinition> inputs = 6;
+  map<string, OutputDefinition> outputs = 7;
+  RetryPolicy default_retry_policy = 8;
+  CompensationPolicy compensation_policy = 9;
+  map<string, string> metadata = 10;
+}
+
+message GetDefinitionRequest {
+  string tenant_id = 1;
+  string definition_id = 2;
+}
+
+message ListDefinitionsRequest {
+  string tenant_id = 1;
+  bool active_only = 2;
+  int32 page = 3;
+  int32 size = 4;
+}
+
+message UpdateDefinitionRequest {
+  string tenant_id = 1;
+  string definition_id = 2;
+  string description = 3;
+  bool is_active = 4;
+  map<string, string> metadata = 5;
+}
+
+message DeleteDefinitionRequest {
+  string tenant_id = 1;
+  string definition_id = 2;
+}
+
+message ValidateDefinitionRequest {
+  CreateDefinitionRequest definition = 1;
+}
+
+message DefinitionResponse {
+  string definition_id = 1;
+  string name = 2;
+  string version = 3;
+  string description = 4;
+  repeated NodeDefinition nodes = 5;
+  bool is_active = 6;
+  google.protobuf.Timestamp created_at = 7;
+  map<string, string> metadata = 8;
+}
+
+message ListDefinitionsResponse {
+  repeated DefinitionResponse definitions = 1;
+  int32 total = 2;
+}
+
+message ValidationResponse {
+  bool is_valid = 1;
+  repeated string errors = 2;
+  repeated string warnings = 3;
+}
+
+message NodeDefinition {
+  string id = 1;
+  string name = 2;
+  string type = 3;
+  string executor_type = 4;
+  google.protobuf.Struct configuration = 5;
+  repeated string depends_on = 6;
+  repeated Transition transitions = 7;
+  RetryPolicy retry_policy = 8;
+  int64 timeout_seconds = 9;
+  bool critical = 10;
+}
+
+message Transition {
+  string target_node_id = 1;
+  string condition = 2;
+  string type = 3;
+}
+
+message RetryPolicy {
+  int32 max_attempts = 1;
+  int64 initial_delay_seconds = 2;
+  int64 max_delay_seconds = 3;
+  double backoff_multiplier = 4;
+  repeated string retryable_exceptions = 5;
+}
+
+message CompensationPolicy {
+  string strategy = 1;
+  int64 timeout_seconds = 2;
+  bool fail_on_compensation_error = 3;
+}
+
+message InputDefinition {
+  string name = 1;
+  string type = 2;
+  bool required = 3;
+  google.protobuf.Value default_value = 4;
+  string description = 5;
+}
+
+message OutputDefinition {
+  string name = 1;
+  string type = 2;
+  string description = 3;
+}
+
+package tech.kayys.silat.grpc.services;
+
+import com.google.protobuf.Empty;
+import com.google.protobuf.Struct;
+import com.google.protobuf.Timestamp;
+import io.grpc.Status;
+import io.grpc.stub.StreamObserver;
+import io.quarkus.grpc.GrpcService;
+import io.smallrye.common.annotation.Blocking;
+import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.Uni;
+import jakarta.inject.Inject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import tech.kayys.silat.core.domain.*;
+import tech.kayys.silat.core.engine.WorkflowRunManager;
+import tech.kayys.silat.grpc.v1.*;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * ============================================================================
+ * gRPC WORKFLOW SERVICE IMPLEMENTATION
+ * ============================================================================
+ * 
+ * High-performance gRPC service for workflow operations.
+ * 
+ * Features:
+ * - Reactive Mutiny integration
+ * - Server streaming for real-time updates
+ * - Optimized serialization with Protocol Buffers
+ * - Built-in interceptors for auth and tenant isolation
+ */
+@GrpcService
+public class WorkflowServiceImpl implements WorkflowService {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(WorkflowServiceImpl.class);
+    
+    @Inject
+    WorkflowRunManager runManager;
+    
+    @Inject
+    GrpcMapper mapper;
+    
+    @Inject
+    GrpcTenantInterceptor tenantInterceptor;
+    
+    // ==================== CREATE RUN ====================
+    
+    @Override
+    public Uni<tech.kayys.silat.grpc.v1.RunResponse> createRun(
+            CreateRunRequest request) {
+        
+        LOG.info("gRPC: Creating workflow run for definition: {}", 
+            request.getWorkflowDefinitionId());
+        
+        TenantId tenantId = tenantInterceptor.getCurrentTenantId();
+        
+        // Convert protobuf to domain object
+        tech.kayys.silat.api.dto.CreateRunRequest domainRequest = 
+            new tech.kayys.silat.api.dto.CreateRunRequest(
+                request.getWorkflowDefinitionId(),
+                mapper.structToMap(request.getInputs()),
+                request.getLabelsMap(),
+                null // trigger - simplified
+            );
+        
+        return runManager.createRun(domainRequest, tenantId)
+            .map(mapper::toProtoRunResponse)
+            .onFailure().transform(this::mapException);
+    }
+    
+    // ==================== GET RUN ====================
+    
+    @Override
+    public Uni<tech.kayys.silat.grpc.v1.RunResponse> getRun(
+            GetRunRequest request) {
+        
+        LOG.debug("gRPC: Getting workflow run: {}", request.getRunId());
+        
+        TenantId tenantId = TenantId.of(request.getTenantId());
+        WorkflowRunId runId = WorkflowRunId.of(request.getRunId());
+        
+        return runManager.getRun(runId, tenantId)
+            .map(mapper::toProtoRunResponse)
+            .onFailure().transform(this::mapException);
+    }
+    
+    // ==================== START RUN ====================
+    
+    @Override
+    public Uni<tech.kayys.silat.grpc.v1.RunResponse> startRun(
+            StartRunRequest request) {
+        
+        LOG.info("gRPC: Starting workflow run: {}", request.getRunId());
+        
+        TenantId tenantId = TenantId.of(request.getTenantId());
+        WorkflowRunId runId = WorkflowRunId.of(request.getRunId());
+        
+        return runManager.startRun(runId, tenantId)
+            .map(mapper::toProtoRunResponse)
+            .onFailure().transform(this::mapException);
+    }
+    
+    // ==================== SUSPEND RUN ====================
+    
+    @Override
+    public Uni<tech.kayys.silat.grpc.v1.RunResponse> suspendRun(
+            SuspendRunRequest request) {
+        
+        LOG.info("gRPC: Suspending workflow run: {}", request.getRunId());
+        
+        TenantId tenantId = TenantId.of(request.getTenantId());
+        WorkflowRunId runId = WorkflowRunId.of(request.getRunId());
+        NodeId nodeId = request.hasWaitingOnNodeId() ? 
+            NodeId.of(request.getWaitingOnNodeId()) : null;
+        
+        return runManager.suspendRun(runId, tenantId, request.getReason(), nodeId)
+            .map(mapper::toProtoRunResponse)
+            .onFailure().transform(this::mapException);
+    }
+    
+    // ==================== RESUME RUN ====================
+    
+    @Override
+    public Uni<tech.kayys.silat.grpc.v1.RunResponse> resumeRun(
+            ResumeRunRequest request) {
+        
+        LOG.info("gRPC: Resuming workflow run: {}", request.getRunId());
+        
+        TenantId tenantId = TenantId.of(request.getTenantId());
+        WorkflowRunId runId = WorkflowRunId.of(request.getRunId());
+        Map<String, Object> resumeData = mapper.structToMap(request.getResumeData());
+        
+        return runManager.resumeRun(runId, tenantId, resumeData)
+            .map(mapper::toProtoRunResponse)
+            .onFailure().transform(this::mapException);
+    }
+    
+    // ==================== CANCEL RUN ====================
+    
+    @Override
+    public Uni<Empty> cancelRun(CancelRunRequest request) {
+        
+        LOG.info("gRPC: Cancelling workflow run: {}", request.getRunId());
+        
+        TenantId tenantId = TenantId.of(request.getTenantId());
+        WorkflowRunId runId = WorkflowRunId.of(request.getRunId());
+        
+        return runManager.cancelRun(runId, tenantId, request.getReason())
+            .map(v -> Empty.getDefaultInstance())
+            .onFailure().transform(this::mapException);
+    }
+    
+    // ==================== SIGNAL RUN ====================
+    
+    @Override
+    public Uni<Empty> signalRun(tech.kayys.silat.grpc.v1.SignalRequest request) {
+        
+        LOG.info("gRPC: Sending signal to run: {}", request.getRunId());
+        
+        WorkflowRunId runId = WorkflowRunId.of(request.getRunId());
+        
+        Signal signal = new Signal(
+            request.getSignalName(),
+            NodeId.of(request.getTargetNodeId()),
+            mapper.structToMap(request.getPayload()),
+            Instant.now()
+        );
+        
+        return runManager.signal(runId, signal)
+            .map(v -> Empty.getDefaultInstance())
+            .onFailure().transform(this::mapException);
+    }
+    
+    // ==================== GET EXECUTION HISTORY ====================
+    
+    @Override
+    public Uni<ExecutionHistoryResponse> getExecutionHistory(
+            GetExecutionHistoryRequest request) {
+        
+        LOG.debug("gRPC: Getting execution history for run: {}", request.getRunId());
+        
+        TenantId tenantId = TenantId.of(request.getTenantId());
+        WorkflowRunId runId = WorkflowRunId.of(request.getRunId());
+        
+        return runManager.getExecutionHistory(runId, tenantId)
+            .map(mapper::toProtoHistoryResponse)
+            .onFailure().transform(this::mapException);
+    }
+    
+    // ==================== QUERY RUNS ====================
+    
+    @Override
+    public Uni<QueryRunsResponse> queryRuns(QueryRunsRequest request) {
+        
+        LOG.debug("gRPC: Querying runs for tenant: {}", request.getTenantId());
+        
+        TenantId tenantId = TenantId.of(request.getTenantId());
+        WorkflowDefinitionId definitionId = request.hasWorkflowDefinitionId() ? 
+            WorkflowDefinitionId.of(request.getWorkflowDefinitionId()) : null;
+        tech.kayys.silat.core.domain.RunStatus status = request.hasStatus() ? 
+            tech.kayys.silat.core.domain.RunStatus.valueOf(request.getStatus()) : null;
+        
+        return runManager.queryRuns(
+                tenantId, 
+                definitionId, 
+                status, 
+                request.getPage(), 
+                request.getSize())
+            .map(runs -> {
+                QueryRunsResponse.Builder builder = QueryRunsResponse.newBuilder()
+                    .setPage(request.getPage())
+                    .setSize(request.getSize())
+                    .setTotalElements(runs.size())
+                    .setHasMore(false); // simplified
+                
+                runs.forEach(run -> 
+                    builder.addRuns(mapper.toProtoRunResponse(run)));
+                
+                return builder.build();
+            })
+            .onFailure().transform(this::mapException);
+    }
+    
+    // ==================== GET ACTIVE RUNS COUNT ====================
+    
+    @Override
+    public Uni<CountResponse> getActiveRunsCount(
+            GetActiveRunsCountRequest request) {
+        
+        TenantId tenantId = TenantId.of(request.getTenantId());
+        
+        return runManager.getActiveRunsCount(tenantId)
+            .map(count -> CountResponse.newBuilder()
+                .setCount(count)
+                .build())
+            .onFailure().transform(this::mapException);
+    }
+    
+    // ==================== STREAM RUN STATUS (SERVER STREAMING) ====================
+    
+    @Override
+    public Multi<RunStatusUpdate> streamRunStatus(
+            StreamRunStatusRequest request) {
+        
+        LOG.info("gRPC: Starting status stream for {} runs", 
+            request.getRunIdsCount());
+        
+        // This would connect to an event stream (Kafka, Redis Pub/Sub, etc.)
+        // For now, return empty stream
+        
+        return Multi.createFrom().empty();
+    }
+    
+    // ==================== ERROR HANDLING ====================
+    
+    private Throwable mapException(Throwable throwable) {
+        LOG.error("gRPC error", throwable);
+        
+        if (throwable instanceof java.util.NoSuchElementException) {
+            return Status.NOT_FOUND
+                .withDescription(throwable.getMessage())
+                .asRuntimeException();
+        } else if (throwable instanceof IllegalArgumentException ||
+                   throwable instanceof IllegalStateException) {
+            return Status.INVALID_ARGUMENT
+                .withDescription(throwable.getMessage())
+                .asRuntimeException();
+        } else if (throwable instanceof SecurityException) {
+            return Status.PERMISSION_DENIED
+                .withDescription(throwable.getMessage())
+                .asRuntimeException();
+        } else {
+            return Status.INTERNAL
+                .withDescription("Internal server error")
+                .asRuntimeException();
+        }
+    }
+}
+
+// ==================== EXECUTOR SERVICE IMPLEMENTATION ====================
+
+/**
+ * gRPC service for executor communication
+ */
+@GrpcService
+public class ExecutorServiceImpl implements ExecutorService {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(ExecutorServiceImpl.class);
+    
+    @Inject
+    tech.kayys.silat.core.scheduler.ExecutorRegistry executorRegistry;
+    
+    @Inject
+    tech.kayys.silat.core.scheduler.WorkflowScheduler scheduler;
+    
+    @Inject
+    GrpcMapper mapper;
+    
+    // ==================== REGISTER EXECUTOR ====================
+    
+    @Override
+    public Uni<ExecutorRegistration> registerExecutor(
+            RegisterExecutorRequest request) {
+        
+        LOG.info("gRPC: Registering executor: {}", request.getExecutorId());
+        
+        tech.kayys.silat.core.scheduler.ExecutorInfo executor = 
+            new tech.kayys.silat.core.scheduler.ExecutorInfo(
+                request.getExecutorId(),
+                request.getExecutorType(),
+                tech.kayys.silat.core.scheduler.CommunicationType.GRPC,
+                request.getEndpoint(),
+                request.getMetadataMap()
+            );
+        
+        executorRegistry.registerExecutor(executor);
+        
+        ExecutorRegistration registration = ExecutorRegistration.newBuilder()
+            .setExecutorId(request.getExecutorId())
+            .setStatus("REGISTERED")
+            .setRegisteredAt(mapper.toProtoTimestamp(Instant.now()))
+            .build();
+        
+        return Uni.createFrom().item(registration);
+    }
+    
+    // ==================== UNREGISTER EXECUTOR ====================
+    
+    @Override
+    public Uni<Empty> unregisterExecutor(
+            UnregisterExecutorRequest request) {
+        
+        LOG.info("gRPC: Unregistering executor: {}", request.getExecutorId());
+        
+        executorRegistry.unregisterExecutor(request.getExecutorId());
+        
+        return Uni.createFrom().item(Empty.getDefaultInstance());
+    }
+    
+    // ==================== HEARTBEAT ====================
+    
+    @Override
+    public Uni<Empty> heartbeat(HeartbeatRequest request) {
+        
+        executorRegistry.updateHeartbeat(request.getExecutorId());
+        
+        return Uni.createFrom().item(Empty.getDefaultInstance());
+    }
+    
+    // ==================== STREAM TASKS (SERVER STREAMING) ====================
+    
+    @Override
+    public Multi<ExecutionTask> streamTasks(StreamTasksRequest request) {
+        
+        LOG.info("gRPC: Starting task stream for executor: {}", 
+            request.getExecutorId());
+        
+        // This would pull tasks from the scheduler
+        // For now, return empty stream
+        
+        return Multi.createFrom().empty();
+    }
+    
+    // ==================== REPORT RESULTS (CLIENT STREAMING) ====================
+    
+    @Override
+    public Uni<Empty> reportResults(Multi<TaskResult> results) {
+        
+        LOG.info("gRPC: Receiving task results stream");
+        
+        return results
+            .onItem().invoke(result -> {
+                LOG.debug("Received result for task: {}", result.getTaskId());
+                
+                // Convert to domain object and handle
+                tech.kayys.silat.core.engine.NodeExecutionResult domainResult = 
+                    mapper.toDomainNodeResult(result);
+                
+                // Submit to run manager
+                runManager.handleNodeResult(
+                    WorkflowRunId.of(result.getRunId()),
+                    domainResult
+                ).subscribe().with(
+                    v -> LOG.debug("Result processed: {}", result.getTaskId()),
+                    error -> LOG.error("Failed to process result", error)
+                );
+            })
+            .collect().asList()
+            .map(list -> Empty.getDefaultInstance());
+    }
+    
+    // ==================== EXECUTE STREAM (BIDIRECTIONAL) ====================
+    
+    @Override
+    @Blocking
+    public void executeStream(
+            StreamObserver<EngineMessage> responseObserver,
+            StreamObserver<ExecutorMessage> requestObserver) {
+        
+        LOG.info("gRPC: Starting bidirectional stream");
+        
+        // Setup bidirectional stream
+        requestObserver = new StreamObserver<>() {
+            @Override
+            public void onNext(ExecutorMessage message) {
+                if (message.hasHeartbeat()) {
+                    // Handle heartbeat
+                    LOG.trace("Heartbeat from executor: {}", 
+                        message.getHeartbeat().getExecutorId());
+                } else if (message.hasResult()) {
+                    // Handle task result
+                    LOG.debug("Result from executor: {}", 
+                        message.getResult().getTaskId());
+                } else if (message.hasAck()) {
+                    // Handle acknowledgement
+                    LOG.trace("Task acknowledged: {}", 
+                        message.getAck().getTaskId());
+                }
+            }
+            
+            @Override
+            public void onError(Throwable t) {
+                LOG.error("Stream error", t);
+                responseObserver.onError(t);
+            }
+            
+            @Override
+            public void onCompleted() {
+                LOG.info("Stream completed");
+                responseObserver.onCompleted();
+            }
+        };
+    }
+}
+
+// ==================== GRPC MAPPER ====================
+
+/**
+ * Maps between domain objects and Protocol Buffer messages
+ */
+@jakarta.enterprise.context.ApplicationScoped
+public class GrpcMapper {
+    
+    @Inject
+    com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+    
+    // ==================== RUN RESPONSE MAPPING ====================
+    
+    public tech.kayys.silat.grpc.v1.RunResponse toProtoRunResponse(
+            WorkflowRun run) {
+        
+        WorkflowRunSnapshot snapshot = run.createSnapshot();
+        
+        tech.kayys.silat.grpc.v1.RunResponse.Builder builder = 
+            tech.kayys.silat.grpc.v1.RunResponse.newBuilder()
+                .setRunId(snapshot.id().value())
+                .setTenantId(snapshot.tenantId().value())
+                .setWorkflowDefinitionId(snapshot.definitionId().value())
+                .setStatus(toProtoRunStatus(snapshot.status()))
+                .setCreatedAt(toProtoTimestamp(snapshot.createdAt()));
+        
+        if (snapshot.startedAt() != null) {
+            builder.setStartedAt(toProtoTimestamp(snapshot.startedAt()));
+        }
+        
+        if (snapshot.completedAt() != null) {
+            builder.setCompletedAt(toProtoTimestamp(snapshot.completedAt()));
+            
+            long durationMs = java.time.Duration.between(
+                snapshot.startedAt(),
+                snapshot.completedAt()
+            ).toMillis();
+            builder.setDurationMs(durationMs);
+        }
+        
+        // Add variables
+        if (snapshot.variables() != null) {
+            builder.setVariables(mapToStruct(snapshot.variables()));
+        }
+        
+        // Add node executions
+        snapshot.nodeExecutions().forEach((nodeId, exec) -> {
+            builder.putNodeExecutions(
+                nodeId.value(),
+                toProtoNodeExecution(exec)
+            );
+        });
+        
+        // Add execution path
+        builder.addAllExecutionPath(snapshot.executionPath());
+        
+        return builder.build();
+    }
+    
+    // ==================== NODE EXECUTION MAPPING ====================
+    
+    public tech.kayys.silat.grpc.v1.NodeExecution toProtoNodeExecution(
+            tech.kayys.silat.core.domain.NodeExecution exec) {
+        
+        tech.kayys.silat.grpc.v1.NodeExecution.Builder builder = 
+            tech.kayys.silat.grpc.v1.NodeExecution.newBuilder()
+                .setNodeId(exec.getNodeId().value())
+                .setStatus(exec.getStatus().name())
+                .setAttempt(exec.getAttempt());
+        
+        if (exec.getOutput() != null && !exec.getOutput().isEmpty()) {
+            builder.setOutput(mapToStruct(exec.getOutput()));
+        }
+        
+        if (exec.getLastError() != null) {
+            builder.setError(toProtoErrorInfo(exec.getLastError()));
+        }
+        
+        return builder.build();
+    }
+    
+    // ==================== ERROR INFO MAPPING ====================
+    
+    public tech.kayys.silat.grpc.v1.ErrorInfo toProtoErrorInfo(
+            tech.kayys.silat.core.domain.ErrorInfo error) {
+        
+        return tech.kayys.silat.grpc.v1.ErrorInfo.newBuilder()
+            .setCode(error.code())
+            .setMessage(error.message())
+            .setStackTrace(error.stackTrace())
+            .setContext(mapToStruct(error.context()))
+            .build();
+    }
+    
+    // ==================== HISTORY MAPPING ====================
+    
+    public ExecutionHistoryResponse toProtoHistoryResponse(
+            tech.kayys.silat.core.engine.ExecutionHistory history) {
+        
+        ExecutionHistoryResponse.Builder builder = 
+            ExecutionHistoryResponse.newBuilder()
+                .setRunId(history.runId().value())
+                .setTotalEvents(history.events().size());
+        
+        history.events().forEach(event -> {
+            builder.addEvents(toProtoExecutionEvent(event));
+        });
+        
+        return builder.build();
+    }
+    
+    public tech.kayys.silat.grpc.v1.ExecutionEvent toProtoExecutionEvent(
+            tech.kayys.silat.core.domain.ExecutionEvent event) {
+        
+        return tech.kayys.silat.grpc.v1.ExecutionEvent.newBuilder()
+            .setEventId(event.eventId())
+            .setEventType(event.eventType())
+            .setOccurredAt(toProtoTimestamp(event.occurredAt()))
+            .build();
+    }
+    
+    // ==================== NODE RESULT MAPPING ====================
+    
+    public tech.kayys.silat.core.engine.NodeExecutionResult toDomainNodeResult(
+            TaskResult protoResult) {
+        
+        return new tech.kayys.silat.core.engine.NodeExecutionResult(
+            WorkflowRunId.of(protoResult.getRunId()),
+            NodeId.of(protoResult.getNodeId()),
+            protoResult.getAttempt(),
+            toDomainTaskStatus(protoResult.getStatus()),
+            structToMap(protoResult.getOutput()),
+            protoResult.hasError() ? toDomainErrorInfo(protoResult.getError()) : null,
+            new ExecutionToken(
+                protoResult.getExecutionToken(),
+                WorkflowRunId.of(protoResult.getRunId()),
+                NodeId.of(protoResult.getNodeId()),
+                protoResult.getAttempt(),
+                Instant.now().plusSeconds(3600)
+            )
+        );
+    }
+    
+    // ==================== UTILITY METHODS ====================
+    
+    public Timestamp toProtoTimestamp(Instant instant) {
+        return Timestamp.newBuilder()
+            .setSeconds(instant.getEpochSecond())
+            .setNanos(instant.getNano())
+            .build();
+    }
+    
+    public Instant toInstant(Timestamp timestamp) {
+        return Instant.ofEpochSecond(
+            timestamp.getSeconds(),
+            timestamp.getNanos()
+        );
+    }
+    
+    public tech.kayys.silat.grpc.v1.RunStatus toProtoRunStatus(
+            tech.kayys.silat.core.domain.RunStatus status) {
+        return tech.kayys.silat.grpc.v1.RunStatus.valueOf(
+            "RUN_STATUS_" + status.name());
+    }
+    
+    public tech.kayys.silat.core.domain.NodeExecutionStatus toDomainTaskStatus(
+            TaskStatus status) {
+        return tech.kayys.silat.core.domain.NodeExecutionStatus.valueOf(
+            status.name().replace("TASK_STATUS_", ""));
+    }
+    
+    public Struct mapToStruct(Map<String, Object> map) {
+        try {
+            String json = objectMapper.writeValueAsString(map);
+            Struct.Builder builder = Struct.newBuilder();
+            com.google.protobuf.util.JsonFormat.parser()
+                .merge(json, builder);
+            return builder.build();
+        } catch (Exception e) {
+            LOG.error("Failed to convert map to Struct", e);
+            return Struct.getDefaultInstance();
+        }
+    }
+    
+    public Map<String, Object> structToMap(Struct struct) {
+        try {
+            String json = com.google.protobuf.util.JsonFormat.printer()
+                .print(struct);
+            return objectMapper.readValue(json, 
+                new com.fasterxml.jackson.core.type.TypeReference<>() {});
+        } catch (Exception e) {
+            LOG.error("Failed to convert Struct to map", e);
+            return Map.of();
+        }
+    }
+    
+    public tech.kayys.silat.core.domain.ErrorInfo toDomainErrorInfo(
+            tech.kayys.silat.grpc.v1.ErrorInfo error) {
+        return new tech.kayys.silat.core.domain.ErrorInfo(
+            error.getCode(),
+            error.getMessage(),
+            error.getStackTrace(),
+            structToMap(error.getContext())
+        );
+    }
+}
+
+// ==================== TENANT INTERCEPTOR ====================
+
+/**
+ * gRPC interceptor for tenant resolution
+ */
+@jakarta.enterprise.context.ApplicationScoped
+public class GrpcTenantInterceptor {
+    
+    private static final io.grpc.Context.Key<String> TENANT_KEY = 
+        io.grpc.Context.key("tenant-id");
+    
+    public TenantId getCurrentTenantId() {
+        String tenantId = TENANT_KEY.get();
+        if (tenantId == null) {
+            throw new SecurityException("Tenant ID not found in context");
+        }
+        return TenantId.of(tenantId);
+    }
+    
+    public void setTenantId(String tenantId) {
+        io.grpc.Context.current()
+            .withValue(TENANT_KEY, tenantId)
+            .run(() -> {});
+    }
+}
+

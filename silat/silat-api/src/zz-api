@@ -1,0 +1,761 @@
+package tech.kayys.silat.api.dto;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import jakarta.validation.constraints.*;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import tech.kayys.silat.core.domain.*;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * ============================================================================
+ * API DATA TRANSFER OBJECTS (DTOs)
+ * ============================================================================
+ * 
+ * Request and response objects for REST API.
+ * Separated from domain models for API stability.
+ */
+
+// ==================== REQUEST DTOs ====================
+
+/**
+ * Request to create a new workflow run
+ */
+@Schema(description = "Request to create a new workflow run")
+public record CreateRunRequest(
+    @NotBlank
+    @Schema(description = "Workflow definition ID", required = true, example = "order-processing")
+    String workflowDefinitionId,
+    
+    @Schema(description = "Input parameters for the workflow", example = "{\"orderId\": \"ORDER-123\"}")
+    Map<String, Object> inputs,
+    
+    @Schema(description = "Labels for categorization")
+    Map<String, String> labels,
+    
+    @Schema(description = "Trigger information")
+    TriggerInfo trigger
+) {
+    public CreateRunRequest {
+        inputs = inputs != null ? inputs : Map.of();
+        labels = labels != null ? labels : Map.of();
+    }
+}
+
+/**
+ * Trigger information
+ */
+@Schema(description = "Information about what triggered the workflow")
+public record TriggerInfo(
+    @Schema(description = "Trigger type", example = "API")
+    String type,
+    
+    @Schema(description = "Triggered by user/system", example = "user-123")
+    String triggeredBy,
+    
+    @Schema(description = "Trigger timestamp")
+    Instant triggeredAt,
+    
+    @Schema(description = "Additional trigger metadata")
+    Map<String, String> metadata
+) {}
+
+/**
+ * Request to suspend a workflow run
+ */
+@Schema(description = "Request to suspend a workflow run")
+public record SuspendRunRequest(
+    @NotBlank
+    @Schema(description = "Reason for suspension", required = true, example = "Waiting for approval")
+    String reason,
+    
+    @Schema(description = "Node ID that is waiting", example = "approval-node")
+    String waitingOnNodeId
+) {}
+
+/**
+ * Request to resume a workflow run
+ */
+@Schema(description = "Request to resume a workflow run")
+public record ResumeRunRequest(
+    @Schema(description = "Data to merge into workflow context")
+    Map<String, Object> resumeData,
+    
+    @Schema(description = "Human task ID if resuming from human task")
+    String humanTaskId
+) {
+    public ResumeRunRequest {
+        resumeData = resumeData != null ? resumeData : Map.of();
+    }
+}
+
+/**
+ * Request to cancel a workflow run
+ */
+@Schema(description = "Request to cancel a workflow run")
+public record CancelRunRequest(
+    @NotBlank
+    @Schema(description = "Reason for cancellation", required = true, example = "User requested cancellation")
+    String reason
+) {}
+
+/**
+ * Request to send a signal to a workflow
+ */
+@Schema(description = "Request to signal a workflow")
+public record SignalRequest(
+    @NotBlank
+    @Schema(description = "Signal name", required = true, example = "approval_received")
+    String signalName,
+    
+    @NotBlank
+    @Schema(description = "Target node ID", required = true, example = "approval-node")
+    String targetNodeId,
+    
+    @Schema(description = "Signal payload")
+    Map<String, Object> payload
+) {
+    public SignalRequest {
+        payload = payload != null ? payload : Map.of();
+    }
+}
+
+/**
+ * Request to create a workflow definition
+ */
+@Schema(description = "Request to create a workflow definition")
+public record CreateWorkflowDefinitionRequest(
+    @NotBlank
+    @Schema(description = "Workflow name", required = true)
+    String name,
+    
+    @NotBlank
+    @Schema(description = "Version", required = true)
+    String version,
+    
+    @Schema(description = "Description")
+    String description,
+    
+    @NotEmpty
+    @Schema(description = "Node definitions", required = true)
+    List<NodeDefinitionDto> nodes,
+    
+    @Schema(description = "Input definitions")
+    Map<String, InputDefinitionDto> inputs,
+    
+    @Schema(description = "Output definitions")
+    Map<String, OutputDefinitionDto> outputs,
+    
+    @Schema(description = "Default retry policy")
+    RetryPolicyDto retryPolicy,
+    
+    @Schema(description = "Compensation policy")
+    CompensationPolicyDto compensationPolicy,
+    
+    @Schema(description = "Metadata")
+    Map<String, String> metadata
+) {}
+
+/**
+ * Request to update a workflow definition
+ */
+@Schema(description = "Request to update a workflow definition")
+public record UpdateWorkflowDefinitionRequest(
+    @Schema(description = "Description")
+    String description,
+    
+    @Schema(description = "Active status")
+    Boolean isActive,
+    
+    @Schema(description = "Metadata")
+    Map<String, String> metadata
+) {}
+
+// ==================== RESPONSE DTOs ====================
+
+/**
+ * Workflow run response
+ */
+@Schema(description = "Workflow run response")
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record RunResponse(
+    @Schema(description = "Run ID", example = "550e8400-e29b-41d4-a716-446655440000")
+    String runId,
+    
+    @Schema(description = "Tenant ID", example = "acme-corp")
+    String tenantId,
+    
+    @Schema(description = "Workflow definition ID", example = "order-processing")
+    String workflowDefinitionId,
+    
+    @Schema(description = "Workflow version", example = "1.0.0")
+    String workflowVersion,
+    
+    @Schema(description = "Current status", example = "RUNNING")
+    String status,
+    
+    @Schema(description = "Context variables")
+    Map<String, Object> variables,
+    
+    @Schema(description = "Node execution states")
+    Map<String, NodeExecutionDto> nodeExecutions,
+    
+    @Schema(description = "Execution path")
+    List<String> executionPath,
+    
+    @Schema(description = "Created timestamp")
+    Instant createdAt,
+    
+    @Schema(description = "Started timestamp")
+    Instant startedAt,
+    
+    @Schema(description = "Completed timestamp")
+    Instant completedAt,
+    
+    @Schema(description = "Duration in milliseconds")
+    Long durationMs,
+    
+    @Schema(description = "Labels")
+    Map<String, String> labels,
+    
+    @Schema(description = "Metadata")
+    Map<String, String> metadata
+) {}
+
+/**
+ * Node execution DTO
+ */
+@Schema(description = "Node execution state")
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record NodeExecutionDto(
+    @Schema(description = "Node ID")
+    String nodeId,
+    
+    @Schema(description = "Node name")
+    String nodeName,
+    
+    @Schema(description = "Execution status")
+    String status,
+    
+    @Schema(description = "Attempt number")
+    int attempt,
+    
+    @Schema(description = "Started timestamp")
+    Instant startedAt,
+    
+    @Schema(description = "Completed timestamp")
+    Instant completedAt,
+    
+    @Schema(description = "Duration in milliseconds")
+    Long durationMs,
+    
+    @Schema(description = "Output data")
+    Map<String, Object> output,
+    
+    @Schema(description = "Error information")
+    ErrorDto error
+) {}
+
+/**
+ * Error DTO
+ */
+@Schema(description = "Error information")
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record ErrorDto(
+    @Schema(description = "Error code")
+    String code,
+    
+    @Schema(description = "Error message")
+    String message,
+    
+    @Schema(description = "Stack trace")
+    String stackTrace,
+    
+    @Schema(description = "Additional context")
+    Map<String, Object> context
+) {}
+
+/**
+ * Execution history response
+ */
+@Schema(description = "Execution history response")
+public record ExecutionHistoryResponse(
+    @Schema(description = "Run ID")
+    String runId,
+    
+    @Schema(description = "Events")
+    List<ExecutionEventDto> events,
+    
+    @Schema(description = "Total event count")
+    int totalEvents
+) {}
+
+/**
+ * Execution event DTO
+ */
+@Schema(description = "Execution event")
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record ExecutionEventDto(
+    @Schema(description = "Event ID")
+    String eventId,
+    
+    @Schema(description = "Event type")
+    String eventType,
+    
+    @Schema(description = "Sequence number")
+    long sequenceNumber,
+    
+    @Schema(description = "Occurred timestamp")
+    Instant occurredAt,
+    
+    @Schema(description = "Event data")
+    Map<String, Object> eventData
+) {}
+
+/**
+ * Paged response wrapper
+ */
+@Schema(description = "Paged response")
+public record PagedResponse<T>(
+    @Schema(description = "Page content")
+    List<T> content,
+    
+    @Schema(description = "Page number")
+    int page,
+    
+    @Schema(description = "Page size")
+    int size,
+    
+    @Schema(description = "Total elements in page")
+    int totalElements,
+    
+    @Schema(description = "Has more pages")
+    boolean hasMore
+) {}
+
+/**
+ * Count response
+ */
+@Schema(description = "Count response")
+public record CountResponse(
+    @Schema(description = "Count value")
+    long count
+) {}
+
+/**
+ * Workflow definition response
+ */
+@Schema(description = "Workflow definition response")
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record WorkflowDefinitionResponse(
+    @Schema(description = "Definition ID")
+    String definitionId,
+    
+    @Schema(description = "Name")
+    String name,
+    
+    @Schema(description = "Version")
+    String version,
+    
+    @Schema(description = "Description")
+    String description,
+    
+    @Schema(description = "Node definitions")
+    List<NodeDefinitionDto> nodes,
+    
+    @Schema(description = "Input definitions")
+    Map<String, InputDefinitionDto> inputs,
+    
+    @Schema(description = "Output definitions")
+    Map<String, OutputDefinitionDto> outputs,
+    
+    @Schema(description = "Is active")
+    boolean isActive,
+    
+    @Schema(description = "Created timestamp")
+    Instant createdAt,
+    
+    @Schema(description = "Metadata")
+    Map<String, String> metadata
+) {
+    public static WorkflowDefinitionResponse from(WorkflowDefinition definition) {
+        return new WorkflowDefinitionResponse(
+            definition.id().value(),
+            definition.name(),
+            definition.version(),
+            definition.description(),
+            definition.nodes().stream()
+                .map(NodeDefinitionDto::from)
+                .toList(),
+            null, // simplified
+            null, // simplified
+            true,
+            definition.metadata().createdAt(),
+            definition.metadata().labels()
+        );
+    }
+}
+
+// ==================== NESTED DTOs ====================
+
+/**
+ * Node definition DTO
+ */
+@Schema(description = "Node definition")
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record NodeDefinitionDto(
+    @NotBlank
+    @Schema(description = "Node ID", required = true)
+    String id,
+    
+    @NotBlank
+    @Schema(description = "Node name", required = true)
+    String name,
+    
+    @NotBlank
+    @Schema(description = "Node type", required = true)
+    String type,
+    
+    @Schema(description = "Executor type")
+    String executorType,
+    
+    @Schema(description = "Configuration")
+    Map<String, Object> configuration,
+    
+    @Schema(description = "Dependencies (node IDs)")
+    List<String> dependsOn,
+    
+    @Schema(description = "Transitions")
+    List<TransitionDto> transitions,
+    
+    @Schema(description = "Retry policy")
+    RetryPolicyDto retryPolicy,
+    
+    @Schema(description = "Timeout in seconds")
+    Long timeoutSeconds,
+    
+    @Schema(description = "Is critical")
+    boolean critical
+) {
+    public static NodeDefinitionDto from(NodeDefinition node) {
+        return new NodeDefinitionDto(
+            node.id().value(),
+            node.name(),
+            node.type().name(),
+            node.executorType(),
+            node.configuration(),
+            node.dependsOn().stream().map(NodeId::value).toList(),
+            node.transitions().stream().map(TransitionDto::from).toList(),
+            node.retryPolicy() != null ? RetryPolicyDto.from(node.retryPolicy()) : null,
+            node.timeout() != null ? node.timeout().toSeconds() : null,
+            node.critical()
+        );
+    }
+}
+
+/**
+ * Transition DTO
+ */
+@Schema(description = "Transition definition")
+public record TransitionDto(
+    @NotBlank
+    @Schema(description = "Target node ID", required = true)
+    String targetNodeId,
+    
+    @Schema(description = "Condition expression")
+    String condition,
+    
+    @Schema(description = "Transition type")
+    String type
+) {
+    public static TransitionDto from(Transition transition) {
+        return new TransitionDto(
+            transition.targetNodeId().value(),
+            transition.condition(),
+            transition.type().name()
+        );
+    }
+}
+
+/**
+ * Retry policy DTO
+ */
+@Schema(description = "Retry policy")
+public record RetryPolicyDto(
+    @Min(1) @Max(10)
+    @Schema(description = "Max attempts", minimum = "1", maximum = "10")
+    int maxAttempts,
+    
+    @Min(0)
+    @Schema(description = "Initial delay in seconds")
+    long initialDelaySeconds,
+    
+    @Min(0)
+    @Schema(description = "Max delay in seconds")
+    long maxDelaySeconds,
+    
+    @DecimalMin("1.0") @DecimalMax("10.0")
+    @Schema(description = "Backoff multiplier")
+    double backoffMultiplier,
+    
+    @Schema(description = "Retryable exceptions")
+    List<String> retryableExceptions
+) {
+    public static RetryPolicyDto from(RetryPolicy policy) {
+        return new RetryPolicyDto(
+            policy.maxAttempts(),
+            policy.initialDelay().toSeconds(),
+            policy.maxDelay().toSeconds(),
+            policy.backoffMultiplier(),
+            policy.retryableExceptions()
+        );
+    }
+}
+
+/**
+ * Compensation policy DTO
+ */
+@Schema(description = "Compensation policy")
+public record CompensationPolicyDto(
+    @Schema(description = "Strategy")
+    String strategy,
+    
+    @Schema(description = "Timeout in seconds")
+    long timeoutSeconds,
+    
+    @Schema(description = "Fail on compensation error")
+    boolean failOnCompensationError
+) {
+    public static CompensationPolicyDto from(CompensationPolicy policy) {
+        return new CompensationPolicyDto(
+            policy.strategy().name(),
+            policy.timeout().toSeconds(),
+            policy.failOnCompensationError()
+        );
+    }
+}
+
+/**
+ * Input definition DTO
+ */
+@Schema(description = "Input definition")
+public record InputDefinitionDto(
+    @NotBlank
+    @Schema(description = "Name", required = true)
+    String name,
+    
+    @NotBlank
+    @Schema(description = "Type", required = true)
+    String type,
+    
+    @Schema(description = "Is required")
+    boolean required,
+    
+    @Schema(description = "Default value")
+    Object defaultValue,
+    
+    @Schema(description = "Description")
+    String description
+) {}
+
+/**
+ * Output definition DTO
+ */
+@Schema(description = "Output definition")
+public record OutputDefinitionDto(
+    @NotBlank
+    @Schema(description = "Name", required = true)
+    String name,
+    
+    @NotBlank
+    @Schema(description = "Type", required = true)
+    String type,
+    
+    @Schema(description = "Description")
+    String description
+) {}
+
+/**
+ * Executor registration request
+ */
+@Schema(description = "Executor registration request")
+public record ExecutorRegistrationRequest(
+    @NotBlank
+    @Schema(description = "Executor ID", required = true)
+    String executorId,
+    
+    @NotBlank
+    @Schema(description = "Executor type", required = true)
+    String executorType,
+    
+    @NotBlank
+    @Schema(description = "Communication type", required = true)
+    String communicationType,
+    
+    @NotBlank
+    @Schema(description = "Endpoint", required = true)
+    String endpoint,
+    
+    @Schema(description = "Metadata")
+    Map<String, String> metadata
+) {
+    public ExecutorRegistrationRequest {
+        metadata = metadata != null ? metadata : Map.of();
+    }
+}
+
+/**
+ * Executor registration response
+ */
+@Schema(description = "Executor registration response")
+public record ExecutorRegistrationResponse(
+    @Schema(description = "Executor ID")
+    String executorId,
+    
+    @Schema(description = "Status")
+    String status,
+    
+    @Schema(description = "Registered timestamp")
+    Instant registeredAt
+) {}
+
+// ==================== MAPPER ====================
+
+/**
+ * Maps domain objects to DTOs
+ */
+@jakarta.enterprise.context.ApplicationScoped
+public class RunResponseMapper {
+    
+    public RunResponse toResponse(WorkflowRun run) {
+        WorkflowRunSnapshot snapshot = run.createSnapshot();
+        
+        Map<String, NodeExecutionDto> nodeExecutionDtos = snapshot.nodeExecutions().entrySet()
+            .stream()
+            .collect(java.util.stream.Collectors.toMap(
+                entry -> entry.getKey().value(),
+                entry -> toNodeExecutionDto(entry.getValue())
+            ));
+        
+        Long durationMs = null;
+        if (snapshot.startedAt() != null && snapshot.completedAt() != null) {
+            durationMs = java.time.Duration.between(
+                snapshot.startedAt(), 
+                snapshot.completedAt()
+            ).toMillis();
+        }
+        
+        return new RunResponse(
+            snapshot.id().value(),
+            snapshot.tenantId().value(),
+            snapshot.definitionId().value(),
+            null, // version - simplified
+            snapshot.status().name(),
+            snapshot.variables(),
+            nodeExecutionDtos,
+            snapshot.executionPath(),
+            snapshot.createdAt(),
+            snapshot.startedAt(),
+            snapshot.completedAt(),
+            durationMs,
+            Map.of(), // labels - simplified
+            Map.of()  // metadata - simplified
+        );
+    }
+    
+    private NodeExecutionDto toNodeExecutionDto(NodeExecution exec) {
+        Long durationMs = null;
+        // Calculate duration if both timestamps available
+        
+        ErrorDto errorDto = null;
+        if (exec.getLastError() != null) {
+            ErrorInfo error = exec.getLastError();
+            errorDto = new ErrorDto(
+                error.code(),
+                error.message(),
+                error.stackTrace(),
+                error.context()
+            );
+        }
+        
+        return new NodeExecutionDto(
+            exec.getNodeId().value(),
+            null, // node name - would need to lookup from definition
+            exec.getStatus().name(),
+            exec.getAttempt(),
+            null, // startedAt - simplified
+            null, // completedAt - simplified
+            durationMs,
+            exec.getOutput(),
+            errorDto
+        );
+    }
+    
+    public ExecutionHistoryResponse toHistoryResponse(ExecutionHistory history) {
+        List<ExecutionEventDto> eventDtos = history.events().stream()
+            .map(this::toEventDto)
+            .toList();
+        
+        return new ExecutionHistoryResponse(
+            history.runId().value(),
+            eventDtos,
+            eventDtos.size()
+        );
+    }
+    
+    private ExecutionEventDto toEventDto(ExecutionEvent event) {
+        return new ExecutionEventDto(
+            event.eventId(),
+            event.eventType(),
+            0L, // sequence - would come from event store
+            event.occurredAt(),
+            Map.of() // event data - simplified
+        );
+    }
+}
+
+// ==================== SERVICES ====================
+
+/**
+ * Workflow definition service
+ */
+@jakarta.enterprise.context.ApplicationScoped
+public class WorkflowDefinitionService {
+    
+    @jakarta.inject.Inject
+    tech.kayys.silat.core.registry.WorkflowDefinitionRegistry registry;
+    
+    public io.smallrye.mutiny.Uni<WorkflowDefinition> create(
+            CreateWorkflowDefinitionRequest request, 
+            TenantId tenantId) {
+        // Convert DTO to domain object and register
+        return io.smallrye.mutiny.Uni.createFrom().nullItem();
+    }
+    
+    public io.smallrye.mutiny.Uni<WorkflowDefinition> get(
+            WorkflowDefinitionId id, 
+            TenantId tenantId) {
+        return registry.getDefinition(id, tenantId);
+    }
+    
+    public io.smallrye.mutiny.Uni<List<WorkflowDefinition>> list(
+            TenantId tenantId, 
+            boolean activeOnly) {
+        return io.smallrye.mutiny.Uni.createFrom().item(List.of());
+    }
+    
+    public io.smallrye.mutiny.Uni<WorkflowDefinition> update(
+            WorkflowDefinitionId id,
+            UpdateWorkflowDefinitionRequest request,
+            TenantId tenantId) {
+        return io.smallrye.mutiny.Uni.createFrom().nullItem();
+    }
+    
+    public io.smallrye.mutiny.Uni<Void> delete(
+            WorkflowDefinitionId id,
+            TenantId tenantId) {
+        return io.smallrye.mutiny.Uni.createFrom().voidItem();
+    }
+}
