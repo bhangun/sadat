@@ -1,0 +1,11 @@
+ #!/bin/bash
+ echo "Checking Silat stack health..."
+ echo ""
+ echo "PostgreSQL: $(curl -s http://localhost:5432 && echo 'UP' || echo 'DOWN')"
+ echo "Redis: $(redis-cli -h localhost -p 6379 -a silat_redis_pass ping)"
+ echo "Kafka: $(kafka-broker-api-versions --bootstrap-server localhost:29092 && echo 'UP' || echo 'DOWN')"
+ echo "Keycloak: $(curl -s http://localhost:8180/health/ready | jq -r .status)"
+ echo "Silat Control Plane: $(curl -s http://localhost:8080/health/ready | jq -r .status)"
+ echo "Prometheus: $(curl -s http://localhost:9091/-/healthy && echo 'UP' || echo 'DOWN')"
+ echo "Grafana: $(curl -s http://localhost:3000/api/health | jq -r .database)"
+ echo "Jaeger: $(curl -s http://localhost:16686 && echo 'UP' || echo 'DOWN')"

@@ -17,10 +17,12 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
-        <quarkus.platform.version>3.30.5</quarkus.platform.version>
+        <quarkus.platform.version>3.15.1</quarkus.platform.version>
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.5.4</surefire-plugin.version>
         <lombok.version>1.18.30</lombok.version>
+        <protobuf.version>3.25.5</protobuf.version>
+        <quarkus.grpc.protoc-artifact>com.google.protobuf:protoc:${protobuf.version}</quarkus.grpc.protoc-artifact>
     </properties>
 
     <dependencyManagement>
@@ -39,6 +41,26 @@
         <dependency>
             <groupId>tech.kayys.silat</groupId>
             <artifactId>silat-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tech.kayys.silat</groupId>
+            <artifactId>silat-grpc</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tech.kayys.silat</groupId>
+            <artifactId>silat-kafka</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tech.kayys.silat</groupId>
+            <artifactId>silat-api</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tech.kayys.silat</groupId>
+            <artifactId>silat-registry</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
@@ -129,10 +151,30 @@
             <groupId>io.smallrye.reactive</groupId>
             <artifactId>smallrye-mutiny-vertx-kafka-client</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-jwt</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-config-yaml</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-test-security</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>${quarkus.platform.group-id}</groupId>
                 <artifactId>quarkus-maven-plugin</artifactId>
@@ -148,13 +190,6 @@
                         </goals>
                     </execution>
                 </executions>
-            </plugin>
-            <plugin>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>${compiler-plugin.version}</version>
-                <configuration>
-                    <parameters>true</parameters>
-                </configuration>
             </plugin>
             <plugin>
                 <artifactId>maven-surefire-plugin</artifactId>

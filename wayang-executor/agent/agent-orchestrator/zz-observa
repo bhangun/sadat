@@ -1,0 +1,697 @@
+package tech.kayys.silat.observability;
+
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.trace.*;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
+import io.opentelemetry.api.metrics.*;
+import io.opentelemetry.semconv.SemanticAttributes;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * ============================================================================
+ * DISTRIBUTED TRACING & OBSERVABILITY - OpenTelemetry Integration
+ * ============================================================================
+ * 
+ * Complete observability solution with:
+ * - Distributed tracing (spans, context propagation)
+ * - Metrics collection (Prometheus/Grafana)
+ * - Structured logging with correlation
+ * - Real-time dashboards
+ * - SLO/SLA monitoring
+ * 
+ * Package: tech.kayys.silat.observability
+ */
+
+// ==================== TRACING SERVICE ====================
+
+@ApplicationScoped
+public class OrchestrationTracingService {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(OrchestrationTracingService.class);
+    
+    // Semantic attribute keys
+    private static final AttributeKey<String> ORCHESTRATION_ID = AttributeKey.stringKey("orchestration.id");
+    private static final AttributeKey<String> AGENT_ID = AttributeKey.stringKey("agent.id");
+    private static final AttributeKey<String> AGENT_TYPE = AttributeKey.stringKey("agent.type");
+    private static final AttributeKey<String> STEP_ID = AttributeKey.stringKey("step.id");
+    private static final AttributeKey<String> TENANT_ID = AttributeKey.stringKey("tenant.id");
+    private static final AttributeKey<String> LLM_PROVIDER = AttributeKey.stringKey("llm.provider");
+    private static final AttributeKey<String> LLM_MODEL = AttributeKey.stringKey("llm.model");
+    private static final AttributeKey<Long> TOKEN_COUNT = AttributeKey.longKey("llm.tokens");
+    private static final AttributeKey<Double> COST_USD = AttributeKey.doubleKey("cost.usd");
+    
+    @Inject
+    OpenTelemetry openTelemetry;
+    
+    private Tracer tracer;
+    
+    @jakarta.annotation.PostConstruct
+    void init() {
+        this.tracer = openTelemetry.getTracer("tech.kayys.silat.agent", "1.0.0");
+        LOG.info("OpenTelemetry tracer initialized");
+    }
+    
+    /**
+     * Start orchestration trace
+     */
+    public OrchestrationTrace startOrchestration(
+            String orchestrationId,
+            String tenantId,
+            String taskDescription) {
+        
+        Span span = tracer.spanBuilder("orchestration.execute")
+            .setSpanKind(SpanKind.SERVER)
+            .setAttribute(ORCHESTRATION_ID, orchestrationId)
+            .setAttribute(TENANT_ID, tenantId)
+            .setAttribute(SemanticAttributes.CODE_FUNCTION, "orchestrate")
+            .setAttribute("task.description", taskDescription)
+            .startSpan();
+        
+        // Set MDC for structured logging
+        MDC.put("orchestrationId", orchestrationId);
+        MDC.put("tenantId", tenantId);
+        MDC.put("traceId", span.getSpanContext().getTraceId());
+        MDC.put("spanId", span.getSpanContext().getSpanId());
+        
+        LOG.info("Started orchestration trace: {}", orchestrationId);
+        
+        return new OrchestrationTrace(span, Context.current().with(span));
+    }
+    
+    /**
+     * Trace planning phase
+     */
+    public PlanningTrace tracePlanning(
+            OrchestrationTrace parentTrace,
+            String planId,
+            String strategy) {
+        
+        Span span = tracer.spanBuilder("orchestration.planning")
+            .setParent(parentTrace.context())
+            .setSpanKind(SpanKind.INTERNAL)
+            .setAttribute("plan.id", planId)
+            .setAttribute("plan.strategy", strategy)
+            .startSpan();
+        
+        LOG.debug("Started planning trace: planId={}, strategy={}", planId, strategy);
+        
+        return new PlanningTrace(span, Context.current().with(span));
+    }
+    
+    /**
+     * Trace step execution
+     */
+    public StepTrace traceStepExecution(
+            OrchestrationTrace parentTrace,
+            String stepId,
+            String stepDescription,
+            String assignedAgentType) {
+        
+        Span span = tracer.spanBuilder("orchestration.step")
+            .setParent(parentTrace.context())
+            .setSpanKind(SpanKind.INTERNAL)
+            .setAttribute(STEP_ID, stepId)
+            .setAttribute("step.description", stepDescription)
+            .setAttribute("step.agent_type", assignedAgentType)
+            .startSpan();
+        
+        MDC.put("stepId", stepId);
+        LOG.debug("Started step trace: {}", stepId);
+        
+        return new StepTrace(span, Context.current().with(span));
+    }
+    
+    /**
+     * Trace agent execution
+     */
+    public AgentTrace traceAgentExecution(
+            StepTrace parentTrace,
+            String agentId,
+            String agentType) {
+        
+        Span span = tracer.spanBuilder("agent.execute")
+            .setParent(parentTrace.context())
+            .setSpanKind(SpanKind.CLIENT)
+            .setAttribute(AGENT_ID, agentId)
+            .setAttribute(AGENT_TYPE, agentType)
+            .startSpan();
+        
+        MDC.put("agentId", agentId);
+        LOG.debug("Started agent trace: agentId={}, type={}", agentId, agentType);
+        
+        return new AgentTrace(span, Context.current().with(span));
+    }
+    
+    /**
+     * Trace LLM call
+     */
+    public LLMTrace traceLLMCall(
+            AgentTrace parentTrace,
+            String provider,
+            String model,
+            int maxTokens) {
+        
+        Span span = tracer.spanBuilder("llm.completion")
+            .setParent(parentTrace.context())
+            .setSpanKind(SpanKind.CLIENT)
+            .setAttribute(LLM_PROVIDER, provider)
+            .setAttribute(LLM_MODEL, model)
+            .setAttribute("llm.max_tokens", maxTokens)
+            .startSpan();
+        
+        LOG.debug("Started LLM trace: provider={}, model={}", provider, model);
+        
+        return new LLMTrace(span, Context.current().with(span));
+    }
+    
+    /**
+     * Record LLM response
+     */
+    public void recordLLMResponse(
+            LLMTrace trace,
+            int tokensUsed,
+            double costUsd,
+            String finishReason) {
+        
+        trace.span().setAttribute(TOKEN_COUNT, tokensUsed);
+        trace.span().setAttribute(COST_USD, costUsd);
+        trace.span().setAttribute("llm.finish_reason", finishReason);
+        trace.span().addEvent("llm.response_received", 
+            Attributes.of(
+                TOKEN_COUNT, (long) tokensUsed,
+                COST_USD, costUsd
+            )
+        );
+    }
+    
+    /**
+     * Record error
+     */
+    public void recordError(TraceSpan trace, Throwable error) {
+        trace.span().recordException(error);
+        trace.span().setStatus(StatusCode.ERROR, error.getMessage());
+        LOG.error("Recorded error in trace", error);
+    }
+    
+    /**
+     * End trace successfully
+     */
+    public void endSuccess(TraceSpan trace) {
+        trace.span().setStatus(StatusCode.OK);
+        trace.span().end();
+        MDC.clear();
+    }
+    
+    /**
+     * End trace with failure
+     */
+    public void endFailure(TraceSpan trace, String reason) {
+        trace.span().setStatus(StatusCode.ERROR, reason);
+        trace.span().end();
+        MDC.clear();
+    }
+}
+
+// ==================== TRACE WRAPPER CLASSES ====================
+
+public interface TraceSpan {
+    Span span();
+    Context context();
+}
+
+public record OrchestrationTrace(Span span, Context context) implements TraceSpan {}
+public record PlanningTrace(Span span, Context context) implements TraceSpan {}
+public record StepTrace(Span span, Context context) implements TraceSpan {}
+public record AgentTrace(Span span, Context context) implements TraceSpan {}
+public record LLMTrace(Span span, Context context) implements TraceSpan {}
+
+// ==================== METRICS SERVICE ====================
+
+@ApplicationScoped
+public class OrchestrationMetricsService {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(OrchestrationMetricsService.class);
+    
+    @Inject
+    OpenTelemetry openTelemetry;
+    
+    private Meter meter;
+    
+    // Counters
+    private LongCounter orchestrationsTotal;
+    private LongCounter orchestrationsSuccess;
+    private LongCounter orchestrationsFailed;
+    private LongCounter stepsExecuted;
+    private LongCounter agentInvocations;
+    private LongCounter llmCallsTotal;
+    private LongCounter tokensUsedTotal;
+    
+    // Histograms
+    private DoubleHistogram orchestrationDuration;
+    private DoubleHistogram stepDuration;
+    private DoubleHistogram agentDuration;
+    private DoubleHistogram llmLatency;
+    private DoubleHistogram costPerOrchestration;
+    
+    // Gauges
+    private final Map<String, Long> activeOrchestrations = new ConcurrentHashMap<>();
+    private final Map<String, Long> activeAgents = new ConcurrentHashMap<>();
+    
+    @jakarta.annotation.PostConstruct
+    void init() {
+        this.meter = openTelemetry.getMeter("tech.kayys.silat.agent");
+        initializeMetrics();
+        LOG.info("Metrics service initialized");
+    }
+    
+    private void initializeMetrics() {
+        // Counters
+        orchestrationsTotal = meter.counterBuilder("orchestration.total")
+            .setDescription("Total number of orchestrations started")
+            .setUnit("1")
+            .build();
+        
+        orchestrationsSuccess = meter.counterBuilder("orchestration.success")
+            .setDescription("Number of successful orchestrations")
+            .setUnit("1")
+            .build();
+        
+        orchestrationsFailed = meter.counterBuilder("orchestration.failed")
+            .setDescription("Number of failed orchestrations")
+            .setUnit("1")
+            .build();
+        
+        stepsExecuted = meter.counterBuilder("orchestration.steps.executed")
+            .setDescription("Total number of steps executed")
+            .setUnit("1")
+            .build();
+        
+        agentInvocations = meter.counterBuilder("agent.invocations")
+            .setDescription("Total number of agent invocations")
+            .setUnit("1")
+            .build();
+        
+        llmCallsTotal = meter.counterBuilder("llm.calls.total")
+            .setDescription("Total number of LLM API calls")
+            .setUnit("1")
+            .build();
+        
+        tokensUsedTotal = meter.counterBuilder("llm.tokens.total")
+            .setDescription("Total tokens consumed")
+            .setUnit("tokens")
+            .build();
+        
+        // Histograms
+        orchestrationDuration = meter.histogramBuilder("orchestration.duration")
+            .setDescription("Orchestration execution duration")
+            .setUnit("ms")
+            .build();
+        
+        stepDuration = meter.histogramBuilder("orchestration.step.duration")
+            .setDescription("Step execution duration")
+            .setUnit("ms")
+            .build();
+        
+        agentDuration = meter.histogramBuilder("agent.duration")
+            .setDescription("Agent execution duration")
+            .setUnit("ms")
+            .build();
+        
+        llmLatency = meter.histogramBuilder("llm.latency")
+            .setDescription("LLM API call latency")
+            .setUnit("ms")
+            .build();
+        
+        costPerOrchestration = meter.histogramBuilder("orchestration.cost")
+            .setDescription("Cost per orchestration in USD")
+            .setUnit("usd")
+            .build();
+        
+        // Gauges (observable)
+        meter.gaugeBuilder("orchestration.active")
+            .setDescription("Number of active orchestrations")
+            .ofLongs()
+            .buildWithCallback(measurement -> {
+                long total = activeOrchestrations.values().stream()
+                    .mapToLong(Long::longValue)
+                    .sum();
+                measurement.record(total);
+            });
+        
+        meter.gaugeBuilder("agent.active")
+            .setDescription("Number of active agents")
+            .ofLongs()
+            .buildWithCallback(measurement -> {
+                long total = activeAgents.values().stream()
+                    .mapToLong(Long::longValue)
+                    .sum();
+                measurement.record(total);
+            });
+    }
+    
+    /**
+     * Record orchestration started
+     */
+    public void recordOrchestrationStarted(String orchestrationId, String tenantId) {
+        Attributes attrs = Attributes.of(
+            AttributeKey.stringKey("tenant.id"), tenantId
+        );
+        orchestrationsTotal.add(1, attrs);
+        activeOrchestrations.merge(tenantId, 1L, Long::sum);
+        
+        LOG.debug("Recorded orchestration start: {}", orchestrationId);
+    }
+    
+    /**
+     * Record orchestration completed
+     */
+    public void recordOrchestrationCompleted(
+            String orchestrationId,
+            String tenantId,
+            boolean success,
+            long durationMs,
+            double costUsd,
+            int stepsExecutedCount) {
+        
+        Attributes attrs = Attributes.of(
+            AttributeKey.stringKey("tenant.id"), tenantId,
+            AttributeKey.stringKey("status"), success ? "success" : "failed"
+        );
+        
+        if (success) {
+            orchestrationsSuccess.add(1, attrs);
+        } else {
+            orchestrationsFailed.add(1, attrs);
+        }
+        
+        orchestrationDuration.record(durationMs, attrs);
+        costPerOrchestration.record(costUsd, attrs);
+        stepsExecuted.add(stepsExecutedCount, attrs);
+        
+        activeOrchestrations.computeIfPresent(tenantId, (k, v) -> v - 1);
+        
+        LOG.info("Orchestration {} completed: success={}, duration={}ms, cost=${}, steps={}",
+            orchestrationId, success, durationMs, costUsd, stepsExecutedCount);
+    }
+    
+    /**
+     * Record step execution
+     */
+    public void recordStepExecution(
+            String stepId,
+            String tenantId,
+            long durationMs,
+            boolean success) {
+        
+        Attributes attrs = Attributes.of(
+            AttributeKey.stringKey("tenant.id"), tenantId,
+            AttributeKey.stringKey("status"), success ? "success" : "failed"
+        );
+        
+        stepDuration.record(durationMs, attrs);
+        stepsExecuted.add(1, attrs);
+    }
+    
+    /**
+     * Record agent invocation
+     */
+    public void recordAgentInvocation(
+            String agentId,
+            String agentType,
+            String tenantId,
+            long durationMs,
+            boolean success) {
+        
+        Attributes attrs = Attributes.of(
+            AttributeKey.stringKey("agent.id"), agentId,
+            AttributeKey.stringKey("agent.type"), agentType,
+            AttributeKey.stringKey("tenant.id"), tenantId,
+            AttributeKey.stringKey("status"), success ? "success" : "failed"
+        );
+        
+        agentInvocations.add(1, attrs);
+        agentDuration.record(durationMs, attrs);
+        
+        if (success) {
+            activeAgents.computeIfPresent(agentId, (k, v) -> v - 1);
+        }
+    }
+    
+    /**
+     * Record LLM call
+     */
+    public void recordLLMCall(
+            String provider,
+            String model,
+            String tenantId,
+            long latencyMs,
+            int tokensUsed,
+            double costUsd,
+            boolean success) {
+        
+        Attributes attrs = Attributes.of(
+            AttributeKey.stringKey("llm.provider"), provider,
+            AttributeKey.stringKey("llm.model"), model,
+            AttributeKey.stringKey("tenant.id"), tenantId,
+            AttributeKey.stringKey("status"), success ? "success" : "failed"
+        );
+        
+        llmCallsTotal.add(1, attrs);
+        llmLatency.record(latencyMs, attrs);
+        tokensUsedTotal.add(tokensUsed, attrs);
+        
+        LOG.debug("LLM call: provider={}, model={}, tokens={}, cost=${}, latency={}ms",
+            provider, model, tokensUsed, costUsd, latencyMs);
+    }
+    
+    /**
+     * Record agent became active
+     */
+    public void recordAgentActive(String agentId) {
+        activeAgents.merge(agentId, 1L, Long::sum);
+    }
+}
+
+// ==================== STRUCTURED LOGGING ====================
+
+@ApplicationScoped
+public class StructuredLogger {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(StructuredLogger.class);
+    
+    /**
+     * Log orchestration event
+     */
+    public void logOrchestrationEvent(
+            String orchestrationId,
+            String tenantId,
+            String eventType,
+            Map<String, Object> details) {
+        
+        Map<String, Object> logEntry = new LinkedHashMap<>();
+        logEntry.put("timestamp", Instant.now().toString());
+        logEntry.put("eventType", eventType);
+        logEntry.put("orchestrationId", orchestrationId);
+        logEntry.put("tenantId", tenantId);
+        logEntry.put("traceId", MDC.get("traceId"));
+        logEntry.put("spanId", MDC.get("spanId"));
+        logEntry.putAll(details);
+        
+        LOG.info("OrchestrationEvent: {}", toJson(logEntry));
+    }
+    
+    /**
+     * Log agent event
+     */
+    public void logAgentEvent(
+            String agentId,
+            String agentType,
+            String eventType,
+            Map<String, Object> details) {
+        
+        Map<String, Object> logEntry = new LinkedHashMap<>();
+        logEntry.put("timestamp", Instant.now().toString());
+        logEntry.put("eventType", eventType);
+        logEntry.put("agentId", agentId);
+        logEntry.put("agentType", agentType);
+        logEntry.put("traceId", MDC.get("traceId"));
+        logEntry.putAll(details);
+        
+        LOG.info("AgentEvent: {}", toJson(logEntry));
+    }
+    
+    /**
+     * Log LLM event
+     */
+    public void logLLMEvent(
+            String provider,
+            String model,
+            String eventType,
+            Map<String, Object> details) {
+        
+        Map<String, Object> logEntry = new LinkedHashMap<>();
+        logEntry.put("timestamp", Instant.now().toString());
+        logEntry.put("eventType", eventType);
+        logEntry.put("llmProvider", provider);
+        logEntry.put("llmModel", model);
+        logEntry.put("traceId", MDC.get("traceId"));
+        logEntry.putAll(details);
+        
+        LOG.info("LLMEvent: {}", toJson(logEntry));
+    }
+    
+    /**
+     * Log security event
+     */
+    public void logSecurityEvent(
+            String eventType,
+            String tenantId,
+            String userId,
+            Map<String, Object> details) {
+        
+        Map<String, Object> logEntry = new LinkedHashMap<>();
+        logEntry.put("timestamp", Instant.now().toString());
+        logEntry.put("eventType", eventType);
+        logEntry.put("severity", "SECURITY");
+        logEntry.put("tenantId", tenantId);
+        logEntry.put("userId", userId);
+        logEntry.putAll(details);
+        
+        LOG.warn("SecurityEvent: {}", toJson(logEntry));
+    }
+    
+    /**
+     * Log performance event
+     */
+    public void logPerformanceEvent(
+            String operation,
+            long durationMs,
+            Map<String, Object> details) {
+        
+        if (durationMs > 5000) { // Log slow operations
+            Map<String, Object> logEntry = new LinkedHashMap<>();
+            logEntry.put("timestamp", Instant.now().toString());
+            logEntry.put("eventType", "SLOW_OPERATION");
+            logEntry.put("operation", operation);
+            logEntry.put("durationMs", durationMs);
+            logEntry.putAll(details);
+            
+            LOG.warn("PerformanceEvent: {}", toJson(logEntry));
+        }
+    }
+    
+    private String toJson(Map<String, Object> map) {
+        // Use JSON library (Jackson/Jsonb)
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper()
+                .writeValueAsString(map);
+        } catch (Exception e) {
+            return map.toString();
+        }
+    }
+}
+
+// ==================== TRACING INTERCEPTOR ====================
+
+@jakarta.interceptor.InterceptorBinding
+@java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+@java.lang.annotation.Target({java.lang.annotation.ElementType.METHOD, 
+                               java.lang.annotation.ElementType.TYPE})
+public @interface Traced {
+    String value() default "";
+    SpanKind kind() default SpanKind.INTERNAL;
+}
+
+@Traced
+@jakarta.interceptor.Interceptor
+@jakarta.annotation.Priority(jakarta.interceptor.Interceptor.Priority.APPLICATION)
+public class TracingInterceptor {
+    
+    @Inject
+    OrchestrationTracingService tracingService;
+    
+    @jakarta.interceptor.AroundInvoke
+    public Object trace(jakarta.interceptor.InvocationContext context) throws Exception {
+        Traced annotation = context.getMethod().getAnnotation(Traced.class);
+        if (annotation == null) {
+            annotation = context.getTarget().getClass().getAnnotation(Traced.class);
+        }
+        
+        String operationName = annotation.value().isEmpty() ? 
+            context.getMethod().getName() : annotation.value();
+        
+        // Start span
+        Span span = tracingService.tracer.spanBuilder(operationName)
+            .setSpanKind(annotation.kind())
+            .startSpan();
+        
+        try (Scope scope = span.makeCurrent()) {
+            return context.proceed();
+        } catch (Exception e) {
+            span.recordException(e);
+            span.setStatus(StatusCode.ERROR, e.getMessage());
+            throw e;
+        } finally {
+            span.end();
+        }
+    }
+}
+
+// ==================== OBSERVABILITY CONFIGURATION ====================
+
+/**
+ * OpenTelemetry configuration
+ * application.yml:
+ * 
+ * quarkus:
+ *   application:
+ *     name: silat-agent-orchestrator
+ *   
+ *   otel:
+ *     enabled: true
+ *     service:
+ *       name: ${quarkus.application.name}
+ *     traces:
+ *       enabled: true
+ *       sampler: traceidratio
+ *       sampler.arg: 1.0  # Sample 100% in dev, 0.1 in prod
+ *       exporter: otlp
+ *     metrics:
+ *       enabled: true
+ *       exporter: prometheus
+ *     logs:
+ *       enabled: true
+ *       exporter: otlp
+ *     exporter:
+ *       otlp:
+ *         endpoint: http://jaeger:4317
+ *         headers:
+ *           authorization: Bearer ${OTEL_TOKEN}
+ *   
+ *   log:
+ *     console:
+ *       format: "%d{yyyy-MM-dd HH:mm:ss,SSS} %-5p [%X{traceId},%X{spanId}] [%c{3.}] %s%e%n"
+ *       json: true
+ * 
+ * # Prometheus metrics endpoint
+ * management:
+ *   metrics:
+ *     export:
+ *       prometheus:
+ *         enabled: true
+ *     path: /q/metrics
+ */
+

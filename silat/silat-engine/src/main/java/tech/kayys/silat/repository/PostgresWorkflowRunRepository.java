@@ -16,8 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.hibernate.reactive.panache.Panache;
 import io.quarkus.hibernate.reactive.panache.PanacheRepositoryBase;
 import io.smallrye.mutiny.Uni;
-import io.vertx.mutiny.pgclient.PgPool;
-import io.vertx.mutiny.sqlclient.Row;
+import io.vertx.mutiny.sqlclient.Pool;
 import io.vertx.mutiny.sqlclient.RowSet;
 import io.vertx.mutiny.sqlclient.Tuple;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -45,7 +44,7 @@ public class PostgresWorkflowRunRepository implements WorkflowRunRepository,
         ObjectMapper objectMapper;
 
         @Inject
-        PgPool pgPool;
+        Pool pgPool;
 
         @Override
         public Uni<WorkflowRun> persist(WorkflowRun run) {

@@ -1,0 +1,552 @@
+package tech.kayys.silat.plugin.api;
+
+import io.quarkus.security.Authenticated;
+import io.smallrye.mutiny.Uni;
+import jakarta.inject.Inject;
+import jakarta.validation.Valid;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.*;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+import org.jboss.resteasy.reactive.MultipartForm;
+import org.jboss.resteasy.reactive.RestResponse;
+import org.jboss.resteasy.reactive.multipart.FileUpload;
+import tech.kayys.silat.plugin.*;
+import tech.kayys.silat.plugin.loader.*;
+import tech.kayys.silat.plugin.registry.*;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.util.*;
+
+/**
+ * ============================================================================
+ * PLUGIN MANAGEMENT REST API
+ * ============================================================================
+ * 
+ * RESTful API for plugin lifecycle management:
+ * - Upload/install plugins
+ * - Activate/deactivate plugins
+ * - List available plugins
+ * - Get plugin details
+ * - Manage plugin configuration
+ */
+@Path("/api/v1/plugins")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+@Authenticated
+@Tag(name = "Plugin Management", description = "Plugin lifecycle and configuration")
+public class PluginResource {
+    
+    @Inject
+    PluginRegistry pluginRegistry;
+    
+    @Inject
+    PluginLoader pluginLoader;
+    
+    @Inject
+    PluginValidator pluginValidator;
+    
+    @Inject
+    tech.kayys.silat.api.security.TenantContext tenantContext;
+    
+    // ==================== PLUGIN LIFECYCLE ====================
+    
+    /**
+     * Upload and install plugin
+     */
+    @POST
+    @Path("/install")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @Operation(summary = "Install plugin from JAR file")
+    public Uni<RestResponse<PluginInstallResponse>> installPlugin(
+            @MultipartForm PluginUploadForm form) {
+        
+        return Uni.createFrom().item(() -> {
+            try {
+                // Read JAR file
+                byte[] archive = Files.readAllBytes(form.file.filePath());
+                
+                // Parse manifest
+                PluginManifest manifest = pluginLoader.parseManifest(archive);
+                
+                // Validate
+                return pluginValidator.validate(manifest)
+                    .flatMap(validation -> {
+                        if (!validation.isValid()) {
+                            return Uni.createFrom().item(
+                                RestResponse.status(RestResponse.Status.BAD_REQUEST,
+                                    new PluginInstallResponse(
+                                        false,
+                                        null,
+                                        validation.getMessage(),
+                                        validation.getErrors()
+                                    ))
+                            );
+                        }
+                        
+                        // Register plugin
+                        return pluginRegistry.registerPlugin(manifest, archive)
+                            .map(registered -> RestResponse.ok(
+                                new PluginInstallResponse(
+                                    true,
+                                    registered.pluginId,
+                                    "Plugin installed successfully",
+                                    List.of()
+                                )
+                            ));
+                    });
+                
+            } catch (IOException e) {
+                return Uni.createFrom().item(
+                    RestResponse.status(RestResponse.Status.BAD_REQUEST,
+                        new PluginInstallResponse(
+                            false,
+                            null,
+                            "Failed to read plugin file: " + e.getMessage(),
+                            List.of()
+                        ))
+                );
+            }
+        }).flatMap(uni -> uni);
+    }
+    
+    /**
+     * Activate plugin
+     */
+    @POST
+    @Path("/{pluginId}/activate")
+    @Operation(summary = "Activate installed plugin")
+    public Uni<RestResponse<PluginActionResponse>> activatePlugin(
+            @PathParam("pluginId") String pluginId) {
+        
+        // Plugin activation is automatic during registration
+        // This endpoint can be used for re-activation after deactivation
+        
+        RegisteredPlugin plugin = pluginRegistry.getPlugin(pluginId);
+        if (plugin == null) {
+            return Uni.createFrom().item(
+                RestResponse.status(RestResponse.Status.NOT_FOUND,
+                    new PluginActionResponse(
+                        false,
+                        "Plugin not found: " + pluginId
+                    ))
+            );
+        }
+        
+        PluginStatus status = pluginRegistry.getStatus(pluginId);
+        if (status == PluginStatus.ACTIVE) {
+            return Uni.createFrom().item(
+                RestResponse.ok(
+                    new PluginActionResponse(
+                        true,
+                        "Plugin already active"
+                    ))
+            );
+        }
+        
+        // Reactivate
+        return pluginRegistry.registerPlugin(plugin.manifest, new byte[0])
+            .map(reg -> RestResponse.ok(
+                new PluginActionResponse(
+                    true,
+                    "Plugin activated successfully"
+                )))
+            .onFailure().recoverWithItem(error ->
+                RestResponse.status(RestResponse.Status.INTERNAL_SERVER_ERROR,
+                    new PluginActionResponse(
+                        false,
+                        "Failed to activate plugin: " + error.getMessage()
+                    ))
+            );
+    }
+    
+    /**
+     * Deactivate plugin
+     */
+    @POST
+    @Path("/{pluginId}/deactivate")
+    @Operation(summary = "Deactivate plugin")
+    public Uni<RestResponse<PluginActionResponse>> deactivatePlugin(
+            @PathParam("pluginId") String pluginId) {
+        
+        return pluginRegistry.deactivatePlugin(pluginId)
+            .map(v -> RestResponse.ok(
+                new PluginActionResponse(
+                    true,
+                    "Plugin deactivated successfully"
+                )))
+            .onFailure(PluginNotFoundException.class).recoverWithItem(error ->
+                RestResponse.status(RestResponse.Status.NOT_FOUND,
+                    new PluginActionResponse(
+                        false,
+                        error.getMessage()
+                    ))
+            )
+            .onFailure().recoverWithItem(error ->
+                RestResponse.status(RestResponse.Status.INTERNAL_SERVER_ERROR,
+                    new PluginActionResponse(
+                        false,
+                        "Failed to deactivate plugin: " + error.getMessage()
+                    ))
+            );
+    }
+    
+    /**
+     * Uninstall plugin
+     */
+    @DELETE
+    @Path("/{pluginId}")
+    @Operation(summary = "Uninstall plugin completely")
+    public Uni<RestResponse<PluginActionResponse>> uninstallPlugin(
+            @PathParam("pluginId") String pluginId) {
+        
+        return pluginRegistry.uninstallPlugin(pluginId)
+            .map(v -> RestResponse.ok(
+                new PluginActionResponse(
+                    true,
+                    "Plugin uninstalled successfully"
+                )))
+            .onFailure().recoverWithItem(error ->
+                RestResponse.status(RestResponse.Status.INTERNAL_SERVER_ERROR,
+                    new PluginActionResponse(
+                        false,
+                        "Failed to uninstall plugin: " + error.getMessage()
+                    ))
+            );
+    }
+    
+    // ==================== PLUGIN QUERIES ====================
+    
+    /**
+     * List all plugins
+     */
+    @GET
+    @Operation(summary = "List all installed plugins")
+    public Uni<List<PluginSummary>> listPlugins(
+            @QueryParam("status") PluginStatus status) {
+        
+        return Uni.createFrom().item(() -> {
+            List<RegisteredPlugin> plugins = pluginRegistry.listPlugins();
+            
+            return plugins.stream()
+                .filter(p -> status == null || 
+                            pluginRegistry.getStatus(p.pluginId) == status)
+                .map(p -> new PluginSummary(
+                    p.pluginId,
+                    p.name,
+                    p.version,
+                    pluginRegistry.getStatus(p.pluginId),
+                    p.manifest.author,
+                    p.manifest.description,
+                    p.registeredAt,
+                    p.manifest.nodes.size(),
+                    p.manifest.executors.size(),
+                    p.manifest.widgets.size()
+                ))
+                .toList();
+        });
+    }
+    
+    /**
+     * Get plugin details
+     */
+    @GET
+    @Path("/{pluginId}")
+    @Operation(summary = "Get plugin details")
+    public Uni<RestResponse<PluginDetails>> getPluginDetails(
+            @PathParam("pluginId") String pluginId) {
+        
+        return Uni.createFrom().item(() -> {
+            RegisteredPlugin plugin = pluginRegistry.getPlugin(pluginId);
+            if (plugin == null) {
+                return RestResponse.notFound();
+            }
+            
+            PluginStatus status = pluginRegistry.getStatus(pluginId);
+            
+            PluginDetails details = new PluginDetails(
+                plugin.pluginId,
+                plugin.name,
+                plugin.version,
+                status,
+                plugin.manifest.author,
+                plugin.manifest.description,
+                plugin.manifest.license,
+                plugin.manifest.homepage,
+                plugin.manifest.repository,
+                plugin.manifest.keywords,
+                plugin.manifest.dependencies,
+                plugin.registeredAt,
+                plugin.manifest.nodes,
+                plugin.manifest.executors,
+                plugin.manifest.widgets,
+                plugin.manifest.config
+            );
+            
+            return RestResponse.ok(details);
+        });
+    }
+    
+    /**
+     * Get plugin manifest
+     */
+    @GET
+    @Path("/{pluginId}/manifest")
+    @Operation(summary = "Get raw plugin manifest")
+    public Uni<RestResponse<PluginManifest>> getPluginManifest(
+            @PathParam("pluginId") String pluginId) {
+        
+        return Uni.createFrom().item(() -> {
+            RegisteredPlugin plugin = pluginRegistry.getPlugin(pluginId);
+            if (plugin == null) {
+                return RestResponse.notFound();
+            }
+            
+            return RestResponse.ok(plugin.manifest);
+        });
+    }
+    
+    /**
+     * Validate plugin without installing
+     */
+    @POST
+    @Path("/validate")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @Operation(summary = "Validate plugin JAR without installing")
+    public Uni<RestResponse<ValidationResult>> validatePlugin(
+            @MultipartForm PluginUploadForm form) {
+        
+        return Uni.createFrom().item(() -> {
+            try {
+                byte[] archive = Files.readAllBytes(form.file.filePath());
+                PluginManifest manifest = pluginLoader.parseManifest(archive);
+                
+                return pluginValidator.validate(manifest)
+                    .map(RestResponse::ok);
+                
+            } catch (Exception e) {
+                ValidationResult result = new ValidationResult(
+                    false,
+                    "Validation failed: " + e.getMessage(),
+                    List.of(e.getMessage()),
+                    List.of()
+                );
+                return Uni.createFrom().item(RestResponse.ok(result));
+            }
+        }).flatMap(uni -> uni);
+    }
+}
+
+/**
+ * ============================================================================
+ * NODE DEFINITION API
+ * ============================================================================
+ * 
+ * API for querying available node definitions
+ * (Used by UI Designer to build palette)
+ */
+@Path("/api/v1/nodes")
+@Produces(MediaType.APPLICATION_JSON)
+@Authenticated
+@Tag(name = "Node Definitions", description = "Available node types and schemas")
+public class NodeDefinitionResource {
+    
+    @Inject
+    tech.kayys.silat.controlplane.nodes.NodeDefinitionRegistry nodeRegistry;
+    
+    @Inject
+    UIWidgetRegistry widgetRegistry;
+    
+    @Inject
+    ExecutorRegistry executorRegistry;
+    
+    /**
+     * Get all node definitions (with UI descriptors)
+     */
+    @GET
+    @Operation(summary = "List all available node types")
+    public Uni<NodeCatalog> listNodes(
+            @QueryParam("category") String category) {
+        
+        return Uni.createFrom().item(() -> {
+            List<tech.kayys.silat.controlplane.nodes.NodeDefinition> nodes;
+            
+            if (category != null) {
+                nodes = nodeRegistry.getByCategory(category);
+            } else {
+                nodes = nodeRegistry.getAll();
+            }
+            
+            // Enrich with widget and executor info
+            List<NodeDefinitionDTO> enriched = nodes.stream()
+                .map(this::enrichNodeDefinition)
+                .toList();
+            
+            // Get categories
+            Set<String> categories = nodes.stream()
+                .map(n -> n.category)
+                .collect(java.util.stream.Collectors.toSet());
+            
+            return new NodeCatalog(
+                enriched,
+                new ArrayList<>(categories),
+                widgetRegistry.getWidgetBundle()
+            );
+        });
+    }
+    
+    /**
+     * Get node definition by type
+     */
+    @GET
+    @Path("/{nodeType}")
+    @Operation(summary = "Get specific node definition")
+    public Uni<RestResponse<NodeDefinitionDTO>> getNodeDefinition(
+            @PathParam("nodeType") String nodeType) {
+        
+        return Uni.createFrom().item(() -> {
+            tech.kayys.silat.controlplane.nodes.NodeDefinition node = 
+                nodeRegistry.get(nodeType);
+            
+            if (node == null) {
+                return RestResponse.notFound();
+            }
+            
+            NodeDefinitionDTO dto = enrichNodeDefinition(node);
+            return RestResponse.ok(dto);
+        });
+    }
+    
+    /**
+     * Enrich node definition with widget and executor info
+     */
+    private NodeDefinitionDTO enrichNodeDefinition(
+            tech.kayys.silat.controlplane.nodes.NodeDefinition node) {
+        
+        // Get widget descriptor
+        WidgetDescriptor widget = widgetRegistry.getWidgetForNodeType(node.type);
+        
+        // Get executor descriptor
+        ExecutorDescriptor executor = executorRegistry.getExecutorForNodeType(node.type);
+        
+        return new NodeDefinitionDTO(
+            node.type,
+            node.label,
+            node.category,
+            node.subCategory,
+            node.description,
+            node.icon,
+            node.color,
+            node.isAtomic,
+            node.isComposite,
+            node.configFields,
+            node.ports,
+            node.components,
+            node.uiDescriptor,
+            widget != null ? widget.widgetId : null,
+            executor != null ? executor.executorId : null,
+            node.metadata
+        );
+    }
+}
+
+// ==================== REQUEST/RESPONSE MODELS ====================
+
+/**
+ * Plugin upload form
+ */
+public class PluginUploadForm {
+    @FormParam("file")
+    public FileUpload file;
+    
+    @FormParam("description")
+    public String description;
+}
+
+/**
+ * Plugin install response
+ */
+public record PluginInstallResponse(
+    boolean success,
+    String pluginId,
+    String message,
+    List<String> errors
+) {}
+
+/**
+ * Plugin action response
+ */
+public record PluginActionResponse(
+    boolean success,
+    String message
+) {}
+
+/**
+ * Plugin summary (for list view)
+ */
+public record PluginSummary(
+    String pluginId,
+    String name,
+    String version,
+    PluginStatus status,
+    String author,
+    String description,
+    java.time.Instant registeredAt,
+    int nodeCount,
+    int executorCount,
+    int widgetCount
+) {}
+
+/**
+ * Plugin details (full info)
+ */
+public record PluginDetails(
+    String pluginId,
+    String name,
+    String version,
+    PluginStatus status,
+    String author,
+    String description,
+    String license,
+    String homepage,
+    String repository,
+    List<String> keywords,
+    List<String> dependencies,
+    java.time.Instant registeredAt,
+    List<NodeDefinitionManifest> nodes,
+    List<ExecutorManifest> executors,
+    List<UIWidgetManifest> widgets,
+    Map<String, Object> config
+) {}
+
+/**
+ * Node catalog (for UI designer)
+ */
+public record NodeCatalog(
+    List<NodeDefinitionDTO> nodes,
+    List<String> categories,
+    WidgetBundle widgets
+) {}
+
+/**
+ * Node definition DTO (enriched)
+ */
+public record NodeDefinitionDTO(
+    String type,
+    String label,
+    String category,
+    String subCategory,
+    String description,
+    String icon,
+    String color,
+    boolean isAtomic,
+    boolean isComposite,
+    List<tech.kayys.silat.controlplane.nodes.ConfigField> configFields,
+    List<tech.kayys.silat.controlplane.nodes.NodePort> ports,
+    List<tech.kayys.silat.controlplane.nodes.NodeComponent> components,
+    tech.kayys.silat.controlplane.nodes.UIDescriptor uiDescriptor,
+    String widgetId,
+    String executorId,
+    Map<String, Object> metadata
+) {}

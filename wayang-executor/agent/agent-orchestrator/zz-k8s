@@ -1,0 +1,636 @@
+# ============================================================================
+# SILAT AGENT ORCHESTRATOR - KUBERNETES DEPLOYMENT
+# ============================================================================
+# 
+# Complete production-ready Kubernetes manifests including:
+# - Namespace and RBAC
+# - Secrets and ConfigMaps
+# - Deployments and Services
+# - HPA and Resource Quotas
+# - Ingress and Network Policies
+# - Observability (Prometheus, Jaeger)
+# - Persistent Storage
+#
+# Deploy: kubectl apply -f k8s/
+# ============================================================================
+
+---
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: silat
+  labels:
+    name: silat
+    environment: production
+
+---
+# Secrets
+apiVersion: v1
+kind: Secret
+metadata:
+  name: silat-secrets
+  namespace: silat
+type: Opaque
+stringData:
+  # Database
+  db-url: jdbc:postgresql://postgres.silat.svc.cluster.local:5432/silat
+  db-username: silat
+  db-password: CHANGE_ME
+  
+  # LLM API Keys
+  openai-api-key: CHANGE_ME
+  anthropic-api-key: CHANGE_ME
+  google-api-key: CHANGE_ME
+  
+  # Integration APIs
+  slack-bot-token: CHANGE_ME
+  github-token: CHANGE_ME
+  jira-auth-token: CHANGE_ME
+  
+  # Email
+  smtp-username: CHANGE_ME
+  smtp-password: CHANGE_ME
+  
+  # Vector Database
+  pinecone-api-key: CHANGE_ME
+  
+  # Redis
+  redis-password: CHANGE_ME
+
+---
+# ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: silat-config
+  namespace: silat
+data:
+  # Application config
+  QUARKUS_HTTP_PORT: "8080"
+  QUARKUS_GRPC_SERVER_PORT: "9090"
+  
+  # Database
+  DB_HOST: postgres.silat.svc.cluster.local
+  DB_NAME: silat
+  DB_POOL_SIZE: "20"
+  
+  # Redis
+  REDIS_HOST: redis.silat.svc.cluster.local
+  
+  # Kafka
+  KAFKA_BOOTSTRAP: kafka.silat.svc.cluster.local:9092
+  
+  # Observability
+  OTEL_ENDPOINT: http://jaeger-collector.observability.svc.cluster.local:4317
+  OTEL_TRACE_SAMPLE_RATE: "0.1"
+  LOG_JSON: "true"
+  
+  # LLM Configuration
+  SILAT_LLM_DEFAULT_PROVIDER: openai
+  SILAT_LLM_ENABLE_FAILOVER: "true"
+  SILAT_LLM_ENABLE_CACHING: "true"
+  
+  # Agent Configuration
+  SILAT_AGENT_MAX_CONCURRENT: "10"
+  SILAT_AGENT_CIRCUIT_BREAKER_THRESHOLD: "5"
+  
+  # Memory Configuration
+  SILAT_MEMORY_PROVIDER: pinecone
+  SILAT_MEMORY_MAX_SIZE: "10000"
+  
+  # SMTP
+  SMTP_HOST: smtp.gmail.com
+  SMTP_PORT: "587"
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: silat-orchestrator
+  namespace: silat
+  labels:
+    app: silat-orchestrator
+    version: v1
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: silat-orchestrator
+  template:
+    metadata:
+      labels:
+        app: silat-orchestrator
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/q/metrics"
+    spec:
+      serviceAccountName: silat-orchestrator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      
+      containers:
+      - name: orchestrator
+        image: silat-orchestrator:1.0.0
+        imagePullPolicy: Always
+        
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        - name: grpc
+          containerPort: 9090
+          protocol: TCP
+        
+        env:
+        # ConfigMap
+        - name: QUARKUS_HTTP_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: silat-config
+              key: QUARKUS_HTTP_PORT
+        
+        # Secrets
+        - name: QUARKUS_DATASOURCE_JDBC_URL
+          valueFrom:
+            secretKeyRef:
+              name: silat-secrets
+              key: db-url
+        - name: QUARKUS_DATASOURCE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: silat-secrets
+              key: db-username
+        - name: QUARKUS_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: silat-secrets
+              key: db-password
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: silat-secrets
+              key: openai-api-key
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: silat-secrets
+              key: anthropic-api-key
+        
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+            ephemeral-storage: "1Gi"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+            ephemeral-storage: "2Gi"
+        
+        livenessProbe:
+          httpGet:
+            path: /q/health/live
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /q/health/ready
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        
+        startupProbe:
+          httpGet:
+            path: /q/health/started
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 30
+      
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - silat-orchestrator
+              topologyKey: kubernetes.io/hostname
+
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: silat-orchestrator
+  namespace: silat
+  labels:
+    app: silat-orchestrator
+spec:
+  type: ClusterIP
+  selector:
+    app: silat-orchestrator
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  - name: grpc
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+
+---
+# Service Account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: silat-orchestrator
+  namespace: silat
+
+---
+# HorizontalPodAutoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: silat-orchestrator-hpa
+  namespace: silat
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: silat-orchestrator
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: orchestration_active
+      target:
+        type: AverageValue
+        averageValue: "50"
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+
+---
+# PodDisruptionBudget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: silat-orchestrator-pdb
+  namespace: silat
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: silat-orchestrator
+
+---
+# Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: silat-orchestrator
+  namespace: silat
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+spec:
+  tls:
+  - hosts:
+    - silat.example.com
+    secretName: silat-tls
+  rules:
+  - host: silat.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: silat-orchestrator
+            port:
+              number: 8080
+
+---
+# NetworkPolicy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: silat-orchestrator-netpol
+  namespace: silat
+spec:
+  podSelector:
+    matchLabels:
+      app: silat-orchestrator
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8080
+  - from:
+    - podSelector:
+        matchLabels:
+          app: silat-agent
+    ports:
+    - protocol: TCP
+      port: 9090
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - podSelector:
+        matchLabels:
+          app: kafka
+    ports:
+    - protocol: TCP
+      port: 9092
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          app: jaeger
+    ports:
+    - protocol: TCP
+      port: 4317
+  - ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+
+---
+# ResourceQuota
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: silat-quota
+  namespace: silat
+spec:
+  hard:
+    requests.cpu: "20"
+    requests.memory: "40Gi"
+    limits.cpu: "40"
+    limits.memory: "80Gi"
+    persistentvolumeclaims: "10"
+
+---
+# ServiceMonitor (Prometheus Operator)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: silat-orchestrator
+  namespace: silat
+  labels:
+    app: silat-orchestrator
+spec:
+  selector:
+    matchLabels:
+      app: silat-orchestrator
+  endpoints:
+  - port: http
+    path: /q/metrics
+    interval: 30s
+    scrapeTimeout: 10s
+
+---
+# PrometheusRule (Alerts)
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: silat-alerts
+  namespace: silat
+spec:
+  groups:
+  - name: silat
+    interval: 30s
+    rules:
+    - alert: SilatHighErrorRate
+      expr: |
+        rate(orchestration_total{status="failed"}[5m]) /
+        rate(orchestration_total[5m]) > 0.05
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High error rate in Silat orchestrations"
+        description: "Error rate is {{ $value | humanizePercentage }}"
+    
+    - alert: SilatHighLatency
+      expr: |
+        histogram_quantile(0.95,
+          rate(orchestration_duration_seconds_bucket[5m])
+        ) > 10
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High P95 latency in Silat"
+        description: "P95 latency is {{ $value }}s"
+    
+    - alert: SilatCircuitBreakerOpen
+      expr: circuit_breaker_state{state="open"} == 1
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Circuit breaker opened"
+        description: "Circuit breaker {{ $labels.name }} is open"
+    
+    - alert: SilatPodDown
+      expr: up{job="silat-orchestrator"} == 0
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Silat pod is down"
+        description: "Pod {{ $labels.pod }} is down"
+
+---
+# PostgreSQL StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: silat
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: pgvector/pgvector:pg15
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          value: silat
+        - name: POSTGRES_USER
+          value: silat
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: silat-secrets
+              key: db-password
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 50Gi
+
+---
+# PostgreSQL Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: silat
+spec:
+  selector:
+    app: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+  clusterIP: None
+
+---
+# Redis Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: silat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+        command: ["redis-server"]
+        args: ["--requirepass", "$(REDIS_PASSWORD)"]
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: silat-secrets
+              key: redis-password
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+
+---
+# Redis Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: silat
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+
+---
+# Kafka (using Strimzi Operator recommended for production)
+# Or use managed Kafka (Confluent Cloud, AWS MSK, etc.)

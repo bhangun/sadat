@@ -1,13 +1,17 @@
 package tech.kayys.silat.sdk.client;
 
 import java.util.Map;
+import java.util.List;
 
 import io.smallrye.mutiny.Uni;
+import tech.kayys.silat.model.CreateRunRequest;
+import tech.kayys.silat.model.RunResponse;
+import tech.kayys.silat.execution.ExecutionHistory;
 
 /**
  * Workflow run client interface (transport-agnostic)
  */
-interface WorkflowRunClient {
+interface WorkflowRunClient extends AutoCloseable {
     Uni<RunResponse> createRun(CreateRunRequest request);
 
     Uni<RunResponse> getRun(String runId);
@@ -22,9 +26,12 @@ interface WorkflowRunClient {
 
     Uni<Void> signal(String runId, String signalName, String targetNodeId, Map<String, Object> payload);
 
-    Uni<ExecutionHistoryResponse> getExecutionHistory(String runId);
+    Uni<ExecutionHistory> getExecutionHistory(String runId);
 
-    Uni<PagedResponse<RunResponse>> queryRuns(String workflowId, String status, int page, int size);
+    Uni<List<RunResponse>> queryRuns(String workflowId, String status, int page, int size);
 
     Uni<Long> getActiveRunsCount();
+
+    @Override
+    void close();
 }

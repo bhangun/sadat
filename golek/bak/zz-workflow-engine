@@ -1,0 +1,918 @@
+// Package engine implements the core workflow orchestration engine
+package engine
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+	"go.uber.org/zap"
+
+	"tech.kayys.golek/pkg/core"
+)
+
+// ============================================================================
+// WORKFLOW ENGINE IMPLEMENTATION
+// ============================================================================
+
+// DefaultWorkflowEngine is the main implementation of the workflow engine
+type DefaultWorkflowEngine struct {
+	// Dependencies
+	definitionRepo core.WorkflowDefinitionRepository
+	runRepo        core.WorkflowRunRepository
+	eventStore     core.EventStore
+	executorRegistry core.ExecutorRegistry
+	scheduler      Scheduler
+	lockManager    DistributedLockManager
+	
+	// Configuration
+	config EngineConfig
+	
+	// State
+	logger *zap.Logger
+	mu     sync.RWMutex
+}
+
+// EngineConfig contains engine configuration
+type EngineConfig struct {
+	MaxConcurrentRuns    int
+	NodeExecutionTimeout time.Duration
+	LockTimeout          time.Duration
+	TokenValidity        time.Duration
+	EnableCompensation   bool
+	EnableEventSourcing  bool
+}
+
+// DefaultEngineConfig provides sensible defaults
+func DefaultEngineConfig() EngineConfig {
+	return EngineConfig{
+		MaxConcurrentRuns:    1000,
+		NodeExecutionTimeout: 5 * time.Minute,
+		LockTimeout:          30 * time.Second,
+		TokenValidity:        1 * time.Hour,
+		EnableCompensation:   true,
+		EnableEventSourcing:  true,
+	}
+}
+
+// NewWorkflowEngine creates a new workflow engine instance
+func NewWorkflowEngine(
+	definitionRepo core.WorkflowDefinitionRepository,
+	runRepo core.WorkflowRunRepository,
+	eventStore core.EventStore,
+	executorRegistry core.ExecutorRegistry,
+	scheduler Scheduler,
+	lockManager DistributedLockManager,
+	logger *zap.Logger,
+) *DefaultWorkflowEngine {
+	return &DefaultWorkflowEngine{
+		definitionRepo:   definitionRepo,
+		runRepo:          runRepo,
+		eventStore:       eventStore,
+		executorRegistry: executorRegistry,
+		scheduler:        scheduler,
+		lockManager:      lockManager,
+		config:           DefaultEngineConfig(),
+		logger:           logger,
+	}
+}
+
+// ============================================================================
+// LIFECYCLE OPERATIONS
+// ============================================================================
+
+// CreateRun creates a new workflow run instance
+func (e *DefaultWorkflowEngine) CreateRun(ctx context.Context, req *core.CreateRunRequest) (*core.WorkflowRun, error) {
+	e.logger.Info("Creating workflow run",
+		zap.String("definition_id", req.DefinitionID.String()),
+		zap.String("tenant_id", req.TenantID.String()),
+	)
+	
+	// Validate tenant access
+	if err := e.validateTenantAccess(ctx, req.TenantID); err != nil {
+		return nil, fmt.Errorf("tenant access validation failed: %w", err)
+	}
+	
+	// Load workflow definition
+	definition, err := e.definitionRepo.FindByID(ctx, req.DefinitionID, req.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load definition: %w", err)
+	}
+	
+	if !definition.IsActive {
+		return nil, fmt.Errorf("workflow definition is not active")
+	}
+	
+	// Validate inputs
+	if err := e.validateInputs(definition, req.Inputs); err != nil {
+		return nil, fmt.Errorf("input validation failed: %w", err)
+	}
+	
+	// Create workflow run aggregate
+	run := &core.WorkflowRun{
+		ID:             core.NewWorkflowRunID(),
+		TenantID:       req.TenantID,
+		DefinitionID:   req.DefinitionID,
+		Status:         core.RunStatusCreated,
+		Variables:      req.Inputs,
+		NodeExecutions: make(map[core.NodeID]*core.NodeExecution),
+		ExecutionPath:  []string{},
+		PendingNodes:   []core.NodeID{},
+		CreatedAt:      time.Now(),
+		LastUpdatedAt:  time.Now(),
+		Labels:         req.Labels,
+		Version:        0,
+	}
+	
+	// Raise domain event
+	event := &core.WorkflowStartedEvent{
+		BaseEvent: core.BaseEvent{
+			ID:        uuid.New().String(),
+			Type:      "WorkflowStarted",
+			Timestamp: time.Now(),
+			RunID:     run.ID,
+		},
+		DefinitionID: definition.ID,
+		TenantID:     req.TenantID,
+		Inputs:       req.Inputs,
+	}
+	run.UncommittedEvents = append(run.UncommittedEvents, event)
+	
+	// Persist
+	if err := e.persistRun(ctx, run); err != nil {
+		return nil, fmt.Errorf("failed to persist run: %w", err)
+	}
+	
+	return run, nil
+}
+
+// StartRun starts execution of a workflow run
+func (e *DefaultWorkflowEngine) StartRun(ctx context.Context, runID core.WorkflowRunID, tenantID core.TenantID) (*core.WorkflowRun, error) {
+	e.logger.Info("Starting workflow run",
+		zap.String("run_id", runID.String()),
+		zap.String("tenant_id", tenantID.String()),
+	)
+	
+	// Acquire distributed lock
+	return e.withLock(ctx, runID, func() (*core.WorkflowRun, error) {
+		// Load run
+		run, err := e.loadRun(ctx, runID, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		
+		// Validate state transition
+		if !run.Status.CanTransitionTo(core.RunStatusPending) {
+			return nil, fmt.Errorf("invalid state transition from %s to PENDING", run.Status)
+		}
+		
+		// Update status
+		run.Status = core.RunStatusPending
+		now := time.Now()
+		run.StartedAt = &now
+		run.LastUpdatedAt = now
+		
+		// Load definition
+		definition, err := e.definitionRepo.FindByID(ctx, run.DefinitionID, tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load definition: %w", err)
+		}
+		
+		// Schedule start nodes (nodes with no dependencies)
+		startNodes := e.findStartNodes(definition)
+		for _, node := range startNodes {
+			if err := e.scheduleNode(ctx, run, node); err != nil {
+				e.logger.Error("Failed to schedule start node",
+					zap.String("node_id", node.ID.String()),
+					zap.Error(err),
+				)
+				return nil, err
+			}
+		}
+		
+		// Transition to running if nodes were scheduled
+		if len(run.PendingNodes) > 0 {
+			run.Status = core.RunStatusRunning
+		}
+		
+		// Persist
+		if err := e.persistRun(ctx, run); err != nil {
+			return nil, err
+		}
+		
+		// Publish events
+		if err := e.publishEvents(ctx, run); err != nil {
+			e.logger.Error("Failed to publish events", zap.Error(err))
+		}
+		
+		// Schedule node execution
+		if err := e.scheduleReadyNodes(ctx, run); err != nil {
+			e.logger.Error("Failed to schedule nodes", zap.Error(err))
+		}
+		
+		return run, nil
+	})
+}
+
+// SuspendRun suspends a running workflow
+func (e *DefaultWorkflowEngine) SuspendRun(ctx context.Context, runID core.WorkflowRunID, tenantID core.TenantID, reason string) (*core.WorkflowRun, error) {
+	e.logger.Info("Suspending workflow run",
+		zap.String("run_id", runID.String()),
+		zap.String("reason", reason),
+	)
+	
+	return e.withLock(ctx, runID, func() (*core.WorkflowRun, error) {
+		run, err := e.loadRun(ctx, runID, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		
+		if !run.Status.CanTransitionTo(core.RunStatusSuspended) {
+			return nil, fmt.Errorf("cannot suspend workflow in status %s", run.Status)
+		}
+		
+		run.Status = core.RunStatusSuspended
+		run.LastUpdatedAt = time.Now()
+		
+		if err := e.persistRun(ctx, run); err != nil {
+			return nil, err
+		}
+		
+		return run, nil
+	})
+}
+
+// ResumeRun resumes a suspended workflow
+func (e *DefaultWorkflowEngine) ResumeRun(ctx context.Context, runID core.WorkflowRunID, tenantID core.TenantID, data map[string]any) (*core.WorkflowRun, error) {
+	e.logger.Info("Resuming workflow run",
+		zap.String("run_id", runID.String()),
+	)
+	
+	return e.withLock(ctx, runID, func() (*core.WorkflowRun, error) {
+		run, err := e.loadRun(ctx, runID, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		
+		if run.Status != core.RunStatusSuspended {
+			return nil, fmt.Errorf("cannot resume workflow in status %s", run.Status)
+		}
+		
+		// Merge resume data into variables
+		for k, v := range data {
+			run.Variables[k] = v
+		}
+		
+		run.Status = core.RunStatusRunning
+		run.LastUpdatedAt = time.Now()
+		
+		if err := e.persistRun(ctx, run); err != nil {
+			return nil, err
+		}
+		
+		// Re-evaluate and schedule nodes
+		if err := e.evaluateWorkflowProgress(ctx, run); err != nil {
+			e.logger.Error("Failed to evaluate workflow progress", zap.Error(err))
+		}
+		
+		return run, nil
+	})
+}
+
+// CancelRun cancels a workflow execution
+func (e *DefaultWorkflowEngine) CancelRun(ctx context.Context, runID core.WorkflowRunID, tenantID core.TenantID, reason string) error {
+	e.logger.Info("Cancelling workflow run",
+		zap.String("run_id", runID.String()),
+		zap.String("reason", reason),
+	)
+	
+	_, err := e.withLock(ctx, runID, func() (*core.WorkflowRun, error) {
+		run, err := e.loadRun(ctx, runID, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		
+		if run.Status.IsTerminal() {
+			return nil, fmt.Errorf("cannot cancel workflow in terminal status %s", run.Status)
+		}
+		
+		run.Status = core.RunStatusCancelled
+		now := time.Now()
+		run.CompletedAt = &now
+		run.LastUpdatedAt = now
+		
+		if err := e.persistRun(ctx, run); err != nil {
+			return nil, err
+		}
+		
+		// Cancel scheduled tasks
+		if err := e.scheduler.CancelTasksForRun(ctx, runID); err != nil {
+			e.logger.Error("Failed to cancel scheduled tasks", zap.Error(err))
+		}
+		
+		return run, nil
+	})
+	
+	return err
+}
+
+// ============================================================================
+// QUERY OPERATIONS
+// ============================================================================
+
+// GetRun retrieves a workflow run by ID
+func (e *DefaultWorkflowEngine) GetRun(ctx context.Context, runID core.WorkflowRunID, tenantID core.TenantID) (*core.WorkflowRun, error) {
+	if err := e.validateTenantAccess(ctx, tenantID); err != nil {
+		return nil, err
+	}
+	
+	return e.runRepo.FindByID(ctx, runID, tenantID)
+}
+
+// QueryRuns queries workflow runs based on criteria
+func (e *DefaultWorkflowEngine) QueryRuns(ctx context.Context, query *core.RunQuery) ([]*core.WorkflowRun, error) {
+	if err := e.validateTenantAccess(ctx, query.TenantID); err != nil {
+		return nil, err
+	}
+	
+	return e.runRepo.Query(ctx, query)
+}
+
+// GetExecutionHistory retrieves the event history for a run
+func (e *DefaultWorkflowEngine) GetExecutionHistory(ctx context.Context, runID core.WorkflowRunID, tenantID core.TenantID) ([]core.Event, error) {
+	if err := e.validateTenantAccess(ctx, tenantID); err != nil {
+		return nil, err
+	}
+	
+	return e.eventStore.GetEvents(ctx, runID)
+}
+
+// ============================================================================
+// NODE EXECUTION HANDLING
+// ============================================================================
+
+// HandleNodeResult processes a node execution result from an executor
+func (e *DefaultWorkflowEngine) HandleNodeResult(ctx context.Context, result *core.NodeExecutionResult) error {
+	e.logger.Info("Handling node result",
+		zap.String("run_id", result.RunID.String()),
+		zap.String("node_id", result.NodeID.String()),
+		zap.String("status", string(result.Status)),
+	)
+	
+	_, err := e.withLock(ctx, result.RunID, func() (*core.WorkflowRun, error) {
+		// Load run
+		run, err := e.loadRunForUpdate(ctx, result.RunID)
+		if err != nil {
+			return nil, err
+		}
+		
+		// Validate execution token
+		if !result.Token.IsValid() {
+			return nil, fmt.Errorf("invalid or expired execution token")
+		}
+		
+		// Get node execution
+		nodeExec, exists := run.NodeExecutions[result.NodeID]
+		if !exists {
+			return nil, fmt.Errorf("node execution not found: %s", result.NodeID)
+		}
+		
+		// Verify attempt matches
+		if nodeExec.Attempt != result.Attempt {
+			return nil, fmt.Errorf("attempt mismatch: expected %d, got %d", nodeExec.Attempt, result.Attempt)
+		}
+		
+		// Process result based on status
+		switch result.Status {
+		case core.NodeStatusCompleted:
+			e.handleNodeSuccess(run, result)
+		case core.NodeStatusFailed:
+			if err := e.handleNodeFailure(ctx, run, result); err != nil {
+				return nil, err
+			}
+		default:
+			return nil, fmt.Errorf("unexpected node status: %s", result.Status)
+		}
+		
+		// Persist
+		if err := e.persistRun(ctx, run); err != nil {
+			return nil, err
+		}
+		
+		// Publish events
+		if err := e.publishEvents(ctx, run); err != nil {
+			e.logger.Error("Failed to publish events", zap.Error(err))
+		}
+		
+		// Evaluate workflow progress
+		if err := e.evaluateWorkflowProgress(ctx, run); err != nil {
+			e.logger.Error("Failed to evaluate workflow", zap.Error(err))
+		}
+		
+		return run, nil
+	})
+	
+	return err
+}
+
+// Signal sends a signal to a workflow
+func (e *DefaultWorkflowEngine) Signal(ctx context.Context, runID core.WorkflowRunID, signal *core.Signal) error {
+	e.logger.Info("Received signal",
+		zap.String("run_id", runID.String()),
+		zap.String("signal", signal.Name),
+	)
+	
+	_, err := e.withLock(ctx, runID, func() (*core.WorkflowRun, error) {
+		run, err := e.loadRunForUpdate(ctx, runID)
+		if err != nil {
+			return nil, err
+		}
+		
+		// Merge signal payload into variables
+		for k, v := range signal.Payload {
+			run.Variables[k] = v
+		}
+		
+		// If suspended, try to resume
+		if run.Status == core.RunStatusSuspended {
+			run.Status = core.RunStatusRunning
+		}
+		
+		run.LastUpdatedAt = time.Now()
+		
+		if err := e.persistRun(ctx, run); err != nil {
+			return nil, err
+		}
+		
+		// Re-evaluate workflow
+		if err := e.evaluateWorkflowProgress(ctx, run); err != nil {
+			e.logger.Error("Failed to evaluate workflow", zap.Error(err))
+		}
+		
+		return run, nil
+	})
+	
+	return err
+}
+
+// ============================================================================
+// PRIVATE HELPER METHODS
+// ============================================================================
+
+// withLock executes a function with a distributed lock
+func (e *DefaultWorkflowEngine) withLock(ctx context.Context, runID core.WorkflowRunID, fn func() (*core.WorkflowRun, error)) (*core.WorkflowRun, error) {
+	lockKey := fmt.Sprintf("workflow:run:%s", runID)
+	
+	lock, err := e.lockManager.AcquireLock(ctx, lockKey, e.config.LockTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("failed to acquire lock: %w", err)
+	}
+	defer func() {
+		if err := e.lockManager.ReleaseLock(ctx, lock); err != nil {
+			e.logger.Error("Failed to release lock", zap.Error(err))
+		}
+	}()
+	
+	return fn()
+}
+
+// loadRun loads a workflow run with tenant validation
+func (e *DefaultWorkflowEngine) loadRun(ctx context.Context, runID core.WorkflowRunID, tenantID core.TenantID) (*core.WorkflowRun, error) {
+	if err := e.validateTenantAccess(ctx, tenantID); err != nil {
+		return nil, err
+	}
+	
+	run, err := e.runRepo.FindByID(ctx, runID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("run not found: %w", err)
+	}
+	
+	return run, nil
+}
+
+// loadRunForUpdate loads a run for update (event sourcing)
+func (e *DefaultWorkflowEngine) loadRunForUpdate(ctx context.Context, runID core.WorkflowRunID) (*core.WorkflowRun, error) {
+	// In event sourcing mode, rebuild from events
+	if e.config.EnableEventSourcing {
+		events, err := e.eventStore.GetEvents(ctx, runID)
+		if err != nil {
+			return nil, err
+		}
+		
+		// Rebuild state from events (simplified - would need actual replay logic)
+		// For now, fall back to repository
+	}
+	
+	// Fallback to repository
+	run, err := e.runRepo.FindByID(ctx, runID, "")
+	if err != nil {
+		return nil, err
+	}
+	
+	return run, nil
+}
+
+// persistRun saves workflow run state
+func (e *DefaultWorkflowEngine) persistRun(ctx context.Context, run *core.WorkflowRun) error {
+	// Save snapshot
+	if err := e.runRepo.Save(ctx, run); err != nil {
+		return fmt.Errorf("failed to save run: %w", err)
+	}
+	
+	// Save events if event sourcing is enabled
+	if e.config.EnableEventSourcing && len(run.UncommittedEvents) > 0 {
+		if err := e.eventStore.AppendEvents(ctx, run.ID, run.UncommittedEvents, run.Version); err != nil {
+			return fmt.Errorf("failed to append events: %w", err)
+		}
+		
+		// Clear uncommitted events
+		run.UncommittedEvents = nil
+		run.Version++
+	}
+	
+	return nil
+}
+
+// publishEvents publishes domain events to message broker
+func (e *DefaultWorkflowEngine) publishEvents(ctx context.Context, run *core.WorkflowRun) error {
+	if len(run.UncommittedEvents) == 0 {
+		return nil
+	}
+	
+	// Publish to event bus (Kafka, NATS, etc.)
+	// Implementation depends on messaging plugin
+	
+	return nil
+}
+
+// scheduleNode creates a node execution and adds to pending queue
+func (e *DefaultWorkflowEngine) scheduleNode(ctx context.Context, run *core.WorkflowRun, node *core.NodeDefinition) error {
+	execution := &core.NodeExecution{
+		NodeID:   node.ID,
+		NodeName: node.Name,
+		Status:   core.NodeStatusPending,
+		Attempt:  1,
+	}
+	
+	run.NodeExecutions[node.ID] = execution
+	run.PendingNodes = append(run.PendingNodes, node.ID)
+	
+	// Raise event
+	event := &core.NodeScheduledEvent{
+		BaseEvent: core.BaseEvent{
+			ID:        uuid.New().String(),
+			Type:      "NodeScheduled",
+			Timestamp: time.Now(),
+			RunID:     run.ID,
+		},
+		NodeID:  node.ID,
+		Attempt: 1,
+	}
+	run.UncommittedEvents = append(run.UncommittedEvents, event)
+	
+	return nil
+}
+
+// scheduleReadyNodes schedules nodes that are ready for execution
+func (e *DefaultWorkflowEngine) scheduleReadyNodes(ctx context.Context, run *core.WorkflowRun) error {
+	if len(run.PendingNodes) == 0 {
+		return nil
+	}
+	
+	// Load definition
+	definition, err := e.definitionRepo.FindByID(ctx, run.DefinitionID, run.TenantID)
+	if err != nil {
+		return err
+	}
+	
+	for _, nodeID := range run.PendingNodes {
+		// Find node definition
+		var nodeDef *core.NodeDefinition
+		for i := range definition.Nodes {
+			if definition.Nodes[i].ID == nodeID {
+				nodeDef = &definition.Nodes[i]
+				break
+			}
+		}
+		
+		if nodeDef == nil {
+			continue
+		}
+		
+		nodeExec := run.NodeExecutions[nodeID]
+		
+		// Create execution token
+		token := core.NewExecutionToken(run.ID, nodeID, nodeExec.Attempt, e.config.TokenValidity)
+		
+		// Create task
+		task := &core.NodeExecutionTask{
+			RunID:   run.ID,
+			NodeID:  nodeID,
+			Attempt: nodeExec.Attempt,
+			Token:   token,
+			Context: run.Variables,
+			Config:  nodeDef.Config,
+			Timeout: nodeDef.Timeout,
+		}
+		
+		// Schedule with scheduler
+		if err := e.scheduler.ScheduleTask(ctx, nodeDef.ExecutorType, task); err != nil {
+			e.logger.Error("Failed to schedule task",
+				zap.String("node_id", nodeID.String()),
+				zap.Error(err),
+			)
+			continue
+		}
+		
+		// Update node status
+		now := time.Now()
+		nodeExec.Status = core.NodeStatusRunning
+		nodeExec.StartedAt = &now
+	}
+	
+	// Clear pending nodes
+	run.PendingNodes = nil
+	
+	return nil
+}
+
+// handleNodeSuccess processes successful node completion
+func (e *DefaultWorkflowEngine) handleNodeSuccess(run *core.WorkflowRun, result *core.NodeExecutionResult) {
+	nodeExec := run.NodeExecutions[result.NodeID]
+	now := time.Now()
+	
+	nodeExec.Status = core.NodeStatusCompleted
+	nodeExec.CompletedAt = &now
+	nodeExec.Output = result.Output
+	
+	// Add to execution path
+	run.ExecutionPath = append(run.ExecutionPath, result.NodeID.String())
+	
+	// Merge output into variables
+	for k, v := range result.Output {
+		run.Variables[fmt.Sprintf("%s.%s", result.NodeID, k)] = v
+	}
+	
+	// Raise event
+	event := &core.NodeCompletedEvent{
+		BaseEvent: core.BaseEvent{
+			ID:        uuid.New().String(),
+			Type:      "NodeCompleted",
+			Timestamp: time.Now(),
+			RunID:     run.ID,
+		},
+		NodeID:  result.NodeID,
+		Attempt: result.Attempt,
+		Output:  result.Output,
+	}
+	run.UncommittedEvents = append(run.UncommittedEvents, event)
+}
+
+// handleNodeFailure processes node failure
+func (e *DefaultWorkflowEngine) handleNodeFailure(ctx context.Context, run *core.WorkflowRun, result *core.NodeExecutionResult) error {
+	nodeExec := run.NodeExecutions[result.NodeID]
+	nodeExec.Error = result.Error
+	
+	// Load definition to get retry policy
+	definition, err := e.definitionRepo.FindByID(ctx, run.DefinitionID, run.TenantID)
+	if err != nil {
+		return err
+	}
+	
+	// Find node definition
+	var nodeDef *core.NodeDefinition
+	for i := range definition.Nodes {
+		if definition.Nodes[i].ID == result.NodeID {
+			nodeDef = &definition.Nodes[i]
+			break
+		}
+	}
+	
+	if nodeDef == nil {
+		return fmt.Errorf("node definition not found")
+	}
+	
+	// Determine retry policy
+	retryPolicy := nodeDef.RetryPolicy
+	if retryPolicy == nil {
+		retryPolicy = definition.RetryPolicy
+	}
+	if retryPolicy == nil {
+		retryPolicy = core.DefaultRetryPolicy
+	}
+	
+	// Check if should retry
+	willRetry := nodeExec.Attempt < retryPolicy.MaxAttempts
+	
+	if willRetry {
+		nodeExec.Status = core.NodeStatusRetrying
+		nodeExec.Attempt++
+		
+		// Re-add to pending nodes
+		run.PendingNodes = append(run.PendingNodes, result.NodeID)
+	} else {
+		now := time.Now()
+		nodeExec.Status = core.NodeStatusFailed
+		nodeExec.CompletedAt = &now
+		
+		run.ExecutionPath = append(run.ExecutionPath, fmt.Sprintf("%s:FAILED", result.NodeID))
+		
+		// If critical node, fail workflow
+		if nodeDef.Critical {
+			run.Status = core.RunStatusFailed
+			run.CompletedAt = &now
+			run.Error = result.Error
+		}
+	}
+	
+	// Raise event
+	event := &core.NodeFailedEvent{
+		BaseEvent: core.BaseEvent{
+			ID:        uuid.New().String(),
+			Type:      "NodeFailed",
+			Timestamp: time.Now(),
+			RunID:     run.ID,
+		},
+		NodeID:    result.NodeID,
+		Attempt:   result.Attempt,
+		Error:     result.Error,
+		WillRetry: willRetry,
+	}
+	run.UncommittedEvents = append(run.UncommittedEvents, event)
+	
+	return nil
+}
+
+// evaluateWorkflowProgress checks if workflow can progress or complete
+func (e *DefaultWorkflowEngine) evaluateWorkflowProgress(ctx context.Context, run *core.WorkflowRun) error {
+	if run.Status != core.RunStatusRunning {
+		return nil
+	}
+	
+	// Load definition
+	definition, err := e.definitionRepo.FindByID(ctx, run.DefinitionID, run.TenantID)
+	if err != nil {
+		return err
+	}
+	
+	// Check if all nodes are complete
+	allComplete := true
+	for _, node := range definition.Nodes {
+		exec, exists := run.NodeExecutions[node.ID]
+		if !exists || exec.Status != core.NodeStatusCompleted {
+			allComplete = false
+			break
+		}
+	}
+	
+	if allComplete {
+		// Workflow completed
+		outputs := e.collectOutputs(run, definition)
+		now := time.Now()
+		run.Status = core.RunStatusCompleted
+		run.CompletedAt = &now
+		
+		event := &core.WorkflowCompletedEvent{
+			BaseEvent: core.BaseEvent{
+				ID:        uuid.New().String(),
+				Type:      "WorkflowCompleted",
+				Timestamp: now,
+				RunID:     run.ID,
+			},
+			Outputs: outputs,
+		}
+		run.UncommittedEvents = append(run.UncommittedEvents, event)
+		
+		return nil
+	}
+	
+	// Find nodes ready to execute
+	readyNodes := e.findReadyNodes(run, definition)
+	for _, node := range readyNodes {
+		if err := e.scheduleNode(ctx, run, node); err != nil {
+			return err
+		}
+	}
+	
+	// Schedule ready nodes
+	if err := e.scheduleReadyNodes(ctx, run); err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+// findStartNodes finds nodes with no dependencies
+func (e *DefaultWorkflowEngine) findStartNodes(definition *core.WorkflowDefinition) []*core.NodeDefinition {
+	var startNodes []*core.NodeDefinition
+	for i := range definition.Nodes {
+		if len(definition.Nodes[i].DependsOn) == 0 {
+			startNodes = append(startNodes, &definition.Nodes[i])
+		}
+	}
+	return startNodes
+}
+
+// findReadyNodes finds nodes whose dependencies are satisfied
+func (e *DefaultWorkflowEngine) findReadyNodes(run *core.WorkflowRun, definition *core.WorkflowDefinition) []*core.NodeDefinition {
+	var readyNodes []*core.NodeDefinition
+	
+	for i := range definition.Nodes {
+		node := &definition.Nodes[i]
+		
+		// Skip if already executed or pending
+		if _, exists := run.NodeExecutions[node.ID]; exists {
+			continue
+		}
+		
+		// Check if all dependencies are satisfied
+		allSatisfied := true
+		for _, depID := range node.DependsOn {
+			depExec, exists := run.NodeExecutions[depID]
+			if !exists || depExec.Status != core.NodeStatusCompleted {
+				allSatisfied = false
+				break
+			}
+		}
+		
+		if allSatisfied {
+			readyNodes = append(readyNodes, node)
+		}
+	}
+	
+	return readyNodes
+}
+
+// collectOutputs collects workflow outputs
+func (e *DefaultWorkflowEngine) collectOutputs(run *core.WorkflowRun, definition *core.WorkflowDefinition) map[string]any {
+	outputs := make(map[string]any)
+	
+	for name := range definition.Outputs {
+		if val, exists := run.Variables[name]; exists {
+			outputs[name] = val
+		}
+	}
+	
+	return outputs
+}
+
+// validateInputs validates workflow inputs against definition
+func (e *DefaultWorkflowEngine) validateInputs(definition *core.WorkflowDefinition, inputs map[string]any) error {
+	for name, inputDef := range definition.Inputs {
+		val, exists := inputs[name]
+		
+		if !exists {
+			if inputDef.Required {
+				if inputDef.DefaultValue != nil {
+					inputs[name] = inputDef.DefaultValue
+				} else {
+					return fmt.Errorf("required input missing: %s", name)
+				}
+			}
+			continue
+		}
+		
+		// Type validation would go here
+		_ = val
+	}
+	
+	return nil
+}
+
+// validateTenantAccess validates tenant access (simplified)
+func (e *DefaultWorkflowEngine) validateTenantAccess(ctx context.Context, tenantID core.TenantID) error {
+	// In production, this would check authentication and authorization
+	if !tenantID.IsValid() {
+		return fmt.Errorf("invalid tenant ID")
+	}
+	return nil
+}
+
+// ============================================================================
+// SCHEDULER INTERFACE
+// ============================================================================
+
+// Scheduler manages task scheduling and distribution to executors
+type Scheduler interface {
+	ScheduleTask(ctx context.Context, executorType string, task *core.NodeExecutionTask) error
+	CancelTasksForRun(ctx context.Context, runID core.WorkflowRunID) error
+	PublishEvents(ctx context.Context, events []core.Event) error
+}
+
+// ============================================================================
+// LOCK MANAGER INTERFACE
+// ============================================================================
+
+// DistributedLockManager manages distributed locks for concurrency control
+type DistributedLockManager interface {
+	AcquireLock(ctx context.Context, key string, timeout time.Duration) (Lock, error)
+	ReleaseLock(ctx context.Context, lock Lock) error
+}
+
+// Lock represents a distributed lock
+type Lock interface {
+	Key() string
+	ExpiresAt() time.Time
+}

@@ -1,0 +1,557 @@
+package tech.kayys.silat.plugin.loader;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import io.quarkus.runtime.configuration.ProfileManager;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import tech.kayys.silat.plugin.*;
+
+import java.io.*;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.file.*;
+import java.util.*;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+
+/**
+ * ============================================================================
+ * PLUGIN LOADER
+ * ============================================================================
+ * 
+ * Loads plugins from JAR files with:
+ * - Isolated classloaders
+ * - Manifest parsing (JSON/YAML)
+ * - Resource extraction
+ * - Dynamic class loading
+ * - Hot reload support
+ */
+@ApplicationScoped
+public class PluginLoader {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(PluginLoader.class);
+    
+    private static final String MANIFEST_JSON = "plugin-manifest.json";
+    private static final String MANIFEST_YAML = "plugin-manifest.yaml";
+    private static final String MANIFEST_YML = "plugin-manifest.yml";
+    
+    @Inject
+    ObjectMapper jsonMapper;
+    
+    private final ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
+    
+    @Inject
+    PluginClassLoaderManager classLoaderManager;
+    
+    /**
+     * Load plugin from archive bytes
+     */
+    public Uni<LoadedPlugin> load(PluginManifest manifest, byte[] archive) {
+        LOG.info("Loading plugin: {} v{}", manifest.name, manifest.version);
+        
+        return Uni.createFrom().item(() -> {
+            try {
+                // Create temporary file for archive
+                Path tempFile = Files.createTempFile("plugin-", ".jar");
+                Files.write(tempFile, archive);
+                
+                // Load from file
+                return loadFromFile(manifest, tempFile);
+                
+            } catch (IOException e) {
+                throw new PluginLoadException("Failed to load plugin archive", e);
+            }
+        });
+    }
+    
+    /**
+     * Load plugin from file path
+     */
+    public LoadedPlugin loadFromFile(PluginManifest manifest, Path jarPath) 
+            throws PluginLoadException {
+        
+        try {
+            // Create isolated classloader
+            URLClassLoader classLoader = classLoaderManager.createClassLoader(
+                manifest.pluginId,
+                jarPath
+            );
+            
+            // Extract resources
+            Map<String, byte[]> resources = extractResources(jarPath);
+            
+            // Load classes
+            Map<String, Class<?>> classes = loadClasses(
+                manifest,
+                jarPath,
+                classLoader
+            );
+            
+            // Instantiate components
+            Map<String, Object> instances = instantiateComponents(
+                classes,
+                classLoader
+            );
+            
+            return new LoadedPlugin(classLoader, classes, instances, resources);
+            
+        } catch (Exception e) {
+            throw new PluginLoadException(
+                "Failed to load plugin: " + manifest.pluginId, e);
+        }
+    }
+    
+    /**
+     * Parse plugin manifest from JAR
+     */
+    public PluginManifest parseManifest(byte[] archive) 
+            throws PluginLoadException {
+        
+        try (ByteArrayInputStream bais = new ByteArrayInputStream(archive);
+             ZipInputStream zis = new ZipInputStream(bais)) {
+            
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                String name = entry.getName();
+                
+                if (name.equals(MANIFEST_JSON)) {
+                    return jsonMapper.readValue(zis, PluginManifest.class);
+                } else if (name.equals(MANIFEST_YAML) || name.equals(MANIFEST_YML)) {
+                    return yamlMapper.readValue(zis, PluginManifest.class);
+                }
+            }
+            
+            throw new PluginLoadException("Plugin manifest not found");
+            
+        } catch (IOException e) {
+            throw new PluginLoadException("Failed to parse manifest", e);
+        }
+    }
+    
+    /**
+     * Parse manifest from path
+     */
+    public PluginManifest parseManifestFromPath(Path jarPath) 
+            throws PluginLoadException {
+        
+        try (JarFile jarFile = new JarFile(jarPath.toFile())) {
+            
+            // Try JSON first
+            JarEntry jsonEntry = jarFile.getJarEntry(MANIFEST_JSON);
+            if (jsonEntry != null) {
+                try (InputStream is = jarFile.getInputStream(jsonEntry)) {
+                    return jsonMapper.readValue(is, PluginManifest.class);
+                }
+            }
+            
+            // Try YAML
+            JarEntry yamlEntry = jarFile.getJarEntry(MANIFEST_YAML);
+            if (yamlEntry == null) {
+                yamlEntry = jarFile.getJarEntry(MANIFEST_YML);
+            }
+            
+            if (yamlEntry != null) {
+                try (InputStream is = jarFile.getInputStream(yamlEntry)) {
+                    return yamlMapper.readValue(is, PluginManifest.class);
+                }
+            }
+            
+            throw new PluginLoadException("Plugin manifest not found in JAR");
+            
+        } catch (IOException e) {
+            throw new PluginLoadException("Failed to parse manifest", e);
+        }
+    }
+    
+    /**
+     * Extract resources from JAR
+     */
+    private Map<String, byte[]> extractResources(Path jarPath) throws IOException {
+        Map<String, byte[]> resources = new HashMap<>();
+        
+        try (JarFile jarFile = new JarFile(jarPath.toFile())) {
+            Enumeration<JarEntry> entries = jarFile.entries();
+            
+            while (entries.hasMoreElements()) {
+                JarEntry entry = entries.nextElement();
+                
+                // Extract UI widgets, icons, docs
+                if (entry.getName().startsWith("widgets/") ||
+                    entry.getName().startsWith("icons/") ||
+                    entry.getName().startsWith("docs/")) {
+                    
+                    try (InputStream is = jarFile.getInputStream(entry)) {
+                        resources.put(entry.getName(), is.readAllBytes());
+                    }
+                }
+            }
+        }
+        
+        return resources;
+    }
+    
+    /**
+     * Load classes from JAR
+     */
+    private Map<String, Class<?>> loadClasses(
+            PluginManifest manifest,
+            Path jarPath,
+            URLClassLoader classLoader) throws ClassNotFoundException {
+        
+        Map<String, Class<?>> classes = new HashMap<>();
+        
+        // Load executor classes
+        for (ExecutorManifest executor : manifest.executors) {
+            if (executor.inProcess && executor.className != null) {
+                Class<?> clazz = classLoader.loadClass(executor.className);
+                classes.put(executor.className, clazz);
+            }
+        }
+        
+        // Load widget classes (if any)
+        for (UIWidgetManifest widget : manifest.widgets) {
+            // Widget might be pure JS/React, no Java class needed
+        }
+        
+        return classes;
+    }
+    
+    /**
+     * Instantiate component classes
+     */
+    private Map<String, Object> instantiateComponents(
+            Map<String, Class<?>> classes,
+            ClassLoader classLoader) {
+        
+        Map<String, Object> instances = new HashMap<>();
+        
+        for (Map.Entry<String, Class<?>> entry : classes.entrySet()) {
+            try {
+                // Try CDI bean creation first
+                Object instance = createCDIBean(entry.getValue());
+                
+                // Fall back to constructor
+                if (instance == null) {
+                    instance = entry.getValue().getDeclaredConstructor().newInstance();
+                }
+                
+                instances.put(entry.getKey(), instance);
+                
+            } catch (Exception e) {
+                LOG.warn("Failed to instantiate class: {}", entry.getKey(), e);
+            }
+        }
+        
+        return instances;
+    }
+    
+    /**
+     * Create CDI bean (if possible)
+     */
+    private Object createCDIBean(Class<?> clazz) {
+        // Integration with CDI container
+        // Implementation depends on Quarkus Arc
+        return null;
+    }
+    
+    /**
+     * Reload plugin (hot reload)
+     */
+    public Uni<LoadedPlugin> reload(String pluginId, Path jarPath) {
+        LOG.info("Reloading plugin: {}", pluginId);
+        
+        return Uni.createFrom().item(() -> {
+            try {
+                // Parse manifest
+                PluginManifest manifest = parseManifestFromPath(jarPath);
+                
+                // Unload old version
+                classLoaderManager.unloadClassLoader(pluginId);
+                
+                // Load new version
+                return loadFromFile(manifest, jarPath);
+                
+            } catch (Exception e) {
+                throw new PluginLoadException("Failed to reload plugin", e);
+            }
+        });
+    }
+}
+
+/**
+ * ============================================================================
+ * PLUGIN VALIDATOR
+ * ============================================================================
+ * 
+ * Validates plugin manifests and components
+ */
+@ApplicationScoped
+public class PluginValidator {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(PluginValidator.class);
+    
+    private static final String MIN_PLATFORM_VERSION = "1.0.0";
+    
+    /**
+     * Validate plugin manifest
+     */
+    public Uni<ValidationResult> validate(PluginManifest manifest) {
+        LOG.debug("Validating plugin: {}", manifest.pluginId);
+        
+        return Uni.createFrom().item(() -> {
+            List<String> errors = new ArrayList<>();
+            List<String> warnings = new ArrayList<>();
+            
+            // Required fields
+            if (manifest.pluginId == null || manifest.pluginId.isEmpty()) {
+                errors.add("Plugin ID is required");
+            }
+            
+            if (manifest.name == null || manifest.name.isEmpty()) {
+                errors.add("Plugin name is required");
+            }
+            
+            if (manifest.version == null || manifest.version.isEmpty()) {
+                errors.add("Plugin version is required");
+            }
+            
+            // Version format
+            if (!isValidVersion(manifest.version)) {
+                errors.add("Invalid version format: " + manifest.version);
+            }
+            
+            // Platform version compatibility
+            if (!isPlatformCompatible(manifest.requiresPlatformVersion)) {
+                errors.add("Incompatible platform version: " + 
+                    manifest.requiresPlatformVersion);
+            }
+            
+            // Validate node definitions
+            for (NodeDefinitionManifest node : manifest.nodes) {
+                validateNodeDefinition(node, errors, warnings);
+            }
+            
+            // Validate executors
+            for (ExecutorManifest executor : manifest.executors) {
+                validateExecutor(executor, errors, warnings);
+            }
+            
+            // Validate widgets
+            for (UIWidgetManifest widget : manifest.widgets) {
+                validateWidget(widget, errors, warnings);
+            }
+            
+            boolean isValid = errors.isEmpty();
+            String message = isValid ? "Validation successful" : 
+                String.join(", ", errors);
+            
+            return new ValidationResult(isValid, message, errors, warnings);
+        });
+    }
+    
+    private void validateNodeDefinition(
+            NodeDefinitionManifest node,
+            List<String> errors,
+            List<String> warnings) {
+        
+        if (node.type == null || node.type.isEmpty()) {
+            errors.add("Node type is required");
+        }
+        
+        if (node.label == null || node.label.isEmpty()) {
+            errors.add("Node label is required");
+        }
+        
+        if (node.executorId == null || node.executorId.isEmpty()) {
+            warnings.add("Node " + node.type + " has no executor specified");
+        }
+        
+        // Validate config schema
+        for (ConfigFieldSchema field : node.configSchema) {
+            if (field.name == null || field.name.isEmpty()) {
+                errors.add("Config field name is required");
+            }
+            if (field.type == null) {
+                errors.add("Config field type is required for: " + field.name);
+            }
+        }
+        
+        // Validate ports
+        if (node.inputPorts.isEmpty() && node.outputPorts.isEmpty()) {
+            warnings.add("Node " + node.type + " has no ports defined");
+        }
+    }
+    
+    private void validateExecutor(
+            ExecutorManifest executor,
+            List<String> errors,
+            List<String> warnings) {
+        
+        if (executor.executorId == null || executor.executorId.isEmpty()) {
+            errors.add("Executor ID is required");
+        }
+        
+        if (executor.inProcess) {
+            if (executor.className == null || executor.className.isEmpty()) {
+                errors.add("In-process executor requires className");
+            }
+        } else {
+            if (executor.endpoint == null || executor.endpoint.isEmpty()) {
+                errors.add("Remote executor requires endpoint");
+            }
+        }
+        
+        if (executor.nodeTypes.isEmpty()) {
+            warnings.add("Executor " + executor.executorId + " has no node types");
+        }
+    }
+    
+    private void validateWidget(
+            UIWidgetManifest widget,
+            List<String> errors,
+            List<String> warnings) {
+        
+        if (widget.widgetId == null || widget.widgetId.isEmpty()) {
+            errors.add("Widget ID is required");
+        }
+        
+        if (widget.entryPoint == null || widget.entryPoint.isEmpty()) {
+            errors.add("Widget entry point is required");
+        }
+    }
+    
+    private boolean isValidVersion(String version) {
+        // Semantic versioning pattern
+        return version != null && version.matches("\\d+\\.\\d+\\.\\d+(-.*)?");
+    }
+    
+    private boolean isPlatformCompatible(String requiredVersion) {
+        if (requiredVersion == null) return true;
+        
+        // Compare versions (simplified)
+        return compareVersions(MIN_PLATFORM_VERSION, requiredVersion) >= 0;
+    }
+    
+    private int compareVersions(String v1, String v2) {
+        String[] parts1 = v1.split("\\.");
+        String[] parts2 = v2.split("\\.");
+        
+        for (int i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+            int p1 = i < parts1.length ? Integer.parseInt(parts1[i]) : 0;
+            int p2 = i < parts2.length ? Integer.parseInt(parts2[i]) : 0;
+            
+            if (p1 != p2) return Integer.compare(p1, p2);
+        }
+        
+        return 0;
+    }
+}
+
+/**
+ * ============================================================================
+ * CLASSLOADER MANAGER
+ * ============================================================================
+ * 
+ * Manages isolated classloaders for plugins
+ */
+@ApplicationScoped
+public class PluginClassLoaderManager {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(PluginClassLoaderManager.class);
+    
+    private final Map<String, URLClassLoader> classLoaders = new ConcurrentHashMap<>();
+    
+    /**
+     * Create isolated classloader for plugin
+     */
+    public URLClassLoader createClassLoader(String pluginId, Path jarPath) 
+            throws IOException {
+        
+        LOG.debug("Creating classloader for plugin: {}", pluginId);
+        
+        URL[] urls = new URL[] { jarPath.toUri().toURL() };
+        
+        // Use parent classloader for Silat SDK classes
+        ClassLoader parent = getClass().getClassLoader();
+        
+        // Create isolated classloader
+        URLClassLoader classLoader = new URLClassLoader(
+            urls,
+            parent,
+            "plugin-" + pluginId
+        );
+        
+        classLoaders.put(pluginId, classLoader);
+        
+        return classLoader;
+    }
+    
+    /**
+     * Get classloader for plugin
+     */
+    public URLClassLoader getClassLoader(String pluginId) {
+        return classLoaders.get(pluginId);
+    }
+    
+    /**
+     * Unload classloader
+     */
+    public void unloadClassLoader(String pluginId) {
+        URLClassLoader classLoader = classLoaders.remove(pluginId);
+        if (classLoader != null) {
+            try {
+                classLoader.close();
+                LOG.debug("Unloaded classloader for plugin: {}", pluginId);
+            } catch (IOException e) {
+                LOG.warn("Failed to close classloader", e);
+            }
+        }
+    }
+}
+
+/**
+ * ============================================================================
+ * VALIDATION RESULT
+ * ============================================================================
+ */
+public class ValidationResult {
+    private final boolean valid;
+    private final String message;
+    private final List<String> errors;
+    private final List<String> warnings;
+    
+    public ValidationResult(
+            boolean valid,
+            String message,
+            List<String> errors,
+            List<String> warnings) {
+        this.valid = valid;
+        this.message = message;
+        this.errors = errors;
+        this.warnings = warnings;
+    }
+    
+    public boolean isValid() { return valid; }
+    public String getMessage() { return message; }
+    public List<String> getErrors() { return errors; }
+    public List<String> getWarnings() { return warnings; }
+}
+
+/**
+ * Exception for plugin loading errors
+ */
+class PluginLoadException extends RuntimeException {
+    public PluginLoadException(String message) {
+        super(message);
+    }
+    
+    public PluginLoadException(String message, Throwable cause) {
+        super(message, cause);
+    }
+}

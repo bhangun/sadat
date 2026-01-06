@@ -7,6 +7,16 @@
 
 # Application Info
 quarkus:
+  index-dependency:
+    silat-common:
+      group-id: tech.kayys.silat
+      artifact-id: silat-common
+    silat-registry:
+      group-id: tech.kayys.silat
+      artifact-id: silat-registry
+    silat-grpc:
+      group-id: tech.kayys.silat
+      artifact-id: silat-grpc
   application:
     name: silat-workflow-engine
     version: 1.0.0
@@ -23,6 +33,13 @@ quarkus:
     limits:
       max-body-size: 10M
       max-form-attribute-size: 2048
+    ssl:
+      certificate:
+        files: ${SSL_CERT:src/main/resources/certs/server.crt}
+        key-files: ${SSL_KEY:src/main/resources/certs/server.key}
+      trust-store:
+        files: ${SSL_TRUST_STORE:src/main/resources/certs/ca.crt}
+      client-auth: ${SSL_CLIENT_AUTH:required}
     
   # Enable HTTP/2
   http2: true
@@ -104,6 +121,11 @@ quarkus:
       enable-reflection-service: true
       max-inbound-message-size: 4194304  # 4MB
       handshake-timeout: 30s
+    ssl:
+      certificate: ${GRPC_SSL_CERT:src/main/resources/certs/server.crt}
+      key: ${GRPC_SSL_KEY:src/main/resources/certs/server.key}
+      trust-store: ${GRPC_SSL_TRUST_STORE:src/main/resources/certs/ca.crt}
+      client-auth: ${GRPC_SSL_CLIENT_AUTH:required}
       
     # gRPC Clients (for executor communication)
     clients:
@@ -169,9 +191,15 @@ quarkus:
     tenant-resolver: header  # or subdomain, path
     
   # JWT Authentication
+  jwt:
+    auth:
+      public-key:
+        location: ${JWT_PUBLIC_KEY_LOCATION:src/main/resources/jwt/public-key.pem}
+  
   smallrye-jwt:
     enabled: ${JWT_ENABLED:true}
     auth-mechanism: MP-JWT
+    token-schemes: bearer
     
   oidc:
     enabled: ${OIDC_ENABLED:false}

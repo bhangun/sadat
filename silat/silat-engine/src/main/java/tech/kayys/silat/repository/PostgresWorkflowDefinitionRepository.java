@@ -25,7 +25,7 @@ public class PostgresWorkflowDefinitionRepository implements WorkflowDefinitionR
     private static final Logger LOG = LoggerFactory.getLogger(PostgresWorkflowDefinitionRepository.class);
 
     @Inject
-    io.vertx.mutiny.pgclient.PgPool pgPool;
+    io.vertx.mutiny.sqlclient.Pool pgPool;
 
     @Inject
     com.fasterxml.jackson.databind.ObjectMapper objectMapper;

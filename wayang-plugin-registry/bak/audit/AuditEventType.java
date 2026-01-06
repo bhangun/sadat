@@ -1,0 +1,14 @@
+/**
+ * Audit Event Types
+ */
+enum AuditEventType {
+    PLUGIN_REGISTERED,
+    PLUGIN_SCANNED,
+    PLUGIN_APPROVED,
+    PLUGIN_REJECTED,
+    PLUGIN_LOADED,
+    PLUGIN_UNLOADED,
+    PLUGIN_REVOKED,
+    PLUGIN_ERROR,
+    PLUGIN_UPDATED
+}

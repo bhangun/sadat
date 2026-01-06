@@ -6,7 +6,17 @@ import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 import tech.kayys.wayang.workflow.service.WorkflowRegistry;
-import tech.kayys.wayang.workflow.v1.*;
+import tech.kayys.wayang.workflow.v1.ExportWorkflowResponse;
+import tech.kayys.wayang.workflow.v1.GetWorkflowRequest;
+import tech.kayys.wayang.workflow.v1.GetWorkflowVersionRequest;
+import tech.kayys.wayang.workflow.v1.ImportWorkflowRequest;
+import tech.kayys.wayang.workflow.v1.ListWorkflowsRequest;
+import tech.kayys.wayang.workflow.v1.ListWorkflowsResponse;
+import tech.kayys.wayang.workflow.v1.SearchWorkflowsRequest;
+import tech.kayys.wayang.workflow.v1.ValidateWorkflowResponse;
+import tech.kayys.wayang.workflow.v1.WorkflowDefinition;
+import tech.kayys.wayang.workflow.v1.WorkflowRegistryService;
+import tech.kayys.wayang.workflow.v1.WorkflowVersionId;
 import tech.kayys.wayang.workflow.security.annotations.ControlPlaneSecured;
 import com.google.protobuf.Empty;
 import java.util.stream.Collectors;
@@ -32,6 +42,7 @@ public class WorkflowRegistryGrpcService implements WorkflowRegistryService {
 
     @Override
     public Uni<WorkflowDefinition> registerWorkflow(WorkflowDefinition request) {
+        LOG.infof("Registering workflow %s", request.getId());
         return registry.register(toDomain(request))
                 .map(this::toProto);
     }

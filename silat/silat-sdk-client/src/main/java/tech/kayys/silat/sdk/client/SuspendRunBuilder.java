@@ -1,5 +1,8 @@
 package tech.kayys.silat.sdk.client;
 
+import io.smallrye.mutiny.Uni;
+import tech.kayys.silat.model.RunResponse;
+
 /**
  * Builder for suspending runs
  */

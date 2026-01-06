@@ -31,6 +31,7 @@ public class EventStoreGrpcService implements EventStoreService {
 
     @Override
     public Uni<GetEventsResponse> getRunEvents(GetRunEventsRequest request) {
+        LOG.infof("Getting events for run %s", request.getRunId());
         return eventStore.getEvents(request.getRunId())
                 .map(list -> GetEventsResponse.newBuilder()
                         .addAllEvents(list.stream().map(this::toProto).collect(Collectors.toList()))

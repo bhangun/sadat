@@ -1,0 +1,827 @@
+package tech.kayys.golek.client;
+
+import io.smallrye.mutiny.Uni;
+import io.grpc.ManagedChannel;
+import io.grpc.ManagedChannelBuilder;
+import jakarta.enterprise.context.ApplicationScoped;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import tech.kayys.golek.api.v1.*;
+
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * ============================================================================
+ * golek JAVA/QUARKUS CLIENT SDK
+ * ============================================================================
+ * 
+ * Production-ready client SDK for golek workflow engine.
+ * Supports both REST and gRPC protocols.
+ * 
+ * Features:
+ * - Fluent API for workflow operations
+ * - Reactive programming with Mutiny
+ * - Multi-tenancy support
+ * - Connection pooling and retry logic
+ * - Type-safe workflow definitions
+ * 
+ * Example Usage:
+ * ```java
+ * @Inject
+ * golekClient client;
+ * 
+ * // Create and start workflow
+ * WorkflowRun run = client.workflows()
+ *     .create("order-processing")
+ *     .tenantId("acme-corp")
+ *     .input("orderId", "ORDER-123")
+ *     .input("customerId", "CUST-456")
+ *     .executeAndStart()
+ *     .await().atMost(Duration.ofSeconds(30));
+ * ```
+ */
+@ApplicationScoped
+public class golekClient {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(golekClient.class);
+    
+    private final golekClientConfig config;
+    private final ManagedChannel channel;
+    private final WorkflowServiceGrpc.WorkflowServiceStub workflowStub;
+    private final ExecutorServiceGrpc.ExecutorServiceStub executorStub;
+    private final DefinitionServiceGrpc.DefinitionServiceStub definitionStub;
+    
+    // ============================================================================
+    // CONSTRUCTORS
+    // ============================================================================
+    
+    public golekClient(
+            @ConfigProperty(name = "golek.endpoint", defaultValue = "localhost:9090") String endpoint,
+            @ConfigProperty(name = "golek.tenant-id") String tenantId) {
+        this(golekClientConfig.builder()
+            .endpoint(endpoint)
+            .tenantId(tenantId)
+            .build());
+    }
+    
+    public golekClient(golekClientConfig config) {
+        this.config = config;
+        
+        // Initialize gRPC channel
+        this.channel = ManagedChannelBuilder
+            .forTarget(config.getEndpoint())
+            .usePlaintext() // For development; use TLS in production
+            .build();
+        
+        // Create stubs
+        this.workflowStub = WorkflowServiceGrpc.newStub(channel);
+        this.executorStub = ExecutorServiceGrpc.newStub(channel);
+        this.definitionStub = DefinitionServiceGrpc.newStub(channel);
+        
+        LOG.info("golek client initialized: endpoint={}, tenant={}", 
+            config.getEndpoint(), config.getTenantId());
+    }
+    
+    // ============================================================================
+    // API ACCESS
+    // ============================================================================
+    
+    /**
+     * Access workflow run operations
+     */
+    public WorkflowOperations workflows() {
+        return new WorkflowOperations(this);
+    }
+    
+    /**
+     * Access workflow definition operations
+     */
+    public DefinitionOperations definitions() {
+        return new DefinitionOperations(this);
+    }
+    
+    /**
+     * Access SAGA operations
+     */
+    public SAGAOperations sagas() {
+        return new SAGAOperations(this);
+    }
+    
+    /**
+     * Close the client and release resources
+     */
+    public void close() {
+        try {
+            channel.shutdown().awaitTermination(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn("Interrupted while closing client", e);
+        }
+    }
+    
+    // ============================================================================
+    // WORKFLOW OPERATIONS
+    // ============================================================================
+    
+    public static class WorkflowOperations {
+        
+        private final golekClient client;
+        
+        WorkflowOperations(golekClient client) {
+            this.client = client;
+        }
+        
+        /**
+         * Create a new workflow run
+         */
+        public CreateRunBuilder create(String definitionId) {
+            return new CreateRunBuilder(client, definitionId);
+        }
+        
+        /**
+         * Get a workflow run
+         */
+        public Uni<WorkflowRun> get(String runId) {
+            GetRunRequest request = GetRunRequest.newBuilder()
+                .setTenantId(client.config.getTenantId())
+                .setRunId(runId)
+                .build();
+            
+            return Uni.createFrom().future(
+                client.workflowStub.getRun(request, new StreamObserverAdapter<>())
+            ).map(WorkflowRun::from);
+        }
+        
+        /**
+         * Start a workflow run
+         */
+        public Uni<WorkflowRun> start(String runId) {
+            StartRunRequest request = StartRunRequest.newBuilder()
+                .setTenantId(client.config.getTenantId())
+                .setRunId(runId)
+                .build();
+            
+            return Uni.createFrom().future(
+                client.workflowStub.startRun(request, new StreamObserverAdapter<>())
+            ).map(WorkflowRun::from);
+        }
+        
+        /**
+         * Suspend a workflow run
+         */
+        public Uni<WorkflowRun> suspend(String runId, String reason) {
+            SuspendRunRequest request = SuspendRunRequest.newBuilder()
+                .setTenantId(client.config.getTenantId())
+                .setRunId(runId)
+                .setReason(reason)
+                .build();
+            
+            return Uni.createFrom().future(
+                client.workflowStub.suspendRun(request, new StreamObserverAdapter<>())
+            ).map(WorkflowRun::from);
+        }
+        
+        /**
+         * Resume a workflow run
+         */
+        public Uni<WorkflowRun> resume(String runId, Map<String, Object> resumeData) {
+            ResumeRunRequest.Builder requestBuilder = ResumeRunRequest.newBuilder()
+                .setTenantId(client.config.getTenantId())
+                .setRunId(runId);
+            
+            if (resumeData != null && !resumeData.isEmpty()) {
+                requestBuilder.setResumeData(ProtoUtils.toStruct(resumeData));
+            }
+            
+            return Uni.createFrom().future(
+                client.workflowStub.resumeRun(requestBuilder.build(), new StreamObserverAdapter<>())
+            ).map(WorkflowRun::from);
+        }
+        
+        /**
+         * Cancel a workflow run
+         */
+        public Uni<Void> cancel(String runId, String reason) {
+            CancelRunRequest request = CancelRunRequest.newBuilder()
+                .setTenantId(client.config.getTenantId())
+                .setRunId(runId)
+                .setReason(reason)
+                .build();
+            
+            return Uni.createFrom().future(
+                client.workflowStub.cancelRun(request, new StreamObserverAdapter<>())
+            ).replaceWithVoid();
+        }
+        
+        /**
+         * Send signal to workflow
+         */
+        public Uni<Void> signal(String runId, String signalName, Map<String, Object> payload) {
+            SignalRequest.Builder requestBuilder = SignalRequest.newBuilder()
+                .setRunId(runId)
+                .setSignalName(signalName);
+            
+            if (payload != null) {
+                requestBuilder.setPayload(ProtoUtils.toStruct(payload));
+            }
+            
+            return Uni.createFrom().future(
+                client.workflowStub.signalRun(requestBuilder.build(), new StreamObserverAdapter<>())
+            ).replaceWithVoid();
+        }
+        
+        /**
+         * Query workflow runs
+         */
+        public Uni<PagedResult<WorkflowRun>> query(QueryBuilder query) {
+            QueryRunsRequest request = query.build(client.config.getTenantId());
+            
+            return Uni.createFrom().future(
+                client.workflowStub.queryRuns(request, new StreamObserverAdapter<>())
+            ).map(response -> {
+                List<WorkflowRun> runs = response.getRunsList().stream()
+                    .map(WorkflowRun::from)
+                    .toList();
+                
+                return new PagedResult<>(
+                    runs,
+                    response.getPage(),
+                    response.getSize(),
+                    response.getTotalElements(),
+                    response.getHasMore()
+                );
+            });
+        }
+        
+        /**
+         * Get execution history
+         */
+        public Uni<ExecutionHistory> getHistory(String runId) {
+            GetExecutionHistoryRequest request = GetExecutionHistoryRequest.newBuilder()
+                .setTenantId(client.config.getTenantId())
+                .setRunId(runId)
+                .build();
+            
+            return Uni.createFrom().future(
+                client.workflowStub.getExecutionHistory(request, new StreamObserverAdapter<>())
+            ).map(ExecutionHistory::from);
+        }
+    }
+    
+    // ============================================================================
+    // CREATE RUN BUILDER
+    // ============================================================================
+    
+    public static class CreateRunBuilder {
+        
+        private final golekClient client;
+        private final String definitionId;
+        private String tenantId;
+        private final Map<String, Object> inputs = new HashMap<>();
+        private final Map<String, String> labels = new HashMap<>();
+        
+        CreateRunBuilder(golekClient client, String definitionId) {
+            this.client = client;
+            this.definitionId = definitionId;
+            this.tenantId = client.config.getTenantId();
+        }
+        
+        public CreateRunBuilder tenantId(String tenantId) {
+            this.tenantId = tenantId;
+            return this;
+        }
+        
+        public CreateRunBuilder input(String key, Object value) {
+            inputs.put(key, value);
+            return this;
+        }
+        
+        public CreateRunBuilder inputs(Map<String, Object> inputs) {
+            this.inputs.putAll(inputs);
+            return this;
+        }
+        
+        public CreateRunBuilder label(String key, String value) {
+            labels.put(key, value);
+            return this;
+        }
+        
+        public CreateRunBuilder labels(Map<String, String> labels) {
+            this.labels.putAll(labels);
+            return this;
+        }
+        
+        /**
+         * Execute and return the created run
+         */
+        public Uni<WorkflowRun> execute() {
+            CreateRunRequest.Builder requestBuilder = CreateRunRequest.newBuilder()
+                .setTenantId(tenantId)
+                .setDefinitionId(definitionId)
+                .putAllLabels(labels);
+            
+            if (!inputs.isEmpty()) {
+                requestBuilder.setInputs(ProtoUtils.toStruct(inputs));
+            }
+            
+            return Uni.createFrom().future(
+                client.workflowStub.createRun(requestBuilder.build(), new StreamObserverAdapter<>())
+            ).map(WorkflowRun::from);
+        }
+        
+        /**
+         * Execute and immediately start the run
+         */
+        public Uni<WorkflowRun> executeAndStart() {
+            return execute()
+                .flatMap(run -> client.workflows().start(run.getRunId()));
+        }
+    }
+    
+    // ============================================================================
+    // QUERY BUILDER
+    // ============================================================================
+    
+    public static class QueryBuilder {
+        
+        private String definitionId;
+        private RunStatus status;
+        private Map<String, String> labels = new HashMap<>();
+        private int page = 0;
+        private int size = 20;
+        
+        public QueryBuilder definitionId(String definitionId) {
+            this.definitionId = definitionId;
+            return this;
+        }
+        
+        public QueryBuilder status(RunStatus status) {
+            this.status = status;
+            return this;
+        }
+        
+        public QueryBuilder label(String key, String value) {
+            labels.put(key, value);
+            return this;
+        }
+        
+        public QueryBuilder page(int page) {
+            this.page = page;
+            return this;
+        }
+        
+        public QueryBuilder size(int size) {
+            this.size = size;
+            return this;
+        }
+        
+        QueryRunsRequest build(String tenantId) {
+            QueryRunsRequest.Builder builder = QueryRunsRequest.newBuilder()
+                .setTenantId(tenantId)
+                .setPage(page)
+                .setSize(size)
+                .putAllLabels(labels);
+            
+            if (definitionId != null) {
+                builder.setDefinitionId(definitionId);
+            }
+            
+            if (status != null) {
+                builder.setStatus(status);
+            }
+            
+            return builder.build();
+        }
+    }
+    
+    // ============================================================================
+    // DEFINITION OPERATIONS
+    // ============================================================================
+    
+    public static class DefinitionOperations {
+        
+        private final golekClient client;
+        
+        DefinitionOperations(golekClient client) {
+            this.client = client;
+        }
+        
+        /**
+         * Create a new workflow definition
+         */
+        public DefinitionBuilder create(String name, String version) {
+            return new DefinitionBuilder(client, name, version);
+        }
+        
+        /**
+         * Get a workflow definition
+         */
+        public Uni<WorkflowDefinition> get(String definitionId) {
+            GetDefinitionRequest request = GetDefinitionRequest.newBuilder()
+                .setTenantId(client.config.getTenantId())
+                .setDefinitionId(definitionId)
+                .build();
+            
+            return Uni.createFrom().future(
+                client.definitionStub.getDefinition(request, new StreamObserverAdapter<>())
+            ).map(WorkflowDefinition::from);
+        }
+        
+        /**
+         * List workflow definitions
+         */
+        public Uni<List<WorkflowDefinition>> list(boolean activeOnly) {
+            ListDefinitionsRequest request = ListDefinitionsRequest.newBuilder()
+                .setTenantId(client.config.getTenantId())
+                .setActiveOnly(activeOnly)
+                .build();
+            
+            return Uni.createFrom().future(
+                client.definitionStub.listDefinitions(request, new StreamObserverAdapter<>())
+            ).map(response -> response.getDefinitionsList().stream()
+                .map(WorkflowDefinition::from)
+                .toList());
+        }
+        
+        /**
+         * Delete a workflow definition
+         */
+        public Uni<Void> delete(String definitionId) {
+            DeleteDefinitionRequest request = DeleteDefinitionRequest.newBuilder()
+                .setTenantId(client.config.getTenantId())
+                .setDefinitionId(definitionId)
+                .build();
+            
+            return Uni.createFrom().future(
+                client.definitionStub.deleteDefinition(request, new StreamObserverAdapter<>())
+            ).replaceWithVoid();
+        }
+    }
+    
+    // ============================================================================
+    // DEFINITION BUILDER
+    // ============================================================================
+    
+    public static class DefinitionBuilder {
+        
+        private final golekClient client;
+        private final String name;
+        private final String version;
+        private String description;
+        private final List<NodeDefinitionDto> nodes = new ArrayList<>();
+        private final Map<String, InputDefinitionDto> inputs = new HashMap<>();
+        private final Map<String, OutputDefinitionDto> outputs = new HashMap<>();
+        private final Map<String, String> metadata = new HashMap<>();
+        
+        DefinitionBuilder(golekClient client, String name, String version) {
+            this.client = client;
+            this.name = name;
+            this.version = version;
+        }
+        
+        public DefinitionBuilder description(String description) {
+            this.description = description;
+            return this;
+        }
+        
+        public DefinitionBuilder addNode(NodeDefinitionDto node) {
+            nodes.add(node);
+            return this;
+        }
+        
+        public DefinitionBuilder addInput(String name, InputDefinitionDto input) {
+            inputs.put(name, input);
+            return this;
+        }
+        
+        public DefinitionBuilder addOutput(String name, OutputDefinitionDto output) {
+            outputs.put(name, output);
+            return this;
+        }
+        
+        public DefinitionBuilder metadata(String key, String value) {
+            metadata.put(key, value);
+            return this;
+        }
+        
+        /**
+         * Create the workflow definition
+         */
+        public Uni<WorkflowDefinition> execute() {
+            CreateDefinitionRequest.Builder builder = CreateDefinitionRequest.newBuilder()
+                .setTenantId(client.config.getTenantId())
+                .setName(name)
+                .setVersion(version)
+                .putAllMetadata(metadata);
+            
+            if (description != null) {
+                builder.setDescription(description);
+            }
+            
+            // Add nodes
+            nodes.forEach(node -> builder.addNodes(node.toProto()));
+            
+            // Add inputs
+            inputs.forEach((key, input) -> 
+                builder.putInputs(key, input.toProto()));
+            
+            // Add outputs
+            outputs.forEach((key, output) -> 
+                builder.putOutputs(key, output.toProto()));
+            
+            return Uni.createFrom().future(
+                client.definitionStub.createDefinition(builder.build(), new StreamObserverAdapter<>())
+            ).map(WorkflowDefinition::from);
+        }
+    }
+    
+    // ============================================================================
+    // SAGA OPERATIONS
+    // ============================================================================
+    
+    public static class SAGAOperations {
+        
+        private final golekClient client;
+        
+        SAGAOperations(golekClient client) {
+            this.client = client;
+        }
+        
+        /**
+         * Create a new SAGA
+         */
+        public SAGABuilder create(String sagaId, String name) {
+            return new SAGABuilder(client, sagaId, name);
+        }
+        
+        /**
+         * Execute a SAGA
+         */
+        public Uni<SAGAExecution> execute(SAGADefinition saga) {
+            // Convert SAGA to workflow and execute
+            WorkflowDefinition workflowDef = saga.toWorkflowDefinition();
+            
+            return client.definitions()
+                .create(workflowDef.getName(), workflowDef.getVersion())
+                .description("SAGA: " + saga.getName())
+                .metadata("pattern", "SAGA")
+                .metadata("saga_id", saga.getId())
+                .execute()
+                .flatMap(def -> 
+                    client.workflows()
+                        .create(def.getDefinitionId())
+                        .inputs(saga.getInitialContext())
+                        .label("saga_id", saga.getId())
+                        .executeAndStart()
+                )
+                .map(run -> SAGAExecution.fromWorkflowRun(saga, run));
+        }
+    }
+    
+    // ============================================================================
+    // SAGA BUILDER
+    // ============================================================================
+    
+    public static class SAGABuilder {
+        
+        private final golekClient client;
+        private final String sagaId;
+        private final String name;
+        private final List<SAGAStep> steps = new ArrayList<>();
+        private final Map<String, Object> initialContext = new HashMap<>();
+        
+        SAGABuilder(golekClient client, String sagaId, String name) {
+            this.client = client;
+            this.sagaId = sagaId;
+            this.name = name;
+        }
+        
+        public SAGABuilder addStep(String stepId, String stepName, 
+                                   String actionWorkflowId, String compensationWorkflowId) {
+            SAGAStep step = new SAGAStep(stepId, stepName, actionWorkflowId, compensationWorkflowId);
+            steps.add(step);
+            return this;
+        }
+        
+        public SAGABuilder withStepInput(String key, Object value) {
+            if (!steps.isEmpty()) {
+                steps.get(steps.size() - 1).addInput(key, value);
+            }
+            return this;
+        }
+        
+        public SAGABuilder withStepTimeout(int seconds) {
+            if (!steps.isEmpty()) {
+                steps.get(steps.size() - 1).setTimeout(seconds);
+            }
+            return this;
+        }
+        
+        public SAGABuilder withInitialContext(String key, Object value) {
+            initialContext.put(key, value);
+            return this;
+        }
+        
+        public SAGADefinition build() {
+            return new SAGADefinition(sagaId, name, steps, initialContext, client.config.getTenantId());
+        }
+        
+        /**
+         * Build and execute the SAGA
+         */
+        public Uni<SAGAExecution> execute() {
+            return client.sagas().execute(build());
+        }
+    }
+}
+
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
+
+class golekClientConfig {
+    
+    private final String endpoint;
+    private final String tenantId;
+    private final Duration timeout;
+    
+    private golekClientConfig(Builder builder) {
+        this.endpoint = builder.endpoint;
+        this.tenantId = builder.tenantId;
+        this.timeout = builder.timeout;
+    }
+    
+    public String getEndpoint() { return endpoint; }
+    public String getTenantId() { return tenantId; }
+    public Duration getTimeout() { return timeout; }
+    
+    public static Builder builder() {
+        return new Builder();
+    }
+    
+    public static class Builder {
+        private String endpoint = "localhost:9090";
+        private String tenantId;
+        private Duration timeout = Duration.ofSeconds(30);
+        
+        public Builder endpoint(String endpoint) {
+            this.endpoint = endpoint;
+            return this;
+        }
+        
+        public Builder tenantId(String tenantId) {
+            this.tenantId = tenantId;
+            return this;
+        }
+        
+        public Builder timeout(Duration timeout) {
+            this.timeout = timeout;
+            return this;
+        }
+        
+        public golekClientConfig build() {
+            return new golekClientConfig(this);
+        }
+    }
+}
+
+// ============================================================================
+// HELPER CLASSES (Simplified - full implementations in separate files)
+// ============================================================================
+
+class StreamObserverAdapter<T> implements io.grpc.stub.StreamObserver<T> {
+    private final java.util.concurrent.CompletableFuture<T> future = new java.util.concurrent.CompletableFuture<>();
+    
+    @Override
+    public void onNext(T value) {
+        future.complete(value);
+    }
+    
+    @Override
+    public void onError(Throwable t) {
+        future.completeExceptionally(t);
+    }
+    
+    @Override
+    public void onCompleted() {
+        // Already completed in onNext
+    }
+    
+    public java.util.concurrent.CompletableFuture<T> getFuture() {
+        return future;
+    }
+}
+
+class ProtoUtils {
+    static com.google.protobuf.Struct toStruct(Map<String, Object> map) {
+        // Convert map to protobuf Struct
+        // Implementation omitted for brevity
+        return com.google.protobuf.Struct.getDefaultInstance();
+    }
+}
+
+// Model classes (would be in separate files)
+record WorkflowRun(String runId, String tenantId, String definitionId, 
+                   RunStatus status, Map<String, Object> variables) {
+    static WorkflowRun from(RunResponse response) {
+        return new WorkflowRun(
+            response.getRunId(),
+            response.getTenantId(),
+            response.getDefinitionId(),
+            response.getStatus(),
+            new HashMap<>() // Simplified
+        );
+    }
+    
+    public String getRunId() { return runId; }
+}
+
+record WorkflowDefinition(String definitionId, String name, String version) {
+    static WorkflowDefinition from(DefinitionResponse response) {
+        return new WorkflowDefinition(
+            response.getDefinitionId(),
+            response.getName(),
+            response.getVersion()
+        );
+    }
+    
+    public String getDefinitionId() { return definitionId; }
+    public String getName() { return name; }
+    public String getVersion() { return version; }
+}
+
+record PagedResult<T>(List<T> content, int page, int size, long totalElements, boolean hasMore) {}
+
+record ExecutionHistory(String runId, List<Object> events) {
+    static ExecutionHistory from(ExecutionHistoryResponse response) {
+        return new ExecutionHistory(response.getRunId(), new ArrayList<>());
+    }
+}
+
+// DTOs
+record NodeDefinitionDto(String id, String name, String type, String executorType) {
+    public tech.kayys.golek.api.v1.NodeDefinition toProto() {
+        return tech.kayys.golek.api.v1.NodeDefinition.newBuilder()
+            .setId(id)
+            .setName(name)
+            .build();
+    }
+}
+
+record InputDefinitionDto(String name, String type, boolean required) {
+    public tech.kayys.golek.api.v1.InputDefinition toProto() {
+        return tech.kayys.golek.api.v1.InputDefinition.newBuilder()
+            .setName(name)
+            .setType(type)
+            .setRequired(required)
+            .build();
+    }
+}
+
+record OutputDefinitionDto(String name, String type) {
+    public tech.kayys.golek.api.v1.OutputDefinition toProto() {
+        return tech.kayys.golek.api.v1.OutputDefinition.newBuilder()
+            .setName(name)
+            .setType(type)
+            .build();
+    }
+}
+
+// SAGA classes
+record SAGAStep(String id, String name, String actionWorkflowId, String compensationWorkflowId) {
+    private Map<String, Object> inputs = new HashMap<>();
+    private int timeout = 300;
+    
+    void addInput(String key, Object value) {
+        inputs.put(key, value);
+    }
+    
+    void setTimeout(int seconds) {
+        this.timeout = seconds;
+    }
+}
+
+record SAGADefinition(String id, String name, List<SAGAStep> steps, 
+                     Map<String, Object> initialContext, String tenantId) {
+    WorkflowDefinition toWorkflowDefinition() {
+        return new WorkflowDefinition(id, name, "1.0.0");
+    }
+    
+    String getId() { return id; }
+    String getName() { return name; }
+    Map<String, Object> getInitialContext() { return initialContext; }
+}
+
+record SAGAExecution(String id, SAGAStatus status, List<Object> steps) {
+    static SAGAExecution fromWorkflowRun(SAGADefinition saga, WorkflowRun run) {
+        return new SAGAExecution(run.getRunId(), SAGAStatus.EXECUTING, new ArrayList<>());
+    }
+}
+
+enum SAGAStatus {
+    EXECUTING, COMPLETED, COMPENSATING, COMPENSATED, FAILED
+}

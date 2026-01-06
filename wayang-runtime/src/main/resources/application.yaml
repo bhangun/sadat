@@ -1,0 +1,451 @@
+
+quarkus:
+  application:
+    name: silat-control-plane
+    version: 1.0.0
+  
+  # ==================== HTTP Configuration ====================
+  http:
+    port: 3030
+    cors:
+      ~: true
+      origins: "*"
+      methods: "GET,POST,PUT,DELETE,OPTIONS"
+      headers: "Authorization,Content-Type,X-Tenant-ID"
+      exposed-headers: "X-Request-ID"
+    
+    # Enable HTTP/2
+    http2: true
+    
+    # Body limits
+    limits:
+      max-body-size: 10M
+  
+  # ==================== gRPC Configuration ====================
+  grpc:
+    server:
+      port: 9090
+      enable-reflection-service: true
+  
+  # ==================== WebSocket Configuration ====================
+  websockets:
+    next:
+      server:
+        max-message-size: 1MB
+        idle-timeout: 30m
+  
+  # ==================== Security Configuration ====================
+  
+  # Keycloak OIDC
+  oidc:
+    enabled: true
+    auth-server-url: ${KEYCLOAK_URL:http://localhost:8180}
+    realm: silat
+    client-id: silat-control-plane
+    credentials:
+      secret: ${KEYCLOAK_CLIENT_SECRET}
+    tls:
+      verification: none  # Set to 'required' in production
+    
+    # Token configuration
+    token:
+      issuer: ${quarkus.oidc.auth-server-url}/realms/silat
+      audience: silat-control-plane
+      
+    # Claims mapping
+    roles:
+      role-claim-path: realm_access/roles
+      source: accesstoken
+    
+    # Authentication
+    authentication:
+      user-info-required: true
+      extra-params:
+        tenant_id: ${TENANT_ID:default}
+  
+  # Security policies
+  security:
+    jaxrs:
+      deny-unannotated-endpoints: true
+    
+    # Users for development (remove in production)
+    users:
+      embedded:
+        enabled: false
+  
+  # ==================== Database Configuration ====================
+  datasource:
+    db-kind: postgresql
+    username: ${DB_USERNAME:silat}
+    password: ${DB_PASSWORD:silat_password}
+    
+    # Reactive datasource
+    reactive:
+      url: postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:silat_db}
+      max-size: 20
+      idle-timeout: 10m
+      pool-cleaner-period: 1m
+  
+  hibernate-orm:
+    database:
+      generation: update
+    log:
+      sql: ${LOG_SQL:false}
+    dialect: org.hibernate.dialect.PostgreSQLDialect
+  
+  # ==================== Kafka Configuration ====================
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    
+    # Producer config
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: io.quarkus.kafka.client.serialization.JsonbSerializer
+      acks: all
+      compression-type: snappy
+      
+    # Consumer config
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: io.quarkus.kafka.client.serialization.JsonbDeserializer
+      group-id: silat-control-plane
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+  
+  # ==================== Reactive Messaging ====================
+  messaging:
+    # Workflow events
+    outgoing:
+      workflow-events:
+        connector: smallrye-kafka
+        topic: silat.workflow.events
+        value-serializer: io.quarkus.kafka.client.serialization.JsonbSerializer
+      
+      agent-events:
+        connector: smallrye-kafka
+        topic: silat.agent.events
+        value-serializer: io.quarkus.kafka.client.serialization.JsonbSerializer
+    
+    # Incoming events
+    incoming:
+      executor-results:
+        connector: smallrye-kafka
+        topic: silat.executor.results
+        value-deserializer: io.quarkus.kafka.client.serialization.JsonbDeserializer
+  
+  # ==================== Redis Configuration ====================
+  redis:
+    hosts: ${REDIS_HOST:redis://localhost:6379}
+    client-type: standalone
+    password: ${REDIS_PASSWORD:}
+    max-pool-size: 20
+  
+  # ==================== Observability ====================
+  
+  # Logging
+  log:
+    level: INFO
+    category:
+      "tech.kayys.silat": DEBUG
+      "io.quarkus": INFO
+      "org.hibernate": WARN
+    
+    # Console output
+    console:
+      enable: true
+      format: "%d{yyyy-MM-dd HH:mm:ss,SSS} %-5p [%c{2.}] (%t) %s%e%n"
+      json: false
+    
+    # File output
+    file:
+      enable: true
+      path: logs/silat.log
+      rotation:
+        max-file-size: 10M
+        max-backup-index: 5
+  
+  # Metrics
+  micrometer:
+    enabled: true
+    registry-enabled-default: true
+    binder:
+      jvm: true
+      system: true
+      http-server: true
+      kafka: true
+    export:
+      prometheus:
+        enabled: true
+        path: /metrics
+  
+  # Health checks
+  health:
+    openapi:
+      included: true
+  
+  smallrye-health:
+    root-path: /health
+    liveness-path: /health/live
+    readiness-path: /health/ready
+    ui:
+      enable: true
+  
+  # OpenTelemetry
+  opentelemetry:
+    enabled: ${OTEL_ENABLED:false}
+    tracer:
+      exporter:
+        otlp:
+          endpoint: ${OTEL_ENDPOINT:http://localhost:4317}
+  
+  # ==================== OpenAPI / Swagger ====================
+  swagger-ui:
+    always-include: true
+    path: /swagger-ui
+    title: Silat Workflow Engine API
+    version: 1.0.0
+    
+  smallrye-openapi:
+    path: /openapi
+    info:
+      title: Silat Workflow Engine API
+      version: 1.0.0
+      description: |
+        Comprehensive workflow engine for agentic AI, enterprise integration patterns,
+        and business automation.
+      contact:
+        name: Silat Support
+        email: support@silat.tech
+        url: https://silat.tech
+      license:
+        name: Apache 2.0
+        url: https://www.apache.org/licenses/LICENSE-2.0
+    
+    # Security schemes
+    security:
+      schemes:
+        bearer-jwt:
+          type: http
+          scheme: bearer
+          bearer-format: JWT
+          description: JWT token from Keycloak
+        api-key:
+          type: apiKey
+          name: X-API-Key
+          in: header
+          description: API key for programmatic access
+        mtls:
+          type: apiKey
+          name: X-SSL-Client-CN
+          in: header
+          description: Client Common Name from mTLS (forwarded by gateway)
+
+# ==================== Silat Specific Configuration ====================
+silat:
+  security:
+    mtls:
+      enabled: ${MTLS_ENABLED:false}
+      header-name: ${MTLS_HEADER_NAME:X-SSL-Client-CN}
+      tenant-id-header: ${MTLS_TENANT_HEADER:X-Tenant-ID}
+      default-roles: ${MTLS_DEFAULT_ROLES:user}
+  # Tenant configuration
+  tenant:
+    isolation-mode: ${TENANT_ISOLATION:strict}  # strict, shared
+    default-tenant: default
+  
+  # Workflow engine
+  workflow:
+    max-concurrent-runs: ${MAX_CONCURRENT_RUNS:1000}
+    default-timeout: 3600  # seconds
+    event-store:
+      type: postgresql  # postgresql, kafka, cassandra
+      retention-days: 90
+    
+    # Compensation
+    compensation:
+      enabled: true
+      timeout: 600  # seconds
+  
+  # Executor registry
+  executor:
+    registry-type: ${EXECUTOR_REGISTRY:redis}  # redis, database, consul
+    heartbeat-interval: 10  # seconds
+    heartbeat-timeout: 30  # seconds
+    
+    # Communication strategies
+    communication:
+      default-strategy: grpc  # grpc, kafka, rest
+      enable-multi-strategy: true
+  
+  # AI Agent configuration
+  agent:
+    # LLM Providers
+    llm:
+      openai:
+        enabled: ${OPENAI_ENABLED:false}
+        api-key: ${OPENAI_API_KEY:}
+        base-url: https://api.openai.com/v1
+        default-model: gpt-4
+        timeout: 60
+      
+      anthropic:
+        enabled: ${ANTHROPIC_ENABLED:false}
+        api-key: ${ANTHROPIC_API_KEY:}
+        base-url: https://api.anthropic.com/v1
+        default-model: claude-3-sonnet-20240229
+        timeout: 60
+      
+      azure-openai:
+        enabled: ${AZURE_OPENAI_ENABLED:false}
+        api-key: ${AZURE_OPENAI_API_KEY:}
+        endpoint: ${AZURE_OPENAI_ENDPOINT:}
+        deployment: ${AZURE_OPENAI_DEPLOYMENT:}
+    
+    # Memory
+    memory:
+      enabled: true
+      vector-store: ${VECTOR_STORE:redis}  # redis, pinecone, weaviate
+      max-memory-size: 1000
+      ttl: 86400  # 24 hours
+    
+    # Guardrails
+    guardrails:
+      enabled: true
+      default-policy:
+        content-moderation: true
+        pii-detection: true
+        toxicity-detection: true
+        bias-detection: true
+        prompt-injection-detection: true
+        rate-limiting: true
+        cost-control: true
+  
+  # Integration patterns
+  integration:
+    retry:
+      max-attempts: 3
+      initial-delay: 1000  # ms
+      max-delay: 30000  # ms
+      backoff-multiplier: 2.0
+    
+    circuit-breaker:
+      failure-threshold: 5
+      timeout: 10000  # ms
+      reset-timeout: 30000  # ms
+  
+  # API Keys
+  api-key:
+    default-rate-limit: 60  # requests per minute
+    default-expiry-days: 90
+    bcrypt-cost: 12
+  
+  # WebSocket
+  websocket:
+    max-connections-per-tenant: 100
+    idle-timeout: 1800  # 30 minutes
+    ping-interval: 30  # seconds
+  
+  # Audit
+  audit:
+    enabled: true
+    log-all-requests: false
+    log-sensitive-data: false
+    retention-days: 365
+
+# ==================== Development Profile ====================
+"%dev":
+  quarkus:
+    http:
+      cors:
+        origins: "http://localhost:3000,http://localhost:5173"
+    
+    log:
+      level: DEBUG
+      category:
+        "tech.kayys.silat": TRACE
+    
+    devservices:
+      enabled: false
+    
+    oidc:
+      tls:
+        verification: none
+  
+  silat:
+    tenant:
+      isolation-mode: shared
+    
+    agent:
+      guardrails:
+        enabled: false
+
+# ==================== Development Profile ====================
+"%dev":
+  quarkus:
+    http:
+      ssl:
+        certificate:
+          files: ""
+          key-files: ""
+    grpc:
+      server:
+        ssl:
+          certificate: ""
+          key: ""
+          trust-store: ""
+
+# ==================== Production Profile ====================
+"%prod":
+  quarkus:
+    http:
+      ssl-port: 8443
+      ssl:
+        certificate:
+          file: ${SSL_CERT_FILE:/etc/silat/certs/server.crt}
+          key-file: ${SSL_KEY_FILE:/etc/silat/certs/server.key}
+    
+    log:
+      level: INFO
+      category:
+        "tech.kayys.silat": INFO
+      
+      # JSON logging for production
+      console:
+        json: true
+    
+    oidc:
+      tls:
+        verification: required
+    
+    grpc:
+      server:
+        ssl:
+          certificate: server.crt
+          key: server.key
+  
+  silat:
+    tenant:
+      isolation-mode: strict
+    
+    workflow:
+      max-concurrent-runs: 5000
+    
+    agent:
+      guardrails:
+        enabled: true
+
+# ==================== Test Profile ====================
+"%test":
+  quarkus:
+    datasource:
+      db-kind: h2
+      jdbc:
+        url: jdbc:h2:mem:test
+    
+    log:
+      level: WARN
+  
+  silat:
+    agent:
+      guardrails:
+        enabled: false

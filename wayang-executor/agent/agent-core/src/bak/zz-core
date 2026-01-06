@@ -1,0 +1,3960 @@
+package tech.kayys.silat.agent.domain;
+
+import java.time.Instant;
+import java.util.*;
+
+/**
+ * ============================================================================
+ * SILAT AGENT ORCHESTRATOR - DOMAIN MODEL
+ * ============================================================================
+ * 
+ * Core domain entities for multi-agent orchestration system supporting:
+ * - Common agents (task executors)
+ * - Planner agents (planning and strategy)
+ * - Coder agents (code generation/analysis)
+ * - Analytics agents (data analysis)
+ * - Orchestrator agents (meta-orchestration)
+ * - Built-in sub-agents (planner, executor, evaluator)
+ * 
+ * Package: tech.kayys.silat.agent.domain
+ */
+
+// ==================== AGENT TYPE HIERARCHY ====================
+
+/**
+ * Base Agent Type - All agent types inherit from this
+ */
+public sealed interface AgentType 
+    permits CommonAgent, PlannerAgent, CoderAgent, AnalyticsAgent, OrchestratorAgent {
+    
+    String typeName();
+    Set<AgentCapability> requiredCapabilities();
+    AgentRole role();
+}
+
+/**
+ * Common Agent - General-purpose task execution
+ */
+public record CommonAgent(
+    String specialization,
+    Set<String> supportedTasks
+) implements AgentType {
+    
+    @Override
+    public String typeName() {
+        return "COMMON_AGENT";
+    }
+    
+    @Override
+    public Set<AgentCapability> requiredCapabilities() {
+        return Set.of(
+            AgentCapability.REASONING,
+            AgentCapability.TOOL_USE
+        );
+    }
+    
+    @Override
+    public AgentRole role() {
+        return AgentRole.EXECUTOR;
+    }
+}
+
+/**
+ * Planner Agent - Strategic planning and task decomposition
+ */
+public record PlannerAgent(
+    PlanningStrategy strategy,
+    int maxPlanDepth,
+    boolean allowReplanning
+) implements AgentType {
+    
+    @Override
+    public String typeName() {
+        return "PLANNER_AGENT";
+    }
+    
+    @Override
+    public Set<AgentCapability> requiredCapabilities() {
+        return Set.of(
+            AgentCapability.REASONING,
+            AgentCapability.PLANNING,
+            AgentCapability.DECOMPOSITION
+        );
+    }
+    
+    @Override
+    public AgentRole role() {
+        return AgentRole.PLANNER;
+    }
+}
+
+/**
+ * Coder Agent - Code generation and analysis
+ */
+public record CoderAgent(
+    Set<String> programmingLanguages,
+    Set<CodeCapability> codeCapabilities,
+    String executionEnvironment
+) implements AgentType {
+    
+    @Override
+    public String typeName() {
+        return "CODER_AGENT";
+    }
+    
+    @Override
+    public Set<AgentCapability> requiredCapabilities() {
+        return Set.of(
+            AgentCapability.CODE_GENERATION,
+            AgentCapability.CODE_ANALYSIS,
+            AgentCapability.TOOL_USE
+        );
+    }
+    
+    @Override
+    public AgentRole role() {
+        return AgentRole.CODER;
+    }
+}
+
+/**
+ * Analytics Agent - Data analysis and insights
+ */
+public record AnalyticsAgent(
+    Set<AnalyticsCapability> analyticsCapabilities,
+    Set<String> supportedDataFormats,
+    boolean supportsVisualization
+) implements AgentType {
+    
+    @Override
+    public String typeName() {
+        return "ANALYTICS_AGENT";
+    }
+    
+    @Override
+    public Set<AgentCapability> requiredCapabilities() {
+        return Set.of(
+            AgentCapability.DATA_ANALYSIS,
+            AgentCapability.REASONING,
+            AgentCapability.TOOL_USE
+        );
+    }
+    
+    @Override
+    public AgentRole role() {
+        return AgentRole.ANALYST;
+    }
+}
+
+/**
+ * Orchestrator Agent - Coordinates multiple agents
+ * Contains built-in sub-agents for planning, execution, and evaluation
+ */
+public record OrchestratorAgent(
+    OrchestrationType orchestrationType,
+    BuiltInAgents builtInAgents,
+    CoordinationStrategy coordinationStrategy,
+    int maxConcurrentAgents,
+    boolean supportsRecursiveOrchestration
+) implements AgentType {
+    
+    @Override
+    public String typeName() {
+        return "ORCHESTRATOR_AGENT";
+    }
+    
+    @Override
+    public Set<AgentCapability> requiredCapabilities() {
+        return Set.of(
+            AgentCapability.ORCHESTRATION,
+            AgentCapability.PLANNING,
+            AgentCapability.COORDINATION,
+            AgentCapability.EVALUATION
+        );
+    }
+    
+    @Override
+    public AgentRole role() {
+        return AgentRole.ORCHESTRATOR;
+    }
+}
+
+// ==================== ENUMERATIONS ====================
+
+/**
+ * Agent Role in the system
+ */
+public enum AgentRole {
+    EXECUTOR,        // Executes tasks
+    PLANNER,         // Creates plans
+    CODER,           // Generates/analyzes code
+    ANALYST,         // Analyzes data
+    ORCHESTRATOR,    // Coordinates agents
+    EVALUATOR,       // Evaluates results
+    SPECIALIST       // Domain specialist
+}
+
+/**
+ * Agent Capabilities
+ */
+public enum AgentCapability {
+    // Core capabilities
+    REASONING,
+    PLANNING,
+    TOOL_USE,
+    MEMORY,
+    LEARNING,
+    
+    // Specialized capabilities
+    CODE_GENERATION,
+    CODE_ANALYSIS,
+    DATA_ANALYSIS,
+    DECOMPOSITION,
+    ORCHESTRATION,
+    COORDINATION,
+    EVALUATION,
+    
+    // Advanced capabilities
+    SELF_REFLECTION,
+    COLLABORATIVE,
+    ADAPTIVE,
+    MULTI_MODAL
+}
+
+/**
+ * Planning Strategies
+ */
+public enum PlanningStrategy {
+    HIERARCHICAL,          // Top-down decomposition
+    CHAIN_OF_THOUGHT,      // Step-by-step reasoning
+    TREE_OF_THOUGHT,       // Multiple reasoning paths
+    REACT,                 // Reasoning + Acting cycles
+    PLAN_AND_EXECUTE,      // Plan first, execute later
+    ADAPTIVE              // Dynamic replanning
+}
+
+/**
+ * Code Capabilities
+ */
+public enum CodeCapability {
+    CODE_GENERATION,
+    CODE_REVIEW,
+    CODE_REFACTORING,
+    BUG_FIXING,
+    TEST_GENERATION,
+    DOCUMENTATION,
+    CODE_EXPLANATION,
+    PERFORMANCE_OPTIMIZATION
+}
+
+/**
+ * Analytics Capabilities
+ */
+public enum AnalyticsCapability {
+    DESCRIPTIVE,          // What happened?
+    DIAGNOSTIC,           // Why did it happen?
+    PREDICTIVE,           // What will happen?
+    PRESCRIPTIVE,         // What should we do?
+    STATISTICAL_ANALYSIS,
+    PATTERN_RECOGNITION,
+    ANOMALY_DETECTION,
+    TREND_ANALYSIS
+}
+
+/**
+ * Orchestration Type
+ */
+public enum OrchestrationType {
+    SEQUENTIAL,           // One agent at a time
+    PARALLEL,             // Multiple agents concurrently
+    HIERARCHICAL,         // Tree-like delegation
+    COLLABORATIVE,        // Agents work together
+    COMPETITIVE,          // Best result wins
+    DEBATE               // Agents debate solutions
+}
+
+/**
+ * Coordination Strategy
+ */
+public enum CoordinationStrategy {
+    CENTRALIZED,         // Orchestrator controls all
+    DECENTRALIZED,       // Agents coordinate directly
+    HYBRID,              // Mixed approach
+    CONSENSUS,           // Agents reach consensus
+    VOTING              // Democratic decision-making
+}
+
+// ==================== BUILT-IN AGENTS ====================
+
+/**
+ * Built-in agents for orchestrator
+ */
+public record BuiltInAgents(
+    BuiltInPlanner planner,
+    BuiltInExecutor executor,
+    BuiltInEvaluator evaluator
+) {
+    
+    public static BuiltInAgents createDefault() {
+        return new BuiltInAgents(
+            BuiltInPlanner.createDefault(),
+            BuiltInExecutor.createDefault(),
+            BuiltInEvaluator.createDefault()
+        );
+    }
+}
+
+/**
+ * Built-in Planner - Creates execution plans
+ */
+public record BuiltInPlanner(
+    PlanningStrategy strategy,
+    boolean enableAdaptivePlanning,
+    int maxReplanAttempts
+) {
+    
+    public static BuiltInPlanner createDefault() {
+        return new BuiltInPlanner(
+            PlanningStrategy.PLAN_AND_EXECUTE,
+            true,
+            3
+        );
+    }
+}
+
+/**
+ * Built-in Executor - Executes agent coordination
+ */
+public record BuiltInExecutor(
+    ExecutionMode mode,
+    int maxParallelTasks,
+    boolean enableFailover
+) {
+    
+    public static BuiltInExecutor createDefault() {
+        return new BuiltInExecutor(
+            ExecutionMode.ADAPTIVE,
+            5,
+            true
+        );
+    }
+}
+
+/**
+ * Built-in Evaluator - Evaluates agent results
+ */
+public record BuiltInEvaluator(
+    Set<EvaluationCriteria> criteria,
+    double successThreshold,
+    boolean enableContinuousEvaluation
+) {
+    
+    public static BuiltInEvaluator createDefault() {
+        return new BuiltInEvaluator(
+            Set.of(
+                EvaluationCriteria.CORRECTNESS,
+                EvaluationCriteria.COMPLETENESS,
+                EvaluationCriteria.QUALITY
+            ),
+            0.8,
+            true
+        );
+    }
+}
+
+/**
+ * Execution Mode
+ */
+public enum ExecutionMode {
+    SEQUENTIAL,          // Execute one by one
+    PARALLEL,            // Execute concurrently
+    ADAPTIVE,            // Decide based on context
+    PIPELINE             // Stream processing
+}
+
+/**
+ * Evaluation Criteria
+ */
+public enum EvaluationCriteria {
+    CORRECTNESS,         // Is result correct?
+    COMPLETENESS,        // Is task fully completed?
+    QUALITY,             // Quality of output
+    EFFICIENCY,          // Resource utilization
+    SAFETY,              // Safety compliance
+    ALIGNMENT            // Goal alignment
+}
+
+// ==================== AGENT EXECUTION CONTEXT ====================
+
+/**
+ * Agent Execution Request
+ */
+public record AgentExecutionRequest(
+    String requestId,
+    String taskDescription,
+    Map<String, Object> context,
+    Set<String> requiredCapabilities,
+    ExecutionConstraints constraints,
+    Map<String, Object> metadata,
+    Instant submittedAt
+) {
+    
+    public static Builder builder() {
+        return new Builder();
+    }
+    
+    public static class Builder {
+        private String requestId = UUID.randomUUID().toString();
+        private String taskDescription;
+        private Map<String, Object> context = new HashMap<>();
+        private Set<String> requiredCapabilities = new HashSet<>();
+        private ExecutionConstraints constraints = ExecutionConstraints.createDefault();
+        private Map<String, Object> metadata = new HashMap<>();
+        
+        public Builder taskDescription(String desc) {
+            this.taskDescription = desc;
+            return this;
+        }
+        
+        public Builder context(String key, Object value) {
+            this.context.put(key, value);
+            return this;
+        }
+        
+        public Builder requiredCapability(String capability) {
+            this.requiredCapabilities.add(capability);
+            return this;
+        }
+        
+        public Builder constraints(ExecutionConstraints constraints) {
+            this.constraints = constraints;
+            return this;
+        }
+        
+        public AgentExecutionRequest build() {
+            return new AgentExecutionRequest(
+                requestId,
+                taskDescription,
+                context,
+                requiredCapabilities,
+                constraints,
+                metadata,
+                Instant.now()
+            );
+        }
+    }
+}
+
+/**
+ * Execution Constraints
+ */
+public record ExecutionConstraints(
+    long maxExecutionTimeMs,
+    int maxRetries,
+    long maxMemoryBytes,
+    Set<String> allowedTools,
+    Map<String, Object> customConstraints
+) {
+    
+    public static ExecutionConstraints createDefault() {
+        return new ExecutionConstraints(
+            300000L,     // 5 minutes
+            3,           // 3 retries
+            1073741824L, // 1GB
+            Set.of(),    // All tools allowed
+            Map.of()
+        );
+    }
+}
+
+/**
+ * Agent Execution Result
+ */
+public record AgentExecutionResult(
+    String requestId,
+    String agentId,
+    ExecutionStatus status,
+    Object output,
+    List<String> actionsTaken,
+    ExecutionMetrics metrics,
+    List<ExecutionError> errors,
+    Map<String, Object> metadata,
+    Instant completedAt
+) {
+    
+    public boolean isSuccess() {
+        return status == ExecutionStatus.SUCCESS;
+    }
+    
+    public boolean isFailure() {
+        return status == ExecutionStatus.FAILED;
+    }
+}
+
+/**
+ * Execution Status
+ */
+public enum ExecutionStatus {
+    PENDING,
+    PLANNING,
+    EXECUTING,
+    SUCCESS,
+    FAILED,
+    TIMEOUT,
+    CANCELLED,
+    PARTIAL_SUCCESS
+}
+
+/**
+ * Execution Metrics
+ */
+public record ExecutionMetrics(
+    long executionTimeMs,
+    int tokensUsed,
+    int toolInvocations,
+    long memoryUsedBytes,
+    double successScore,
+    Map<String, Object> customMetrics
+) {
+    
+    public static ExecutionMetrics empty() {
+        return new ExecutionMetrics(0L, 0, 0, 0L, 0.0, Map.of());
+    }
+}
+
+/**
+ * Execution Error
+ */
+public record ExecutionError(
+    String errorCode,
+    String message,
+    ErrorSeverity severity,
+    String agentId,
+    Instant occurredAt,
+    Map<String, Object> context
+) {}
+
+/**
+ * Error Severity
+ */
+public enum ErrorSeverity {
+    LOW,
+    MEDIUM,
+    HIGH,
+    CRITICAL
+}
+
+// ==================== AGENT PLAN ====================
+
+/**
+ * Agent Execution Plan
+ */
+public record AgentExecutionPlan(
+    String planId,
+    String description,
+    List<PlanStep> steps,
+    Map<String, Object> planContext,
+    PlanMetadata metadata,
+    Instant createdAt
+) {
+    
+    public boolean isComplete() {
+        return steps.stream().allMatch(PlanStep::isCompleted);
+    }
+    
+    public double getCompletionPercentage() {
+        long completed = steps.stream().filter(PlanStep::isCompleted).count();
+        return (double) completed / steps.size() * 100.0;
+    }
+}
+
+/**
+ * Plan Step
+ */
+public record PlanStep(
+    String stepId,
+    String description,
+    String assignedAgentType,
+    Map<String, Object> stepContext,
+    Set<String> dependencies,
+    StepStatus status,
+    AgentExecutionResult result
+) {
+    
+    public boolean isCompleted() {
+        return status == StepStatus.COMPLETED;
+    }
+    
+    public boolean canExecute(Set<String> completedSteps) {
+        return dependencies.stream().allMatch(completedSteps::contains);
+    }
+}
+
+/**
+ * Step Status
+ */
+public enum StepStatus {
+    PENDING,
+    READY,
+    EXECUTING,
+    COMPLETED,
+    FAILED,
+    SKIPPED
+}
+
+/**
+ * Plan Metadata
+ */
+public record PlanMetadata(
+    PlanningStrategy strategy,
+    int totalSteps,
+    int estimatedExecutionTimeMs,
+    double confidenceScore,
+    Map<String, String> tags
+) {}
+
+// ==================== AGENT COORDINATION ====================
+
+/**
+ * Agent Coordination Request
+ */
+public record AgentCoordinationRequest(
+    String coordinationId,
+    CoordinationType type,
+    List<String> participatingAgents,
+    String goal,
+    CoordinationConfig config,
+    Instant initiatedAt
+) {}
+
+/**
+ * Coordination Type
+ */
+public enum CoordinationType {
+    COLLABORATION,    // Work together
+    DELEGATION,       // Delegate tasks
+    CONSULTATION,     // Seek advice
+    NEGOTIATION,      // Negotiate solution
+    VOTING           // Democratic decision
+}
+
+/**
+ * Coordination Config
+ */
+public record CoordinationConfig(
+    int maxRounds,
+    long roundTimeoutMs,
+    ConsensusStrategy consensusStrategy,
+    Map<String, Object> customConfig
+) {
+    
+    public static CoordinationConfig createDefault() {
+        return new CoordinationConfig(
+            5,
+            60000L,
+            ConsensusStrategy.MAJORITY,
+            Map.of()
+        );
+    }
+}
+
+/**
+ * Consensus Strategy
+ */
+public enum ConsensusStrategy {
+    UNANIMOUS,       // All agree
+    MAJORITY,        // >50% agree
+    SUPERMAJORITY,   // >66% agree
+    WEIGHTED,        // Weighted voting
+    LEADER_DECIDES   // Leader makes final call
+}
+
+/**
+ * Agent Coordination Result
+ */
+public record AgentCoordinationResult(
+    String coordinationId,
+    CoordinationStatus status,
+    Object decision,
+    Map<String, Object> agentContributions,
+    List<String> dissenting,
+    Instant completedAt
+) {}
+
+/**
+ * Coordination Status
+ */
+public enum CoordinationStatus {
+    IN_PROGRESS,
+    CONSENSUS_REACHED,
+    NO_CONSENSUS,
+    TIMEOUT,
+    FAILED
+}
+
+// ==================== AGENT COMMUNICATION ====================
+
+/**
+ * Agent Message
+ */
+public record AgentMessage(
+    String messageId,
+    String fromAgentId,
+    String toAgentId,
+    MessageType type,
+    String content,
+    Map<String, Object> payload,
+    String conversationId,
+    Instant sentAt
+) {}
+
+/**
+ * Message Type
+ */
+public enum MessageType {
+    REQUEST,
+    RESPONSE,
+    NOTIFICATION,
+    QUERY,
+    PROPOSAL,
+    ACCEPTANCE,
+    REJECTION
+}
+
+// ==================== AGENT REGISTRY ====================
+
+/**
+ * Agent Registration
+ */
+public record AgentRegistration(
+    String agentId,
+    String agentName,
+    AgentType agentType,
+    Set<AgentCapability> capabilities,
+    AgentStatus status,
+    AgentEndpoint endpoint,
+    Map<String, String> metadata,
+    Instant registeredAt,
+    Instant lastHeartbeat
+) {
+    
+    public boolean isAvailable() {
+        return status == AgentStatus.AVAILABLE;
+    }
+    
+    public boolean isHealthy() {
+        // Agent is healthy if heartbeat within last 30 seconds
+        return lastHeartbeat.isAfter(Instant.now().minusSeconds(30));
+    }
+}
+
+/**
+ * Agent Status
+ */
+public enum AgentStatus {
+    AVAILABLE,
+    BUSY,
+    UNAVAILABLE,
+    ERROR,
+    MAINTENANCE
+}
+
+/**
+ * Agent Endpoint
+ */
+public record AgentEndpoint(
+    EndpointType type,
+    String address,
+    Map<String, String> connectionParams
+) {}
+
+/**
+ * Endpoint Type
+ */
+public enum EndpointType {
+    GRPC,
+    REST,
+    KAFKA,
+    INTERNAL
+}
+
+// ==================== ORCHESTRATOR CONTEXT ====================
+
+/**
+ * Orchestration Context - Runtime state
+ */
+public record OrchestrationContext(
+    String orchestrationId,
+    String parentOrchestrationId,
+    AgentExecutionPlan plan,
+    Map<String, AgentExecutionResult> stepResults,
+    Set<String> activeAgents,
+    OrchestrationState state,
+    Map<String, Object> sharedContext,
+    List<OrchestrationEvent> events,
+    Instant startedAt
+) {
+    
+    public OrchestrationContext addStepResult(String stepId, AgentExecutionResult result) {
+        Map<String, AgentExecutionResult> newResults = new HashMap<>(stepResults);
+        newResults.put(stepId, result);
+        return new OrchestrationContext(
+            orchestrationId,
+            parentOrchestrationId,
+            plan,
+            newResults,
+            activeAgents,
+            state,
+            sharedContext,
+            events,
+            startedAt
+        );
+    }
+    
+    public OrchestrationContext addEvent(OrchestrationEvent event) {
+        List<OrchestrationEvent> newEvents = new ArrayList<>(events);
+        newEvents.add(event);
+        return new OrchestrationContext(
+            orchestrationId,
+            parentOrchestrationId,
+            plan,
+            stepResults,
+            activeAgents,
+            state,
+            sharedContext,
+            newEvents,
+            startedAt
+        );
+    }
+}
+
+/**
+ * Orchestration State
+ */
+public enum OrchestrationState {
+    PLANNING,
+    EXECUTING,
+    COORDINATING,
+    EVALUATING,
+    COMPLETED,
+    FAILED,
+    CANCELLED
+}
+
+/**
+ * Orchestration Event
+ */
+public record OrchestrationEvent(
+    String eventId,
+    OrchestrationEventType type,
+    String description,
+    Map<String, Object> data,
+    Instant occurredAt
+) {}
+
+/**
+ * Orchestration Event Type
+ */
+public enum OrchestrationEventType {
+    PLAN_CREATED,
+    STEP_STARTED,
+    STEP_COMPLETED,
+    STEP_FAILED,
+    AGENT_SELECTED,
+    COORDINATION_INITIATED,
+    EVALUATION_COMPLETED,
+    REPLANNING_TRIGGERED,
+    ORCHESTRATION_COMPLETED
+}
+
+package tech.kayys.silat.agent.executor;
+
+import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import tech.kayys.silat.agent.domain.*;
+import tech.kayys.silat.executor.AbstractWorkflowExecutor;
+import tech.kayys.silat.executor.Executor;
+import tech.kayys.silat.executor.NodeExecutionTask;
+import tech.kayys.silat.executor.NodeExecutionResult;
+import tech.kayys.silat.core.scheduler.CommunicationType;
+import tech.kayys.silat.core.domain.*;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.stream.Collectors;
+
+/**
+ * ============================================================================
+ * AGENT ORCHESTRATOR EXECUTOR
+ * ============================================================================
+ * 
+ * Comprehensive orchestrator for multi-agent coordination supporting:
+ * - Sequential, parallel, and hierarchical orchestration
+ * - Built-in planner, executor, and evaluator agents
+ * - Dynamic agent selection and task distribution
+ * - Adaptive replanning and failure recovery
+ * - Multi-level orchestration (recursive)
+ * - Agent collaboration and consensus
+ * 
+ * Architecture:
+ * - Event-driven coordination
+ * - Reactive execution with backpressure
+ * - Circuit breaker for agent failures
+ * - Distributed tracing support
+ * 
+ * Package: tech.kayys.silat.agent.executor
+ */
+@Executor(
+    executorType = "agent-orchestrator",
+    communicationType = CommunicationType.GRPC,
+    maxConcurrentTasks = 10
+)
+@ApplicationScoped
+public class AgentOrchestratorExecutor extends AbstractWorkflowExecutor {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(AgentOrchestratorExecutor.class);
+    
+    @Inject
+    AgentRegistry agentRegistry;
+    
+    @Inject
+    OrchestratorPlanner orchestratorPlanner;
+    
+    @Inject
+    OrchestratorExecutionEngine executionEngine;
+    
+    @Inject
+    OrchestratorEvaluator orchestratorEvaluator;
+    
+    @Inject
+    AgentCoordinator agentCoordinator;
+    
+    @Inject
+    AgentCommunicationBus communicationBus;
+    
+    // Orchestration context cache
+    private final ConcurrentMap<String, OrchestrationContext> activeOrchestrations = 
+        new ConcurrentHashMap<>();
+    
+    /**
+     * Execute orchestration task
+     */
+    @Override
+    public Uni<NodeExecutionResult> execute(NodeExecutionTask task) {
+        LOG.info("Starting agent orchestration for task: {}", task.runId());
+        
+        // Extract orchestration request
+        AgentExecutionRequest request = extractRequest(task);
+        
+        // Initialize orchestration context
+        String orchestrationId = UUID.randomUUID().toString();
+        
+        return orchestrate(orchestrationId, request, task)
+            .onItem().transform(result -> 
+                NodeExecutionResult.success(
+                    task.runId(),
+                    task.nodeId(),
+                    task.attempt(),
+                    Map.of(
+                        "orchestrationId", orchestrationId,
+                        "status", result.status().name(),
+                        "output", result.output(),
+                        "metrics", result.metrics(),
+                        "events", result.metadata().get("events")
+                    ),
+                    task.token()
+                )
+            )
+            .onFailure().recoverWithItem(error -> {
+                LOG.error("Orchestration failed", error);
+                return NodeExecutionResult.failure(
+                    task.runId(),
+                    task.nodeId(),
+                    task.attempt(),
+                    ErrorInfo.of(error),
+                    task.token()
+                );
+            })
+            .eventually(() -> 
+                // Cleanup
+                Uni.createFrom().item(() -> {
+                    activeOrchestrations.remove(orchestrationId);
+                    return null;
+                })
+            );
+    }
+    
+    /**
+     * Main orchestration flow
+     */
+    private Uni<AgentExecutionResult> orchestrate(
+            String orchestrationId,
+            AgentExecutionRequest request,
+            NodeExecutionTask task) {
+        
+        LOG.info("Orchestration {} - Starting planning phase", orchestrationId);
+        
+        Instant startTime = Instant.now();
+        
+        // Phase 1: Planning
+        return orchestratorPlanner.createPlan(request)
+            .flatMap(plan -> {
+                LOG.info("Orchestration {} - Plan created with {} steps", 
+                    orchestrationId, plan.steps().size());
+                
+                // Initialize context
+                OrchestrationContext context = new OrchestrationContext(
+                    orchestrationId,
+                    null, // parent orchestration
+                    plan,
+                    new HashMap<>(),
+                    ConcurrentHashMap.newKeySet(),
+                    OrchestrationState.EXECUTING,
+                    new ConcurrentHashMap<>(request.context()),
+                    new CopyOnWriteArrayList<>(),
+                    startTime
+                );
+                
+                activeOrchestrations.put(orchestrationId, context);
+                
+                // Phase 2: Execution
+                return executePlan(context, request.constraints())
+                    .flatMap(executedContext -> {
+                        LOG.info("Orchestration {} - Execution complete", orchestrationId);
+                        
+                        // Phase 3: Evaluation
+                        return evaluateResults(executedContext)
+                            .map(evaluation -> {
+                                LOG.info("Orchestration {} - Evaluation complete, score: {}", 
+                                    orchestrationId, evaluation.overallScore());
+                                
+                                // Build final result
+                                return buildFinalResult(
+                                    request.requestId(),
+                                    executedContext,
+                                    evaluation,
+                                    startTime
+                                );
+                            });
+                    });
+            })
+            .onFailure().call(error -> 
+                // Handle failure with potential replanning
+                handleOrchestrationFailure(orchestrationId, error, request)
+            );
+    }
+    
+    /**
+     * Execute the orchestration plan
+     */
+    private Uni<OrchestrationContext> executePlan(
+            OrchestrationContext context,
+            ExecutionConstraints constraints) {
+        
+        LOG.debug("Executing plan with {} steps", context.plan().steps().size());
+        
+        // Determine execution strategy based on orchestration type
+        OrchestratorAgent orchestrator = extractOrchestratorConfig(context);
+        
+        return switch (orchestrator.orchestrationType()) {
+            case SEQUENTIAL -> executeSequential(context, constraints);
+            case PARALLEL -> executeParallel(context, constraints);
+            case HIERARCHICAL -> executeHierarchical(context, constraints);
+            case COLLABORATIVE -> executeCollaborative(context, constraints);
+            case COMPETITIVE -> executeCompetitive(context, constraints);
+            case DEBATE -> executeDebate(context, constraints);
+        };
+    }
+    
+    /**
+     * Sequential execution - one step at a time
+     */
+    private Uni<OrchestrationContext> executeSequential(
+            OrchestrationContext context,
+            ExecutionConstraints constraints) {
+        
+        LOG.debug("Executing {} steps sequentially", context.plan().steps().size());
+        
+        // Build execution chain
+        Uni<OrchestrationContext> chain = Uni.createFrom().item(context);
+        
+        for (PlanStep step : context.plan().steps()) {
+            chain = chain.flatMap(ctx -> 
+                executeStep(ctx, step, constraints)
+                    .flatMap(result -> {
+                        // Update context with result
+                        OrchestrationContext updatedCtx = ctx.addStepResult(
+                            step.stepId(), 
+                            result
+                        );
+                        
+                        // Check if step succeeded
+                        if (!result.isSuccess()) {
+                            return handleStepFailure(updatedCtx, step, result);
+                        }
+                        
+                        return Uni.createFrom().item(updatedCtx);
+                    })
+            );
+        }
+        
+        return chain;
+    }
+    
+    /**
+     * Parallel execution - multiple steps concurrently
+     */
+    private Uni<OrchestrationContext> executeParallel(
+            OrchestrationContext context,
+            ExecutionConstraints constraints) {
+        
+        LOG.debug("Executing {} steps in parallel", context.plan().steps().size());
+        
+        // Group steps by dependencies
+        List<List<PlanStep>> executionWaves = buildExecutionWaves(context.plan());
+        
+        // Execute waves sequentially, steps in wave parallel
+        Uni<OrchestrationContext> chain = Uni.createFrom().item(context);
+        
+        for (List<PlanStep> wave : executionWaves) {
+            chain = chain.flatMap(ctx -> 
+                executeWave(ctx, wave, constraints)
+            );
+        }
+        
+        return chain;
+    }
+    
+    /**
+     * Execute a wave of parallel steps
+     */
+    private Uni<OrchestrationContext> executeWave(
+            OrchestrationContext context,
+            List<PlanStep> steps,
+            ExecutionConstraints constraints) {
+        
+        LOG.debug("Executing wave with {} parallel steps", steps.size());
+        
+        // Execute all steps in parallel
+        List<Uni<AgentExecutionResult>> executions = steps.stream()
+            .map(step -> executeStep(context, step, constraints))
+            .collect(Collectors.toList());
+        
+        // Wait for all to complete
+        return Uni.join().all(executions).andCollectFailures()
+            .map(results -> {
+                // Merge all results into context
+                OrchestrationContext updatedCtx = context;
+                for (int i = 0; i < steps.size(); i++) {
+                    updatedCtx = updatedCtx.addStepResult(
+                        steps.get(i).stepId(),
+                        results.get(i)
+                    );
+                }
+                return updatedCtx;
+            });
+    }
+    
+    /**
+     * Hierarchical execution - tree-like delegation
+     */
+    private Uni<OrchestrationContext> executeHierarchical(
+            OrchestrationContext context,
+            ExecutionConstraints constraints) {
+        
+        LOG.debug("Executing hierarchical orchestration");
+        
+        // Build execution tree
+        ExecutionTree tree = buildExecutionTree(context.plan());
+        
+        // Execute from root
+        return executeTreeNode(context, tree.root(), constraints);
+    }
+    
+    /**
+     * Collaborative execution - agents work together
+     */
+    private Uni<OrchestrationContext> executeCollaborative(
+            OrchestrationContext context,
+            ExecutionConstraints constraints) {
+        
+        LOG.debug("Executing collaborative orchestration");
+        
+        // Create collaboration session
+        return agentCoordinator.initiateCollaboration(
+            context.orchestrationId(),
+            context.plan(),
+            constraints
+        )
+        .flatMap(session -> 
+            // Monitor collaboration until complete
+            monitorCollaboration(context, session)
+        );
+    }
+    
+    /**
+     * Competitive execution - best result wins
+     */
+    private Uni<OrchestrationContext> executeCompetitive(
+            OrchestrationContext context,
+            ExecutionConstraints constraints) {
+        
+        LOG.debug("Executing competitive orchestration");
+        
+        // Execute same task with multiple agents
+        List<PlanStep> competitiveSteps = context.plan().steps();
+        
+        return Multi.createFrom().iterable(competitiveSteps)
+            .onItem().transformToUniAndMerge(step -> 
+                executeStep(context, step, constraints)
+            )
+            .collect().asList()
+            .map(results -> {
+                // Select best result
+                AgentExecutionResult bestResult = selectBestResult(results);
+                
+                // Update context with winning result
+                return context.addStepResult("competitive_winner", bestResult);
+            });
+    }
+    
+    /**
+     * Debate execution - agents debate solutions
+     */
+    private Uni<OrchestrationContext> executeDebate(
+            OrchestrationContext context,
+            ExecutionConstraints constraints) {
+        
+        LOG.debug("Executing debate orchestration");
+        
+        // Create debate session
+        return agentCoordinator.initiateDebate(
+            context.orchestrationId(),
+            context.plan(),
+            constraints
+        )
+        .flatMap(debate -> 
+            // Run debate rounds
+            runDebateRounds(context, debate)
+        );
+    }
+    
+    /**
+     * Execute a single plan step
+     */
+    private Uni<AgentExecutionResult> executeStep(
+            OrchestrationContext context,
+            PlanStep step,
+            ExecutionConstraints constraints) {
+        
+        LOG.debug("Executing step: {} - {}", step.stepId(), step.description());
+        
+        // Record step start event
+        context = context.addEvent(new OrchestrationEvent(
+            UUID.randomUUID().toString(),
+            OrchestrationEventType.STEP_STARTED,
+            "Step started: " + step.description(),
+            Map.of("stepId", step.stepId()),
+            Instant.now()
+        ));
+        
+        // Select appropriate agent for step
+        return selectAgentForStep(step, context)
+            .flatMap(agent -> {
+                LOG.debug("Selected agent {} for step {}", agent.agentId(), step.stepId());
+                
+                // Add to active agents
+                context.activeAgents().add(agent.agentId());
+                
+                // Create execution request
+                AgentExecutionRequest request = AgentExecutionRequest.builder()
+                    .taskDescription(step.description())
+                    .context(step.stepContext())
+                    .constraints(constraints)
+                    .build();
+                
+                // Execute with selected agent
+                return executionEngine.executeWithAgent(agent, request)
+                    .eventually(() -> 
+                        // Remove from active agents
+                        Uni.createFrom().item(() -> {
+                            context.activeAgents().remove(agent.agentId());
+                            return null;
+                        })
+                    );
+            })
+            .onItem().invoke(result -> {
+                // Record step completion event
+                OrchestrationEvent event = new OrchestrationEvent(
+                    UUID.randomUUID().toString(),
+                    result.isSuccess() ? 
+                        OrchestrationEventType.STEP_COMPLETED : 
+                        OrchestrationEventType.STEP_FAILED,
+                    "Step " + (result.isSuccess() ? "completed" : "failed"),
+                    Map.of("stepId", step.stepId(), "status", result.status()),
+                    Instant.now()
+                );
+                context.addEvent(event);
+            });
+    }
+    
+    /**
+     * Select most appropriate agent for step
+     */
+    private Uni<AgentRegistration> selectAgentForStep(
+            PlanStep step,
+            OrchestrationContext context) {
+        
+        // Extract required capabilities from step
+        Set<AgentCapability> requiredCapabilities = 
+            extractCapabilities(step.assignedAgentType());
+        
+        // Query available agents
+        return agentRegistry.findAvailableAgents(
+            step.assignedAgentType(),
+            requiredCapabilities
+        )
+        .map(agents -> {
+            if (agents.isEmpty()) {
+                throw new IllegalStateException(
+                    "No available agents for type: " + step.assignedAgentType());
+            }
+            
+            // Select based on load balancing, health, and past performance
+            return selectBestAgent(agents, context);
+        });
+    }
+    
+    /**
+     * Select best agent based on multiple criteria
+     */
+    private AgentRegistration selectBestAgent(
+            List<AgentRegistration> agents,
+            OrchestrationContext context) {
+        
+        // Score each agent
+        return agents.stream()
+            .max(Comparator.comparingDouble(agent -> scoreAgent(agent, context)))
+            .orElse(agents.get(0));
+    }
+    
+    /**
+     * Score agent for selection
+     */
+    private double scoreAgent(AgentRegistration agent, OrchestrationContext context) {
+        double score = 1.0;
+        
+        // Factor 1: Availability (heavily weighted)
+        if (agent.isAvailable()) {
+            score *= 2.0;
+        }
+        
+        // Factor 2: Health
+        if (agent.isHealthy()) {
+            score *= 1.5;
+        }
+        
+        // Factor 3: Past performance (from metadata)
+        Object successRate = agent.metadata().get("successRate");
+        if (successRate instanceof Number) {
+            score *= ((Number) successRate).doubleValue();
+        }
+        
+        // Factor 4: Current load (prefer less busy agents)
+        Object currentLoad = agent.metadata().get("currentLoad");
+        if (currentLoad instanceof Number) {
+            double load = ((Number) currentLoad).doubleValue();
+            score *= (1.0 - load); // Inverse of load
+        }
+        
+        return score;
+    }
+    
+    /**
+     * Handle step failure with potential retry/replanning
+     */
+    private Uni<OrchestrationContext> handleStepFailure(
+            OrchestrationContext context,
+            PlanStep step,
+            AgentExecutionResult result) {
+        
+        LOG.warn("Step {} failed: {}", step.stepId(), result.errors());
+        
+        // Check if replanning is enabled
+        OrchestratorAgent orchestrator = extractOrchestratorConfig(context);
+        
+        if (orchestrator.builtInAgents().planner().enableAdaptivePlanning()) {
+            LOG.info("Attempting replanning due to step failure");
+            
+            // Trigger replanning
+            return orchestratorPlanner.replan(
+                context.plan(),
+                step,
+                result,
+                context.stepResults()
+            )
+            .flatMap(newPlan -> {
+                // Update context with new plan
+                OrchestrationContext replanCtx = new OrchestrationContext(
+                    context.orchestrationId(),
+                    context.parentOrchestrationId(),
+                    newPlan,
+                    context.stepResults(),
+                    context.activeAgents(),
+                    OrchestrationState.EXECUTING,
+                    context.sharedContext(),
+                    context.events(),
+                    context.startedAt()
+                );
+                
+                // Add replanning event
+                replanCtx = replanCtx.addEvent(new OrchestrationEvent(
+                    UUID.randomUUID().toString(),
+                    OrchestrationEventType.REPLANNING_TRIGGERED,
+                    "Replanning triggered due to step failure",
+                    Map.of("failedStep", step.stepId()),
+                    Instant.now()
+                ));
+                
+                // Continue with new plan
+                return Uni.createFrom().item(replanCtx);
+            });
+        } else {
+            // No replanning, propagate failure
+            return Uni.createFrom().failure(
+                new OrchestrationException("Step failed: " + step.stepId(), result.errors())
+            );
+        }
+    }
+    
+    /**
+     * Evaluate orchestration results
+     */
+    private Uni<OrchestratorEvaluator.EvaluationResult> evaluateResults(
+            OrchestrationContext context) {
+        
+        LOG.debug("Evaluating orchestration results");
+        
+        return orchestratorEvaluator.evaluate(
+            context.plan(),
+            context.stepResults(),
+            context.sharedContext()
+        );
+    }
+    
+    /**
+     * Build final orchestration result
+     */
+    private AgentExecutionResult buildFinalResult(
+            String requestId,
+            OrchestrationContext context,
+            OrchestratorEvaluator.EvaluationResult evaluation,
+            Instant startTime) {
+        
+        // Aggregate outputs from all steps
+        Map<String, Object> aggregatedOutput = aggregateStepOutputs(context.stepResults());
+        
+        // Build actions taken list
+        List<String> actionsTaken = context.stepResults().values().stream()
+            .flatMap(result -> result.actionsTaken().stream())
+            .collect(Collectors.toList());
+        
+        // Calculate metrics
+        long executionTime = Duration.between(startTime, Instant.now()).toMillis();
+        int totalTokens = context.stepResults().values().stream()
+            .mapToInt(r -> r.metrics().tokensUsed())
+            .sum();
+        int totalToolInvocations = context.stepResults().values().stream()
+            .mapToInt(r -> r.metrics().toolInvocations())
+            .sum();
+        
+        ExecutionMetrics metrics = new ExecutionMetrics(
+            executionTime,
+            totalTokens,
+            totalToolInvocations,
+            0L,
+            evaluation.overallScore(),
+            Map.of(
+                "planCompleteness", context.plan().getCompletionPercentage(),
+                "stepsExecuted", context.stepResults().size(),
+                "totalSteps", context.plan().steps().size()
+            )
+        );
+        
+        // Collect any errors
+        List<ExecutionError> errors = context.stepResults().values().stream()
+            .flatMap(r -> r.errors().stream())
+            .collect(Collectors.toList());
+        
+        // Build metadata
+        Map<String, Object> metadata = Map.of(
+            "orchestrationId", context.orchestrationId(),
+            "planId", context.plan().planId(),
+            "events", context.events(),
+            "evaluation", evaluation
+        );
+        
+        ExecutionStatus status = evaluation.overallScore() >= 0.8 ?
+            ExecutionStatus.SUCCESS :
+            (evaluation.overallScore() >= 0.5 ? 
+                ExecutionStatus.PARTIAL_SUCCESS : 
+                ExecutionStatus.FAILED);
+        
+        return new AgentExecutionResult(
+            requestId,
+            "orchestrator",
+            status,
+            aggregatedOutput,
+            actionsTaken,
+            metrics,
+            errors,
+            metadata,
+            Instant.now()
+        );
+    }
+    
+    /**
+     * Aggregate outputs from all step results
+     */
+    private Map<String, Object> aggregateStepOutputs(
+            Map<String, AgentExecutionResult> stepResults) {
+        
+        Map<String, Object> aggregated = new HashMap<>();
+        
+        stepResults.forEach((stepId, result) -> {
+            if (result.output() instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> stepOutput = (Map<String, Object>) result.output();
+                aggregated.putAll(stepOutput);
+            } else {
+                aggregated.put(stepId, result.output());
+            }
+        });
+        
+        return aggregated;
+    }
+    
+    // ==================== HELPER METHODS ====================
+    
+    private AgentExecutionRequest extractRequest(NodeExecutionTask task) {
+        Map<String, Object> context = task.context();
+        
+        return AgentExecutionRequest.builder()
+            .taskDescription((String) context.get("taskDescription"))
+            .context((Map<String, Object>) context.getOrDefault("context", Map.of()))
+            .constraints(extractConstraints(context))
+            .build();
+    }
+    
+    private ExecutionConstraints extractConstraints(Map<String, Object> context) {
+        Object constraintsObj = context.get("constraints");
+        if (constraintsObj instanceof ExecutionConstraints) {
+            return (ExecutionConstraints) constraintsObj;
+        }
+        return ExecutionConstraints.createDefault();
+    }
+    
+    private OrchestratorAgent extractOrchestratorConfig(OrchestrationContext context) {
+        // Extract from plan metadata or use default
+        return new OrchestratorAgent(
+            OrchestrationType.SEQUENTIAL,
+            BuiltInAgents.createDefault(),
+            CoordinationStrategy.CENTRALIZED,
+            5,
+            false
+        );
+    }
+    
+    private Set<AgentCapability> extractCapabilities(String agentType) {
+        return switch (agentType.toUpperCase()) {
+            case "PLANNER" -> Set.of(AgentCapability.PLANNING, AgentCapability.REASONING);
+            case "CODER" -> Set.of(AgentCapability.CODE_GENERATION, AgentCapability.CODE_ANALYSIS);
+            case "ANALYST" -> Set.of(AgentCapability.DATA_ANALYSIS, AgentCapability.REASONING);
+            default -> Set.of(AgentCapability.REASONING);
+        };
+    }
+    
+    private List<List<PlanStep>> buildExecutionWaves(AgentExecutionPlan plan) {
+        List<List<PlanStep>> waves = new ArrayList<>();
+        Set<String> completed = new HashSet<>();
+        List<PlanStep> remaining = new ArrayList<>(plan.steps());
+        
+        while (!remaining.isEmpty()) {
+            List<PlanStep> wave = remaining.stream()
+                .filter(step -> step.canExecute(completed))
+                .collect(Collectors.toList());
+            
+            if (wave.isEmpty()) {
+                // Circular dependency detected
+                break;
+            }
+            
+            waves.add(wave);
+            wave.forEach(step -> completed.add(step.stepId()));
+            remaining.removeAll(wave);
+        }
+        
+        return waves;
+    }
+    
+    private ExecutionTree buildExecutionTree(AgentExecutionPlan plan) {
+        // Simplified tree building
+        return new ExecutionTree(plan.steps().get(0), List.of());
+    }
+    
+    private Uni<OrchestrationContext> executeTreeNode(
+            OrchestrationContext context,
+            PlanStep node,
+            ExecutionConstraints constraints) {
+        // Simplified tree execution
+        return executeStep(context, node, constraints)
+            .map(result -> context.addStepResult(node.stepId(), result));
+    }
+    
+    private Uni<OrchestrationContext> monitorCollaboration(
+            OrchestrationContext context,
+            Object session) {
+        // Monitor collaboration until complete
+        return Uni.createFrom().item(context);
+    }
+    
+    private Uni<OrchestrationContext> runDebateRounds(
+            OrchestrationContext context,
+            Object debate) {
+        // Run debate rounds
+        return Uni.createFrom().item(context);
+    }
+    
+    private AgentExecutionResult selectBestResult(List<AgentExecutionResult> results) {
+        return results.stream()
+            .filter(AgentExecutionResult::isSuccess)
+            .max(Comparator.comparingDouble(r -> r.metrics().successScore()))
+            .orElse(results.get(0));
+    }
+    
+    private Uni<OrchestrationContext> handleOrchestrationFailure(
+            String orchestrationId,
+            Throwable error,
+            AgentExecutionRequest request) {
+        
+        LOG.error("Orchestration {} failed: {}", orchestrationId, error.getMessage());
+        
+        // Could implement recovery strategies here
+        return Uni.createFrom().failure(error);
+    }
+}
+
+// ==================== SUPPORTING CLASSES ====================
+
+/**
+ * Execution tree structure
+ */
+record ExecutionTree(PlanStep root, List<ExecutionTree> children) {}
+
+/**
+ * Orchestration Exception
+ */
+class OrchestrationException extends RuntimeException {
+    private final List<ExecutionError> errors;
+    
+    public OrchestrationException(String message, List<ExecutionError> errors) {
+        super(message);
+        this.errors = errors;
+    }
+    
+    public List<ExecutionError> getErrors() {
+        return errors;
+    }
+}
+
+package tech.kayys.silat.agent.executor;
+
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import tech.kayys.silat.agent.domain.*;
+
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+
+/**
+ * ============================================================================
+ * ORCHESTRATOR PLANNER
+ * ============================================================================
+ * 
+ * Built-in planner agent responsible for:
+ * - Creating execution plans from high-level tasks
+ * - Task decomposition and dependency analysis
+ * - Agent selection and task assignment
+ * - Adaptive replanning when failures occur
+ * 
+ * Supports multiple planning strategies:
+ * - Hierarchical decomposition
+ * - Chain-of-thought reasoning
+ * - Plan-and-execute
+ * - Adaptive planning
+ */
+@ApplicationScoped
+public class OrchestratorPlanner {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(OrchestratorPlanner.class);
+    
+    @Inject
+    AgentRegistry agentRegistry;
+    
+    @Inject
+    LLMService llmService;
+    
+    /**
+     * Create execution plan from request
+     */
+    public Uni<AgentExecutionPlan> createPlan(AgentExecutionRequest request) {
+        LOG.info("Creating execution plan for: {}", request.taskDescription());
+        
+        // Analyze task complexity
+        return analyzeTask(request)
+            .flatMap(analysis -> {
+                // Choose planning strategy based on analysis
+                PlanningStrategy strategy = selectStrategy(analysis);
+                
+                // Generate plan using selected strategy
+                return generatePlan(request, analysis, strategy);
+            });
+    }
+    
+    /**
+     * Replan when step fails
+     */
+    public Uni<AgentExecutionPlan> replan(
+            AgentExecutionPlan originalPlan,
+            PlanStep failedStep,
+            AgentExecutionResult failureResult,
+            Map<String, AgentExecutionResult> completedSteps) {
+        
+        LOG.info("Replanning after step {} failure", failedStep.stepId());
+        
+        // Analyze failure
+        return analyzeFailure(failedStep, failureResult)
+            .flatMap(failureAnalysis -> {
+                // Generate alternative approach
+                return generateAlternativePlan(
+                    originalPlan,
+                    failedStep,
+                    failureAnalysis,
+                    completedSteps
+                );
+            });
+    }
+    
+    /**
+     * Analyze task to determine complexity and requirements
+     */
+    private Uni<TaskAnalysis> analyzeTask(AgentExecutionRequest request) {
+        LOG.debug("Analyzing task complexity");
+        
+        return Uni.createFrom().item(() -> {
+            // Simple heuristic-based analysis
+            // In production, this would use LLM or ML model
+            
+            TaskComplexity complexity = determineComplexity(request.taskDescription());
+            Set<String> requiredSkills = extractRequiredSkills(request);
+            int estimatedSteps = estimateSteps(complexity);
+            boolean requiresSpecialization = 
+                request.requiredCapabilities().size() > 2;
+            
+            return new TaskAnalysis(
+                complexity,
+                requiredSkills,
+                estimatedSteps,
+                requiresSpecialization,
+                Map.of()
+            );
+        });
+    }
+    
+    /**
+     * Select planning strategy based on task analysis
+     */
+    private PlanningStrategy selectStrategy(TaskAnalysis analysis) {
+        if (analysis.complexity() == TaskComplexity.HIGH) {
+            return PlanningStrategy.HIERARCHICAL;
+        } else if (analysis.requiresSpecialization()) {
+            return PlanningStrategy.PLAN_AND_EXECUTE;
+        } else {
+            return PlanningStrategy.CHAIN_OF_THOUGHT;
+        }
+    }
+    
+    /**
+     * Generate execution plan
+     */
+    private Uni<AgentExecutionPlan> generatePlan(
+            AgentExecutionRequest request,
+            TaskAnalysis analysis,
+            PlanningStrategy strategy) {
+        
+        LOG.debug("Generating plan using strategy: {}", strategy);
+        
+        return switch (strategy) {
+            case HIERARCHICAL -> generateHierarchicalPlan(request, analysis);
+            case CHAIN_OF_THOUGHT -> generateChainOfThoughtPlan(request, analysis);
+            case PLAN_AND_EXECUTE -> generatePlanAndExecutePlan(request, analysis);
+            case REACT -> generateReActPlan(request, analysis);
+            default -> generateSimplePlan(request, analysis);
+        };
+    }
+    
+    /**
+     * Generate hierarchical plan with task decomposition
+     */
+    private Uni<AgentExecutionPlan> generateHierarchicalPlan(
+            AgentExecutionRequest request,
+            TaskAnalysis analysis) {
+        
+        String planId = UUID.randomUUID().toString();
+        List<PlanStep> steps = new ArrayList<>();
+        
+        // Step 1: High-level decomposition
+        steps.add(new PlanStep(
+            "decompose",
+            "Decompose task into subtasks",
+            "PLANNER",
+            Map.of("task", request.taskDescription()),
+            Set.of(),
+            StepStatus.PENDING,
+            null
+        ));
+        
+        // Step 2-N: Execute subtasks
+        for (int i = 0; i < analysis.estimatedSteps(); i++) {
+            steps.add(new PlanStep(
+                "execute-" + i,
+                "Execute subtask " + (i + 1),
+                determineAgentType(analysis.requiredSkills()),
+                Map.of(),
+                Set.of("decompose"),
+                StepStatus.PENDING,
+                null
+            ));
+        }
+        
+        // Final step: Aggregate results
+        steps.add(new PlanStep(
+            "aggregate",
+            "Aggregate and synthesize results",
+            "COMMON_AGENT",
+            Map.of(),
+            steps.stream()
+                .filter(s -> s.stepId().startsWith("execute-"))
+                .map(PlanStep::stepId)
+                .collect(Collectors.toSet()),
+            StepStatus.PENDING,
+            null
+        ));
+        
+        PlanMetadata metadata = new PlanMetadata(
+            strategy,
+            steps.size(),
+            analysis.estimatedSteps() * 10000, // rough estimate
+            0.8,
+            Map.of("complexity", analysis.complexity().name())
+        );
+        
+        return Uni.createFrom().item(new AgentExecutionPlan(
+            planId,
+            "Hierarchical plan for: " + request.taskDescription(),
+            steps,
+            new HashMap<>(request.context()),
+            metadata,
+            Instant.now()
+        ));
+    }
+    
+    /**
+     * Generate chain-of-thought plan
+     */
+    private Uni<AgentExecutionPlan> generateChainOfThoughtPlan(
+            AgentExecutionRequest request,
+            TaskAnalysis analysis) {
+        
+        String planId = UUID.randomUUID().toString();
+        List<PlanStep> steps = new ArrayList<>();
+        
+        // Use LLM to generate reasoning chain
+        return llmService.generateReasoningChain(request.taskDescription())
+            .map(reasoningSteps -> {
+                Set<String> previousStepIds = new HashSet<>();
+                
+                for (int i = 0; i < reasoningSteps.size(); i++) {
+                    String stepId = "reason-" + i;
+                    steps.add(new PlanStep(
+                        stepId,
+                        reasoningSteps.get(i),
+                        "COMMON_AGENT",
+                        Map.of("reasoning", reasoningSteps.get(i)),
+                        new HashSet<>(previousStepIds),
+                        StepStatus.PENDING,
+                        null
+                    ));
+                    previousStepIds.add(stepId);
+                }
+                
+                PlanMetadata metadata = new PlanMetadata(
+                    PlanningStrategy.CHAIN_OF_THOUGHT,
+                    steps.size(),
+                    steps.size() * 5000,
+                    0.85,
+                    Map.of()
+                );
+                
+                return new AgentExecutionPlan(
+                    planId,
+                    "Chain-of-thought plan",
+                    steps,
+                    new HashMap<>(request.context()),
+                    metadata,
+                    Instant.now()
+                );
+            });
+    }
+    
+    /**
+     * Generate plan-and-execute plan
+     */
+    private Uni<AgentExecutionPlan> generatePlanAndExecutePlan(
+            AgentExecutionRequest request,
+            TaskAnalysis analysis) {
+        
+        String planId = UUID.randomUUID().toString();
+        List<PlanStep> steps = List.of(
+            // Planning phase
+            new PlanStep(
+                "detailed-planning",
+                "Create detailed execution plan",
+                "PLANNER",
+                Map.of("task", request.taskDescription()),
+                Set.of(),
+                StepStatus.PENDING,
+                null
+            ),
+            // Execution phase
+            new PlanStep(
+                "execute-plan",
+                "Execute the detailed plan",
+                determineAgentType(analysis.requiredSkills()),
+                Map.of(),
+                Set.of("detailed-planning"),
+                StepStatus.PENDING,
+                null
+            ),
+            // Verification phase
+            new PlanStep(
+                "verify-results",
+                "Verify execution results",
+                "COMMON_AGENT",
+                Map.of(),
+                Set.of("execute-plan"),
+                StepStatus.PENDING,
+                null
+            )
+        );
+        
+        PlanMetadata metadata = new PlanMetadata(
+            PlanningStrategy.PLAN_AND_EXECUTE,
+            steps.size(),
+            30000,
+            0.9,
+            Map.of()
+        );
+        
+        return Uni.createFrom().item(new AgentExecutionPlan(
+            planId,
+            "Plan-and-execute for: " + request.taskDescription(),
+            steps,
+            new HashMap<>(request.context()),
+            metadata,
+            Instant.now()
+        ));
+    }
+    
+    /**
+     * Generate ReAct (Reasoning + Acting) plan
+     */
+    private Uni<AgentExecutionPlan> generateReActPlan(
+            AgentExecutionRequest request,
+            TaskAnalysis analysis) {
+        
+        String planId = UUID.randomUUID().toString();
+        
+        // ReAct is more dynamic - create initial observation step
+        List<PlanStep> steps = List.of(
+            new PlanStep(
+                "observe",
+                "Observe current state and analyze task",
+                "COMMON_AGENT",
+                Map.of("task", request.taskDescription()),
+                Set.of(),
+                StepStatus.PENDING,
+                null
+            ),
+            new PlanStep(
+                "reason-act-cycle",
+                "Iterative reasoning and action cycle",
+                "COMMON_AGENT",
+                Map.of("maxCycles", 5),
+                Set.of("observe"),
+                StepStatus.PENDING,
+                null
+            )
+        );
+        
+        PlanMetadata metadata = new PlanMetadata(
+            PlanningStrategy.REACT,
+            steps.size(),
+            50000,
+            0.75,
+            Map.of("adaptive", "true")
+        );
+        
+        return Uni.createFrom().item(new AgentExecutionPlan(
+            planId,
+            "ReAct plan",
+            steps,
+            new HashMap<>(request.context()),
+            metadata,
+            Instant.now()
+        ));
+    }
+    
+    /**
+     * Generate simple sequential plan
+     */
+    private Uni<AgentExecutionPlan> generateSimplePlan(
+            AgentExecutionRequest request,
+            TaskAnalysis analysis) {
+        
+        String planId = UUID.randomUUID().toString();
+        
+        List<PlanStep> steps = List.of(
+            new PlanStep(
+                "execute-task",
+                request.taskDescription(),
+                determineAgentType(analysis.requiredSkills()),
+                new HashMap<>(request.context()),
+                Set.of(),
+                StepStatus.PENDING,
+                null
+            )
+        );
+        
+        PlanMetadata metadata = new PlanMetadata(
+            PlanningStrategy.ADAPTIVE,
+            steps.size(),
+            10000,
+            0.9,
+            Map.of()
+        );
+        
+        return Uni.createFrom().item(new AgentExecutionPlan(
+            planId,
+            "Simple plan",
+            steps,
+            new HashMap<>(request.context()),
+            metadata,
+            Instant.now()
+        ));
+    }
+    
+    /**
+     * Analyze step failure
+     */
+    private Uni<FailureAnalysis> analyzeFailure(
+            PlanStep failedStep,
+            AgentExecutionResult result) {
+        
+        return Uni.createFrom().item(() -> {
+            FailureType type = categorizeFailure(result.errors());
+            boolean isRecoverable = determineRecoverability(type, result);
+            List<String> alternativeApproaches = 
+                suggestAlternatives(failedStep, result);
+            
+            return new FailureAnalysis(
+                type,
+                isRecoverable,
+                alternativeApproaches,
+                result.errors()
+            );
+        });
+    }
+    
+    /**
+     * Generate alternative plan after failure
+     */
+    private Uni<AgentExecutionPlan> generateAlternativePlan(
+            AgentExecutionPlan originalPlan,
+            PlanStep failedStep,
+            FailureAnalysis analysis,
+            Map<String, AgentExecutionResult> completedSteps) {
+        
+        if (!analysis.isRecoverable()) {
+            return Uni.createFrom().failure(
+                new IllegalStateException("Failure is not recoverable")
+            );
+        }
+        
+        // Create new plan incorporating alternative approaches
+        List<PlanStep> newSteps = new ArrayList<>();
+        
+        // Keep completed steps
+        originalPlan.steps().stream()
+            .filter(step -> completedSteps.containsKey(step.stepId()))
+            .forEach(newSteps::add);
+        
+        // Add alternative steps for failed step
+        for (String alternative : analysis.alternativeApproaches()) {
+            newSteps.add(new PlanStep(
+                "alt-" + UUID.randomUUID().toString(),
+                alternative,
+                determineAlternativeAgentType(failedStep),
+                failedStep.stepContext(),
+                failedStep.dependencies(),
+                StepStatus.PENDING,
+                null
+            ));
+        }
+        
+        // Add remaining steps
+        originalPlan.steps().stream()
+            .filter(step -> !completedSteps.containsKey(step.stepId()))
+            .filter(step -> !step.stepId().equals(failedStep.stepId()))
+            .forEach(newSteps::add);
+        
+        PlanMetadata metadata = new PlanMetadata(
+            PlanningStrategy.ADAPTIVE,
+            newSteps.size(),
+            newSteps.size() * 10000,
+            0.7,
+            Map.of("replanned", "true", "failedStep", failedStep.stepId())
+        );
+        
+        return Uni.createFrom().item(new AgentExecutionPlan(
+            UUID.randomUUID().toString(),
+            "Replanned: " + originalPlan.description(),
+            newSteps,
+            originalPlan.planContext(),
+            metadata,
+            Instant.now()
+        ));
+    }
+    
+    // ==================== HELPER METHODS ====================
+    
+    private TaskComplexity determineComplexity(String description) {
+        int words = description.split("\\s+").length;
+        if (words > 50) return TaskComplexity.HIGH;
+        if (words > 20) return TaskComplexity.MEDIUM;
+        return TaskComplexity.LOW;
+    }
+    
+    private Set<String> extractRequiredSkills(AgentExecutionRequest request) {
+        Set<String> skills = new HashSet<>();
+        
+        // Extract from task description keywords
+        String desc = request.taskDescription().toLowerCase();
+        if (desc.contains("code") || desc.contains("program")) {
+            skills.add("CODING");
+        }
+        if (desc.contains("analyze") || desc.contains("data")) {
+            skills.add("ANALYTICS");
+        }
+        if (desc.contains("plan") || desc.contains("strategy")) {
+            skills.add("PLANNING");
+        }
+        
+        return skills.isEmpty() ? Set.of("GENERAL") : skills;
+    }
+    
+    private int estimateSteps(TaskComplexity complexity) {
+        return switch (complexity) {
+            case LOW -> 1;
+            case MEDIUM -> 3;
+            case HIGH -> 5;
+        };
+    }
+    
+    private String determineAgentType(Set<String> skills) {
+        if (skills.contains("CODING")) return "CODER_AGENT";
+        if (skills.contains("ANALYTICS")) return "ANALYTICS_AGENT";
+        if (skills.contains("PLANNING")) return "PLANNER_AGENT";
+        return "COMMON_AGENT";
+    }
+    
+    private String determineAlternativeAgentType(PlanStep failedStep) {
+        // Try different agent type
+        return switch (failedStep.assignedAgentType()) {
+            case "COMMON_AGENT" -> "PLANNER_AGENT";
+            case "CODER_AGENT" -> "COMMON_AGENT";
+            default -> "COMMON_AGENT";
+        };
+    }
+    
+    private FailureType categorizeFailure(List<ExecutionError> errors) {
+        if (errors.stream().anyMatch(e -> e.errorCode().contains("TIMEOUT"))) {
+            return FailureType.TIMEOUT;
+        }
+        if (errors.stream().anyMatch(e -> e.errorCode().contains("CAPABILITY"))) {
+            return FailureType.INSUFFICIENT_CAPABILITY;
+        }
+        return FailureType.EXECUTION_ERROR;
+    }
+    
+    private boolean determineRecoverability(
+            FailureType type,
+            AgentExecutionResult result) {
+        return type != FailureType.FATAL_ERROR;
+    }
+    
+    private List<String> suggestAlternatives(
+            PlanStep failedStep,
+            AgentExecutionResult result) {
+        return List.of(
+            "Retry with different agent",
+            "Break down into smaller steps",
+            "Use fallback approach"
+        );
+    }
+}
+
+/**
+ * ============================================================================
+ * ORCHESTRATOR EXECUTION ENGINE
+ * ============================================================================
+ * 
+ * Handles actual agent execution with:
+ * - Circuit breaker pattern for fault tolerance
+ * - Timeout management
+ * - Result caching
+ * - Execution monitoring
+ */
+@ApplicationScoped
+public class OrchestratorExecutionEngine {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(OrchestratorExecutionEngine.class);
+    
+    @Inject
+    AgentCommunicationBus communicationBus;
+    
+    @Inject
+    CircuitBreakerRegistry circuitBreakerRegistry;
+    
+    // Result cache for idempotency
+    private final Map<String, AgentExecutionResult> resultCache = new ConcurrentHashMap<>();
+    
+    /**
+     * Execute task with specific agent
+     */
+    public Uni<AgentExecutionResult> executeWithAgent(
+            AgentRegistration agent,
+            AgentExecutionRequest request) {
+        
+        LOG.debug("Executing with agent: {}", agent.agentId());
+        
+        // Check cache first
+        String cacheKey = buildCacheKey(agent.agentId(), request.requestId());
+        AgentExecutionResult cached = resultCache.get(cacheKey);
+        if (cached != null) {
+            LOG.debug("Returning cached result");
+            return Uni.createFrom().item(cached);
+        }
+        
+        // Get circuit breaker for agent
+        CircuitBreaker circuitBreaker = circuitBreakerRegistry.getOrCreate(agent.agentId());
+        
+        // Execute with circuit breaker and timeout
+        return circuitBreaker.call(() ->
+            communicationBus.sendRequest(agent, request)
+                .ifNoItem().after(Duration.ofMillis(request.constraints().maxExecutionTimeMs()))
+                .failWith(() -> new TimeoutException("Agent execution timeout"))
+        )
+        .onItem().invoke(result -> {
+            // Cache result
+            resultCache.put(cacheKey, result);
+            
+            // Update agent metrics
+            updateAgentMetrics(agent, result);
+        })
+        .onFailure().retry().atMost(request.constraints().maxRetries())
+        .onFailure().recoverWithItem(error -> {
+            LOG.error("Agent execution failed after retries", error);
+            
+            return new AgentExecutionResult(
+                request.requestId(),
+                agent.agentId(),
+                ExecutionStatus.FAILED,
+                null,
+                List.of(),
+                ExecutionMetrics.empty(),
+                List.of(new ExecutionError(
+                    "EXECUTION_FAILED",
+                    error.getMessage(),
+                    ErrorSeverity.HIGH,
+                    agent.agentId(),
+                    Instant.now(),
+                    Map.of()
+                )),
+                Map.of(),
+                Instant.now()
+            );
+        });
+    }
+    
+    private String buildCacheKey(String agentId, String requestId) {
+        return agentId + ":" + requestId;
+    }
+    
+    private void updateAgentMetrics(AgentRegistration agent, AgentExecutionResult result) {
+        // Update agent's success rate, avg response time, etc.
+        // This would update the agent registry
+    }
+}
+
+/**
+ * ============================================================================
+ * ORCHESTRATOR EVALUATOR
+ * ============================================================================
+ * 
+ * Built-in evaluator for assessing orchestration quality
+ */
+@ApplicationScoped
+public class OrchestratorEvaluator {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(OrchestratorEvaluator.class);
+    
+    /**
+     * Evaluate orchestration results
+     */
+    public Uni<EvaluationResult> evaluate(
+            AgentExecutionPlan plan,
+            Map<String, AgentExecutionResult> stepResults,
+            Map<String, Object> context) {
+        
+        LOG.debug("Evaluating orchestration results");
+        
+        return Uni.createFrom().item(() -> {
+            // Evaluate each criterion
+            Map<EvaluationCriteria, Double> scores = new EnumMap<>(EvaluationCriteria.class);
+            
+            scores.put(EvaluationCriteria.CORRECTNESS, 
+                evaluateCorrectness(stepResults));
+            scores.put(EvaluationCriteria.COMPLETENESS, 
+                evaluateCompleteness(plan, stepResults));
+            scores.put(EvaluationCriteria.QUALITY, 
+                evaluateQuality(stepResults));
+            scores.put(EvaluationCriteria.EFFICIENCY, 
+                evaluateEfficiency(stepResults));
+            
+            // Calculate overall score (weighted average)
+            double overallScore = calculateOverallScore(scores);
+            
+            // Generate recommendations
+            List<String> recommendations = generateRecommendations(scores);
+            
+            return new EvaluationResult(
+                overallScore,
+                scores,
+                recommendations,
+                Instant.now()
+            );
+        });
+    }
+    
+    private double evaluateCorrectness(Map<String, AgentExecutionResult> results) {
+        long successful = results.values().stream()
+            .filter(AgentExecutionResult::isSuccess)
+            .count();
+        return (double) successful / results.size();
+    }
+    
+    private double evaluateCompleteness(
+            AgentExecutionPlan plan,
+            Map<String, AgentExecutionResult> results) {
+        return (double) results.size() / plan.steps().size();
+    }
+    
+    private double evaluateQuality(Map<String, AgentExecutionResult> results) {
+        return results.values().stream()
+            .mapToDouble(r -> r.metrics().successScore())
+            .average()
+            .orElse(0.0);
+    }
+    
+    private double evaluateEfficiency(Map<String, AgentExecutionResult> results) {
+        // Lower execution time = higher efficiency
+        long avgTime = results.values().stream()
+            .mapToLong(r -> r.metrics().executionTimeMs())
+            .sum() / results.size();
+        
+        // Normalize (assuming 30s is baseline)
+        return Math.max(0, 1.0 - (avgTime / 30000.0));
+    }
+    
+    private double calculateOverallScore(Map<EvaluationCriteria, Double> scores) {
+        // Weighted average
+        double correctnessWeight = 0.4;
+        double completenessWeight = 0.3;
+        double qualityWeight = 0.2;
+        double efficiencyWeight = 0.1;
+        
+        return scores.get(EvaluationCriteria.CORRECTNESS) * correctnessWeight +
+               scores.get(EvaluationCriteria.COMPLETENESS) * completenessWeight +
+               scores.get(EvaluationCriteria.QUALITY) * qualityWeight +
+               scores.get(EvaluationCriteria.EFFICIENCY) * efficiencyWeight;
+    }
+    
+    private List<String> generateRecommendations(Map<EvaluationCriteria, Double> scores) {
+        List<String> recommendations = new ArrayList<>();
+        
+        if (scores.get(EvaluationCriteria.CORRECTNESS) < 0.8) {
+            recommendations.add("Consider using more specialized agents for better accuracy");
+        }
+        if (scores.get(EvaluationCriteria.EFFICIENCY) < 0.7) {
+            recommendations.add("Optimize task distribution for better efficiency");
+        }
+        
+        return recommendations;
+    }
+    
+    public record EvaluationResult(
+        double overallScore,
+        Map<EvaluationCriteria, Double> criteriaScores,
+        List<String> recommendations,
+        Instant evaluatedAt
+    ) {}
+}
+
+// ==================== SUPPORTING TYPES ====================
+
+record TaskAnalysis(
+    TaskComplexity complexity,
+    Set<String> requiredSkills,
+    int estimatedSteps,
+    boolean requiresSpecialization,
+    Map<String, Object> metadata
+) {}
+
+enum TaskComplexity {
+    LOW, MEDIUM, HIGH
+}
+
+record FailureAnalysis(
+    FailureType type,
+    boolean isRecoverable,
+    List<String> alternativeApproaches,
+    List<ExecutionError> errors
+) {}
+
+enum FailureType {
+    TIMEOUT,
+    EXECUTION_ERROR,
+    INSUFFICIENT_CAPABILITY,
+    RESOURCE_UNAVAILABLE,
+    FATAL_ERROR
+}
+
+class TimeoutException extends RuntimeException {
+    public TimeoutException(String message) {
+        super(message);
+    }
+}
+
+package tech.kayys.silat.agent.infrastructure;
+
+import io.quarkus.hibernate.reactive.panache.PanacheEntityBase;
+import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import jakarta.persistence.*;
+import org.eclipse.microprofile.reactive.messaging.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import tech.kayys.silat.agent.domain.*;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.stream.Collectors;
+
+/**
+ * ============================================================================
+ * AGENT REGISTRY
+ * ============================================================================
+ * 
+ * Centralized registry for agent discovery and management
+ * 
+ * Features:
+ * - Agent registration and deregistration
+ * - Health monitoring
+ * - Capability-based discovery
+ * - Load balancing
+ * - Multi-tenant isolation
+ */
+@ApplicationScoped
+public class AgentRegistry {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(AgentRegistry.class);
+    private static final Duration HEARTBEAT_TIMEOUT = Duration.ofSeconds(30);
+    
+    // In-memory registry (backed by database)
+    private final ConcurrentMap<String, AgentRegistration> agents = new ConcurrentHashMap<>();
+    
+    @Inject
+    AgentPersistence persistence;
+    
+    /**
+     * Register new agent
+     */
+    public Uni<AgentRegistration> registerAgent(
+            String agentId,
+            String agentName,
+            AgentType agentType,
+            Set<AgentCapability> capabilities,
+            AgentEndpoint endpoint,
+            String tenantId) {
+        
+        LOG.info("Registering agent: {} (type: {})", agentId, agentType.typeName());
+        
+        AgentRegistration registration = new AgentRegistration(
+            agentId,
+            agentName,
+            agentType,
+            capabilities,
+            AgentStatus.AVAILABLE,
+            endpoint,
+            Map.of(
+                "tenantId", tenantId,
+                "successRate", "1.0",
+                "currentLoad", "0.0"
+            ),
+            Instant.now(),
+            Instant.now()
+        );
+        
+        agents.put(agentId, registration);
+        
+        return persistence.saveAgent(registration)
+            .replaceWith(registration);
+    }
+    
+    /**
+     * Deregister agent
+     */
+    public Uni<Void> deregisterAgent(String agentId) {
+        LOG.info("Deregistering agent: {}", agentId);
+        
+        agents.remove(agentId);
+        
+        return persistence.deleteAgent(agentId);
+    }
+    
+    /**
+     * Update agent heartbeat
+     */
+    public Uni<Void> updateHeartbeat(String agentId) {
+        AgentRegistration current = agents.get(agentId);
+        if (current == null) {
+            return Uni.createFrom().failure(
+                new IllegalArgumentException("Agent not found: " + agentId));
+        }
+        
+        AgentRegistration updated = new AgentRegistration(
+            current.agentId(),
+            current.agentName(),
+            current.agentType(),
+            current.capabilities(),
+            current.status(),
+            current.endpoint(),
+            current.metadata(),
+            current.registeredAt(),
+            Instant.now()
+        );
+        
+        agents.put(agentId, updated);
+        
+        return persistence.updateHeartbeat(agentId, Instant.now());
+    }
+    
+    /**
+     * Find available agents by type and capabilities
+     */
+    public Uni<List<AgentRegistration>> findAvailableAgents(
+            String agentType,
+            Set<AgentCapability> requiredCapabilities) {
+        
+        return Uni.createFrom().item(() -> 
+            agents.values().stream()
+                .filter(AgentRegistration::isAvailable)
+                .filter(AgentRegistration::isHealthy)
+                .filter(agent -> matchesType(agent, agentType))
+                .filter(agent -> hasCapabilities(agent, requiredCapabilities))
+                .collect(Collectors.toList())
+        );
+    }
+    
+    /**
+     * Get agent by ID
+     */
+    public Uni<AgentRegistration> getAgent(String agentId) {
+        AgentRegistration agent = agents.get(agentId);
+        if (agent == null) {
+            return Uni.createFrom().nullItem();
+        }
+        return Uni.createFrom().item(agent);
+    }
+    
+    /**
+     * Update agent status
+     */
+    public Uni<Void> updateStatus(String agentId, AgentStatus status) {
+        AgentRegistration current = agents.get(agentId);
+        if (current == null) {
+            return Uni.createFrom().failure(
+                new IllegalArgumentException("Agent not found"));
+        }
+        
+        AgentRegistration updated = new AgentRegistration(
+            current.agentId(),
+            current.agentName(),
+            current.agentType(),
+            current.capabilities(),
+            status,
+            current.endpoint(),
+            current.metadata(),
+            current.registeredAt(),
+            current.lastHeartbeat()
+        );
+        
+        agents.put(agentId, updated);
+        
+        return persistence.updateStatus(agentId, status);
+    }
+    
+    /**
+     * List all agents (for monitoring)
+     */
+    public Uni<List<AgentRegistration>> listAllAgents(String tenantId) {
+        return Uni.createFrom().item(() ->
+            agents.values().stream()
+                .filter(agent -> agent.metadata().get("tenantId").equals(tenantId))
+                .collect(Collectors.toList())
+        );
+    }
+    
+    // ==================== HELPER METHODS ====================
+    
+    private boolean matchesType(AgentRegistration agent, String requestedType) {
+        return agent.agentType().typeName().equalsIgnoreCase(requestedType) ||
+               requestedType.equalsIgnoreCase("ANY");
+    }
+    
+    private boolean hasCapabilities(
+            AgentRegistration agent,
+            Set<AgentCapability> required) {
+        return agent.capabilities().containsAll(required);
+    }
+    
+    /**
+     * Background task to clean up stale agents
+     */
+    @jakarta.enterprise.event.Observes
+    void onStartup(@jakarta.enterprise.event.Startup event) {
+        // Start cleanup job
+        Multi.createFrom().ticks().every(Duration.ofSeconds(10))
+            .subscribe().with(tick -> cleanupStaleAgents());
+    }
+    
+    private void cleanupStaleAgents() {
+        Instant threshold = Instant.now().minus(HEARTBEAT_TIMEOUT);
+        
+        agents.entrySet().removeIf(entry -> {
+            if (entry.getValue().lastHeartbeat().isBefore(threshold)) {
+                LOG.warn("Removing stale agent: {}", entry.getKey());
+                persistence.deleteAgent(entry.getKey()).subscribe().with(
+                    v -> LOG.debug("Cleaned up agent: {}", entry.getKey()),
+                    error -> LOG.error("Failed to cleanup agent", error)
+                );
+                return true;
+            }
+            return false;
+        });
+    }
+}
+
+/**
+ * ============================================================================
+ * AGENT COMMUNICATION BUS
+ * ============================================================================
+ * 
+ * Handles inter-agent communication with support for:
+ * - Multiple transport protocols (gRPC, REST, Kafka)
+ * - Request-response pattern
+ * - Publish-subscribe for events
+ * - Message routing and load balancing
+ */
+@ApplicationScoped
+public class AgentCommunicationBus {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(AgentCommunicationBus.class);
+    
+    @Inject
+    GrpcAgentClient grpcClient;
+    
+    @Inject
+    RestAgentClient restClient;
+    
+    @Inject
+    KafkaAgentProducer kafkaProducer;
+    
+    // Pending requests (for async responses)
+    private final ConcurrentMap<String, CompletableFuture<AgentExecutionResult>> pendingRequests =
+        new ConcurrentHashMap<>();
+    
+    /**
+     * Send request to agent and wait for response
+     */
+    public Uni<AgentExecutionResult> sendRequest(
+            AgentRegistration agent,
+            AgentExecutionRequest request) {
+        
+        LOG.debug("Sending request to agent: {} via {}", 
+            agent.agentId(), agent.endpoint().type());
+        
+        return switch (agent.endpoint().type()) {
+            case GRPC -> grpcClient.execute(agent, request);
+            case REST -> restClient.execute(agent, request);
+            case KAFKA -> sendViaKafka(agent, request);
+            case INTERNAL -> executeInternal(agent, request);
+        };
+    }
+    
+    /**
+     * Send request via Kafka (async)
+     */
+    private Uni<AgentExecutionResult> sendViaKafka(
+            AgentRegistration agent,
+            AgentExecutionRequest request) {
+        
+        CompletableFuture<AgentExecutionResult> future = new CompletableFuture<>();
+        pendingRequests.put(request.requestId(), future);
+        
+        // Send to Kafka
+        kafkaProducer.sendRequest(agent, request)
+            .subscribe().with(
+                v -> LOG.debug("Request sent to Kafka"),
+                error -> {
+                    LOG.error("Failed to send to Kafka", error);
+                    future.completeExceptionally(error);
+                    pendingRequests.remove(request.requestId());
+                }
+            );
+        
+        // Wait for response with timeout
+        return Uni.createFrom().completionStage(future)
+            .ifNoItem().after(Duration.ofMillis(request.constraints().maxExecutionTimeMs()))
+            .failWith(() -> {
+                pendingRequests.remove(request.requestId());
+                return new TimeoutException("No response from agent");
+            });
+    }
+    
+    /**
+     * Handle response from Kafka
+     */
+    @Incoming("agent-responses")
+    public void handleKafkaResponse(AgentExecutionResult result) {
+        LOG.debug("Received response for request: {}", result.requestId());
+        
+        CompletableFuture<AgentExecutionResult> future = 
+            pendingRequests.remove(result.requestId());
+        
+        if (future != null) {
+            future.complete(result);
+        }
+    }
+    
+    /**
+     * Execute with internal agent (in-process)
+     */
+    private Uni<AgentExecutionResult> executeInternal(
+            AgentRegistration agent,
+            AgentExecutionRequest request) {
+        
+        // This would delegate to actual agent implementation
+        LOG.debug("Executing with internal agent");
+        
+        return Uni.createFrom().item(new AgentExecutionResult(
+            request.requestId(),
+            agent.agentId(),
+            ExecutionStatus.SUCCESS,
+            Map.of("result", "Internal execution completed"),
+            List.of("internal_execute"),
+            new ExecutionMetrics(
+                1000L, 100, 0, 0L, 1.0, Map.of()
+            ),
+            List.of(),
+            Map.of(),
+            Instant.now()
+        ));
+    }
+    
+    /**
+     * Broadcast event to multiple agents
+     */
+    public Uni<Void> broadcastEvent(
+            AgentMessage message,
+            List<String> recipientIds) {
+        
+        LOG.debug("Broadcasting event to {} agents", recipientIds.size());
+        
+        return Multi.createFrom().iterable(recipientIds)
+            .onItem().transformToUniAndMerge(recipientId ->
+                sendMessage(recipientId, message)
+            )
+            .collect().asList()
+            .replaceWithVoid();
+    }
+    
+    private Uni<Void> sendMessage(String recipientId, AgentMessage message) {
+        // Implementation would route to appropriate agent
+        return Uni.createFrom().voidItem();
+    }
+}
+
+/**
+ * ============================================================================
+ * AGENT COORDINATOR
+ * ============================================================================
+ * 
+ * Coordinates multi-agent collaboration and consensus
+ */
+@ApplicationScoped
+public class AgentCoordinator {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(AgentCoordinator.class);
+    
+    @Inject
+    AgentCommunicationBus communicationBus;
+    
+    @Inject
+    AgentRegistry registry;
+    
+    // Active coordination sessions
+    private final ConcurrentMap<String, CoordinationSession> activeSessions = 
+        new ConcurrentHashMap<>();
+    
+    /**
+     * Initiate collaboration between agents
+     */
+    public Uni<CoordinationSession> initiateCollaboration(
+            String coordinationId,
+            AgentExecutionPlan plan,
+            ExecutionConstraints constraints) {
+        
+        LOG.info("Initiating collaboration: {}", coordinationId);
+        
+        CoordinationSession session = new CoordinationSession(
+            coordinationId,
+            CoordinationType.COLLABORATION,
+            new ArrayList<>(),
+            plan.description(),
+            CoordinationConfig.createDefault(),
+            CoordinationStatus.IN_PROGRESS,
+            new ConcurrentHashMap<>(),
+            Instant.now()
+        );
+        
+        activeSessions.put(coordinationId, session);
+        
+        return Uni.createFrom().item(session);
+    }
+    
+    /**
+     * Initiate debate between agents
+     */
+    public Uni<DebateSession> initiateDebate(
+            String coordinationId,
+            AgentExecutionPlan plan,
+            ExecutionConstraints constraints) {
+        
+        LOG.info("Initiating debate: {}", coordinationId);
+        
+        return Uni.createFrom().item(new DebateSession(
+            coordinationId,
+            new ArrayList<>(),
+            plan.description(),
+            0,
+            new ArrayList<>()
+        ));
+    }
+    
+    /**
+     * Request consensus from participating agents
+     */
+    public Uni<AgentCoordinationResult> requestConsensus(
+            String coordinationId,
+            Object proposal,
+            ConsensusStrategy strategy) {
+        
+        CoordinationSession session = activeSessions.get(coordinationId);
+        if (session == null) {
+            return Uni.createFrom().failure(
+                new IllegalArgumentException("Session not found"));
+        }
+        
+        LOG.debug("Requesting consensus using strategy: {}", strategy);
+        
+        // Collect votes from agents
+        return collectVotes(session, proposal)
+            .map(votes -> evaluateConsensus(votes, strategy))
+            .map(decision -> {
+                session.updateStatus(
+                    decision.consensusReached() ? 
+                        CoordinationStatus.CONSENSUS_REACHED : 
+                        CoordinationStatus.NO_CONSENSUS
+                );
+                
+                return new AgentCoordinationResult(
+                    coordinationId,
+                    session.status(),
+                    decision.decision(),
+                    session.contributions(),
+                    decision.dissenting(),
+                    Instant.now()
+                );
+            });
+    }
+    
+    private Uni<Map<String, Object>> collectVotes(
+            CoordinationSession session,
+            Object proposal) {
+        // Simplified vote collection
+        return Uni.createFrom().item(new HashMap<>());
+    }
+    
+    private ConsensusDecision evaluateConsensus(
+            Map<String, Object> votes,
+            ConsensusStrategy strategy) {
+        // Simplified consensus evaluation
+        return new ConsensusDecision(
+            true,
+            "consensus-decision",
+            List.of()
+        );
+    }
+}
+
+/**
+ * ============================================================================
+ * CIRCUIT BREAKER REGISTRY
+ * ============================================================================
+ * 
+ * Circuit breaker pattern for agent failure isolation
+ */
+@ApplicationScoped
+public class CircuitBreakerRegistry {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(CircuitBreakerRegistry.class);
+    
+    private final ConcurrentMap<String, CircuitBreaker> breakers = new ConcurrentHashMap<>();
+    
+    public CircuitBreaker getOrCreate(String agentId) {
+        return breakers.computeIfAbsent(agentId, id -> {
+            LOG.debug("Creating circuit breaker for agent: {}", id);
+            return new CircuitBreaker(id);
+        });
+    }
+    
+    public void remove(String agentId) {
+        breakers.remove(agentId);
+    }
+}
+
+/**
+ * Simple Circuit Breaker implementation
+ */
+public class CircuitBreaker {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(CircuitBreaker.class);
+    
+    private final String agentId;
+    private volatile CircuitState state = CircuitState.CLOSED;
+    private final AtomicInteger failureCount = new AtomicInteger(0);
+    private volatile Instant lastFailureTime;
+    
+    private static final int FAILURE_THRESHOLD = 5;
+    private static final Duration RESET_TIMEOUT = Duration.ofMinutes(1);
+    
+    public CircuitBreaker(String agentId) {
+        this.agentId = agentId;
+    }
+    
+    public <T> Uni<T> call(java.util.function.Supplier<Uni<T>> supplier) {
+        if (state == CircuitState.OPEN) {
+            // Check if we should attempt reset
+            if (shouldAttemptReset()) {
+                state = CircuitState.HALF_OPEN;
+                LOG.info("Circuit breaker for {} entering HALF_OPEN state", agentId);
+            } else {
+                return Uni.createFrom().failure(
+                    new CircuitBreakerOpenException("Circuit breaker is OPEN for agent: " + agentId)
+                );
+            }
+        }
+        
+        return supplier.get()
+            .onItem().invoke(item -> onSuccess())
+            .onFailure().invoke(error -> onFailure());
+    }
+    
+    private void onSuccess() {
+        failureCount.set(0);
+        if (state == CircuitState.HALF_OPEN) {
+            state = CircuitState.CLOSED;
+            LOG.info("Circuit breaker for {} now CLOSED", agentId);
+        }
+    }
+    
+    private void onFailure() {
+        lastFailureTime = Instant.now();
+        int failures = failureCount.incrementAndGet();
+        
+        if (failures >= FAILURE_THRESHOLD) {
+            state = CircuitState.OPEN;
+            LOG.warn("Circuit breaker for {} now OPEN", agentId);
+        }
+    }
+    
+    private boolean shouldAttemptReset() {
+        return lastFailureTime != null && 
+               Duration.between(lastFailureTime, Instant.now())
+                   .compareTo(RESET_TIMEOUT) > 0;
+    }
+    
+    enum CircuitState {
+        CLOSED, OPEN, HALF_OPEN
+    }
+}
+
+/**
+ * ============================================================================
+ * LLM SERVICE
+ * ============================================================================
+ * 
+ * Service for LLM interactions (planning, reasoning, etc.)
+ */
+@ApplicationScoped
+public class LLMService {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(LLMService.class);
+    
+    /**
+     * Generate reasoning chain for task
+     */
+    public Uni<List<String>> generateReasoningChain(String taskDescription) {
+        LOG.debug("Generating reasoning chain for: {}", taskDescription);
+        
+        // In production, this would call actual LLM API
+        return Uni.createFrom().item(() -> List.of(
+            "Analyze the task requirements",
+            "Identify necessary resources",
+            "Plan execution steps",
+            "Execute and monitor",
+            "Validate results"
+        ));
+    }
+}
+
+// ==================== PERSISTENCE ====================
+
+/**
+ * Agent persistence layer
+ */
+@ApplicationScoped
+public class AgentPersistence {
+    
+    public Uni<Void> saveAgent(AgentRegistration agent) {
+        // Persist to database
+        return Uni.createFrom().voidItem();
+    }
+    
+    public Uni<Void> deleteAgent(String agentId) {
+        return Uni.createFrom().voidItem();
+    }
+    
+    public Uni<Void> updateHeartbeat(String agentId, Instant timestamp) {
+        return Uni.createFrom().voidItem();
+    }
+    
+    public Uni<Void> updateStatus(String agentId, AgentStatus status) {
+        return Uni.createFrom().voidItem();
+    }
+}
+
+// ==================== CLIENT IMPLEMENTATIONS ====================
+
+@ApplicationScoped
+class GrpcAgentClient {
+    public Uni<AgentExecutionResult> execute(
+            AgentRegistration agent,
+            AgentExecutionRequest request) {
+        // gRPC implementation
+        return Uni.createFrom().nullItem();
+    }
+}
+
+@ApplicationScoped
+class RestAgentClient {
+    public Uni<AgentExecutionResult> execute(
+            AgentRegistration agent,
+            AgentExecutionRequest request) {
+        // REST implementation
+        return Uni.createFrom().nullItem();
+    }
+}
+
+@ApplicationScoped
+class KafkaAgentProducer {
+    
+    @Inject
+    @Channel("agent-requests")
+    Emitter<AgentExecutionRequest> requestEmitter;
+    
+    public Uni<Void> sendRequest(
+            AgentRegistration agent,
+            AgentExecutionRequest request) {
+        return Uni.createFrom().completionStage(
+            requestEmitter.send(request)
+        );
+    }
+}
+
+// ==================== SUPPORTING TYPES ====================
+
+record CoordinationSession(
+    String coordinationId,
+    CoordinationType type,
+    List<String> participatingAgents,
+    String goal,
+    CoordinationConfig config,
+    CoordinationStatus status,
+    Map<String, Object> contributions,
+    Instant initiatedAt
+) {
+    void updateStatus(CoordinationStatus newStatus) {
+        // Would update in database
+    }
+}
+
+record DebateSession(
+    String debateId,
+    List<String> participants,
+    String topic,
+    int currentRound,
+    List<DebateRound> rounds
+) {}
+
+record DebateRound(
+    int roundNumber,
+    Map<String, String> positions,
+    String moderatorSummary
+) {}
+
+record ConsensusDecision(
+    boolean consensusReached,
+    Object decision,
+    List<String> dissenting
+) {}
+
+class CircuitBreakerOpenException extends RuntimeException {
+    public CircuitBreakerOpenException(String message) {
+        super(message);
+    }
+}
+
+class TimeoutException extends RuntimeException {
+    public TimeoutException(String message) {
+        super(message);
+    }
+}
+
+package tech.kayys.silat.agent;
+
+import io.quarkus.runtime.StartupEvent;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
+import jakarta.inject.Inject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import tech.kayys.silat.agent.domain.*;
+import tech.kayys.silat.agent.executor.AgentOrchestratorExecutor;
+import tech.kayys.silat.agent.infrastructure.*;
+import tech.kayys.silat.executor.NodeExecutionTask;
+
+import java.time.Instant;
+import java.util.*;
+
+/**
+ * ============================================================================
+ * AGENT ORCHESTRATOR CONFIGURATION & USAGE EXAMPLES
+ * ============================================================================
+ * 
+ * Complete configuration and usage examples for the Agent Orchestrator
+ * 
+ * Package: tech.kayys.silat.agent
+ */
+
+// ==================== CONFIGURATION ====================
+
+/**
+ * Agent Orchestrator Configuration
+ * application.yml / application.properties
+ */
+/*
+# Agent Orchestrator Configuration
+silat:
+  agent:
+    orchestrator:
+      # Built-in agents
+      planner:
+        strategy: PLAN_AND_EXECUTE
+        enable-adaptive: true
+        max-replan-attempts: 3
+      
+      executor:
+        mode: ADAPTIVE
+        max-parallel-tasks: 5
+        enable-failover: true
+      
+      evaluator:
+        criteria:
+          - CORRECTNESS
+          - COMPLETENESS
+          - QUALITY
+          - EFFICIENCY
+        success-threshold: 0.8
+        enable-continuous: true
+      
+      # Orchestration settings
+      orchestration:
+        default-type: SEQUENTIAL
+        coordination-strategy: CENTRALIZED
+        max-concurrent-agents: 10
+        enable-recursive: true
+      
+      # Circuit breaker
+      circuit-breaker:
+        failure-threshold: 5
+        reset-timeout-seconds: 60
+        half-open-max-requests: 3
+      
+      # Communication
+      communication:
+        default-transport: GRPC
+        request-timeout-ms: 300000
+        enable-caching: true
+        cache-ttl-seconds: 3600
+      
+      # Monitoring
+      monitoring:
+        enable-metrics: true
+        enable-tracing: true
+        heartbeat-interval-seconds: 10
+
+# Kafka Configuration for Agent Communication
+kafka:
+  bootstrap:
+    servers: localhost:9092
+mp:
+  messaging:
+    outgoing:
+      agent-requests:
+        connector: smallrye-kafka
+        topic: silat-agent-requests
+        value:
+          serializer: io.quarkus.kafka.client.serialization.JsonbSerializer
+    incoming:
+      agent-responses:
+        connector: smallrye-kafka
+        topic: silat-agent-responses
+        value:
+          deserializer: io.quarkus.kafka.client.serialization.JsonbDeserializer
+
+# gRPC Configuration
+quarkus:
+  grpc:
+    server:
+      port: 9090
+      enable-reflection-service: true
+    clients:
+      agent-client:
+        host: localhost
+        port: 9091
+*/
+
+/**
+ * Agent Orchestrator Configuration Bean
+ */
+@ApplicationScoped
+public class AgentOrchestratorConfig {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(AgentOrchestratorConfig.class);
+    
+    @Inject
+    AgentRegistry agentRegistry;
+    
+    /**
+     * Initialize orchestrator on startup
+     */
+    void onStart(@Observes StartupEvent event) {
+        LOG.info("Initializing Agent Orchestrator...");
+        
+        // Register built-in agents
+        registerBuiltInAgents();
+        
+        LOG.info("Agent Orchestrator initialized successfully");
+    }
+    
+    /**
+     * Register built-in agents (planner, executor, evaluator)
+     */
+    private void registerBuiltInAgents() {
+        // Register built-in planner agent
+        PlannerAgent plannerType = new PlannerAgent(
+            PlanningStrategy.PLAN_AND_EXECUTE,
+            3,
+            true
+        );
+        
+        agentRegistry.registerAgent(
+            "built-in-planner",
+            "Built-in Planner Agent",
+            plannerType,
+            Set.of(
+                AgentCapability.PLANNING,
+                AgentCapability.REASONING,
+                AgentCapability.DECOMPOSITION
+            ),
+            new AgentEndpoint(EndpointType.INTERNAL, "internal://planner", Map.of()),
+            "system"
+        ).subscribe().with(
+            reg -> LOG.info("Registered built-in planner agent"),
+            error -> LOG.error("Failed to register planner", error)
+        );
+        
+        // Register built-in executor agent
+        CommonAgent executorType = new CommonAgent(
+            "execution-coordinator",
+            Set.of("coordination", "execution", "monitoring")
+        );
+        
+        agentRegistry.registerAgent(
+            "built-in-executor",
+            "Built-in Executor Agent",
+            executorType,
+            Set.of(
+                AgentCapability.COORDINATION,
+                AgentCapability.TOOL_USE
+            ),
+            new AgentEndpoint(EndpointType.INTERNAL, "internal://executor", Map.of()),
+            "system"
+        ).subscribe().with(
+            reg -> LOG.info("Registered built-in executor agent"),
+            error -> LOG.error("Failed to register executor", error)
+        );
+        
+        // Register built-in evaluator agent
+        CommonAgent evaluatorType = new CommonAgent(
+            "result-evaluator",
+            Set.of("evaluation", "quality-assessment")
+        );
+        
+        agentRegistry.registerAgent(
+            "built-in-evaluator",
+            "Built-in Evaluator Agent",
+            evaluatorType,
+            Set.of(
+                AgentCapability.EVALUATION,
+                AgentCapability.REASONING
+            ),
+            new AgentEndpoint(EndpointType.INTERNAL, "internal://evaluator", Map.of()),
+            "system"
+        ).subscribe().with(
+            reg -> LOG.info("Registered built-in evaluator agent"),
+            error -> LOG.error("Failed to register evaluator", error)
+        );
+    }
+}
+
+// ==================== USAGE EXAMPLES ====================
+
+/**
+ * Example 1: Simple Task Orchestration
+ */
+@ApplicationScoped
+public class SimpleOrchestrationExample {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(SimpleOrchestrationExample.class);
+    
+    @Inject
+    AgentOrchestratorExecutor orchestrator;
+    
+    @Inject
+    AgentRegistry agentRegistry;
+    
+    /**
+     * Example: Orchestrate a simple data analysis task
+     */
+    public Uni<Map<String, Object>> analyzeCustomerData(String customerId) {
+        LOG.info("Starting customer data analysis for: {}", customerId);
+        
+        // Create execution request
+        AgentExecutionRequest request = AgentExecutionRequest.builder()
+            .taskDescription("Analyze customer purchase history and provide insights")
+            .context("customerId", customerId)
+            .context("analysisType", "comprehensive")
+            .requiredCapability("DATA_ANALYSIS")
+            .requiredCapability("REASONING")
+            .constraints(new ExecutionConstraints(
+                60000L,  // 1 minute timeout
+                2,       // max 2 retries
+                1073741824L, // 1GB memory
+                Set.of("database", "analytics"),
+                Map.of()
+            ))
+            .build();
+        
+        // Create node execution task (simulate workflow node)
+        NodeExecutionTask task = createMockTask(request);
+        
+        // Execute orchestration
+        return orchestrator.execute(task)
+            .map(result -> {
+                if (result.status().equals(tech.kayys.silat.core.domain.NodeExecutionStatus.COMPLETED)) {
+                    LOG.info("Analysis completed successfully");
+                    return (Map<String, Object>) result.output().get("output");
+                } else {
+                    LOG.error("Analysis failed: {}", result.error());
+                    throw new RuntimeException("Analysis failed");
+                }
+            });
+    }
+    
+    private NodeExecutionTask createMockTask(AgentExecutionRequest request) {
+        return new NodeExecutionTask(
+            tech.kayys.silat.core.domain.WorkflowRunId.generate(),
+            tech.kayys.silat.core.domain.NodeId.of("analysis-node"),
+            1,
+            new tech.kayys.silat.core.domain.ExecutionToken(
+                UUID.randomUUID().toString(),
+                tech.kayys.silat.core.domain.WorkflowRunId.generate(),
+                tech.kayys.silat.core.domain.NodeId.of("analysis-node"),
+                1,
+                Instant.now().plusSeconds(3600)
+            ),
+            new HashMap<>(request.context())
+        );
+    }
+}
+
+/**
+ * Example 2: Multi-Agent Collaboration
+ */
+@ApplicationScoped
+public class CollaborativeOrchestrationExample {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(CollaborativeOrchestrationExample.class);
+    
+    @Inject
+    AgentOrchestratorExecutor orchestrator;
+    
+    @Inject
+    AgentRegistry agentRegistry;
+    
+    /**
+     * Example: Multiple agents collaborate to solve complex problem
+     */
+    public Uni<Map<String, Object>> collaborativeProblemSolving(String problemDescription) {
+        LOG.info("Starting collaborative problem solving");
+        
+        // Register specialized agents for collaboration
+        registerSpecializedAgents().await().indefinitely();
+        
+        // Create orchestration request with collaborative configuration
+        AgentExecutionRequest request = AgentExecutionRequest.builder()
+            .taskDescription(problemDescription)
+            .context("orchestrationType", OrchestrationType.COLLABORATIVE.name())
+            .context("coordinationStrategy", CoordinationStrategy.CONSENSUS.name())
+            .context("participatingAgents", List.of(
+                "research-agent",
+                "analysis-agent",
+                "synthesis-agent"
+            ))
+            .requiredCapability("COLLABORATIVE")
+            .build();
+        
+        NodeExecutionTask task = createCollaborativeTask(request);
+        
+        return orchestrator.execute(task)
+            .map(result -> (Map<String, Object>) result.output());
+    }
+    
+    private Uni<Void> registerSpecializedAgents() {
+        // Register research agent
+        Uni<AgentRegistration> research = agentRegistry.registerAgent(
+            "research-agent",
+            "Research Specialist",
+            new CommonAgent("research", Set.of("web-search", "data-gathering")),
+            Set.of(AgentCapability.TOOL_USE, AgentCapability.COLLABORATIVE),
+            new AgentEndpoint(EndpointType.GRPC, "localhost:9092", Map.of()),
+            "demo-tenant"
+        );
+        
+        // Register analysis agent
+        Uni<AgentRegistration> analysis = agentRegistry.registerAgent(
+            "analysis-agent",
+            "Analysis Specialist",
+            new AnalyticsAgent(
+                Set.of(AnalyticsCapability.DESCRIPTIVE, AnalyticsCapability.DIAGNOSTIC),
+                Set.of("json", "csv"),
+                false
+            ),
+            Set.of(AgentCapability.DATA_ANALYSIS, AgentCapability.COLLABORATIVE),
+            new AgentEndpoint(EndpointType.GRPC, "localhost:9093", Map.of()),
+            "demo-tenant"
+        );
+        
+        // Register synthesis agent
+        Uni<AgentRegistration> synthesis = agentRegistry.registerAgent(
+            "synthesis-agent",
+            "Synthesis Specialist",
+            new CommonAgent("synthesis", Set.of("summarization", "integration")),
+            Set.of(AgentCapability.REASONING, AgentCapability.COLLABORATIVE),
+            new AgentEndpoint(EndpointType.GRPC, "localhost:9094", Map.of()),
+            "demo-tenant"
+        );
+        
+        return Uni.join().all(research, analysis, synthesis)
+            .andFailFast()
+            .replaceWithVoid();
+    }
+    
+    private NodeExecutionTask createCollaborativeTask(AgentExecutionRequest request) {
+        // Similar to createMockTask
+        return null;
+    }
+}
+
+/**
+ * Example 3: Code Generation with Coder Agent
+ */
+@ApplicationScoped
+public class CoderAgentExample {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(CoderAgentExample.class);
+    
+    @Inject
+    AgentOrchestratorExecutor orchestrator;
+    
+    @Inject
+    AgentRegistry agentRegistry;
+    
+    /**
+     * Example: Generate and test code using coder agent
+     */
+    public Uni<String> generateAndTestCode(String specification) {
+        LOG.info("Generating code from specification");
+        
+        // Register coder agent
+        registerCoderAgent().await().indefinitely();
+        
+        // Create code generation request
+        AgentExecutionRequest request = AgentExecutionRequest.builder()
+            .taskDescription("Generate production-ready code: " + specification)
+            .context("language", "java")
+            .context("framework", "quarkus")
+            .context("includeTests", true)
+            .requiredCapability("CODE_GENERATION")
+            .requiredCapability("CODE_ANALYSIS")
+            .build();
+        
+        NodeExecutionTask task = createCodeGenTask(request);
+        
+        return orchestrator.execute(task)
+            .map(result -> {
+                if (result.status().equals(tech.kayys.silat.core.domain.NodeExecutionStatus.COMPLETED)) {
+                    Map<String, Object> output = (Map<String, Object>) result.output();
+                    return (String) output.get("generatedCode");
+                }
+                throw new RuntimeException("Code generation failed");
+            });
+    }
+    
+    private Uni<AgentRegistration> registerCoderAgent() {
+        CoderAgent coderType = new CoderAgent(
+            Set.of("java", "python", "typescript"),
+            Set.of(
+                CodeCapability.CODE_GENERATION,
+                CodeCapability.CODE_REVIEW,
+                CodeCapability.TEST_GENERATION
+            ),
+            "jdk-17"
+        );
+        
+        return agentRegistry.registerAgent(
+            "coder-agent-1",
+            "Senior Coder Agent",
+            coderType,
+            Set.of(
+                AgentCapability.CODE_GENERATION,
+                AgentCapability.CODE_ANALYSIS,
+                AgentCapability.REASONING
+            ),
+            new AgentEndpoint(EndpointType.GRPC, "localhost:9095", Map.of()),
+            "demo-tenant"
+        );
+    }
+    
+    private NodeExecutionTask createCodeGenTask(AgentExecutionRequest request) {
+        return null;
+    }
+}
+
+/**
+ * Example 4: Hierarchical Orchestration
+ */
+@ApplicationScoped
+public class HierarchicalOrchestrationExample {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(HierarchicalOrchestrationExample.class);
+    
+    @Inject
+    AgentOrchestratorExecutor orchestrator;
+    
+    /**
+     * Example: Complex task with hierarchical decomposition
+     */
+    public Uni<Map<String, Object>> complexProjectExecution(String projectDescription) {
+        LOG.info("Starting hierarchical orchestration for complex project");
+        
+        // Create hierarchical orchestration request
+        AgentExecutionRequest request = AgentExecutionRequest.builder()
+            .taskDescription(projectDescription)
+            .context("orchestrationType", OrchestrationType.HIERARCHICAL.name())
+            .context("maxDepth", 3)
+            .context("enableRecursive", true)
+            .requiredCapability("ORCHESTRATION")
+            .requiredCapability("PLANNING")
+            .constraints(new ExecutionConstraints(
+                600000L,  // 10 minutes
+                5,
+                2147483648L, // 2GB
+                Set.of(),
+                Map.of("allowSubOrchestration", true)
+            ))
+            .build();
+        
+        NodeExecutionTask task = createHierarchicalTask(request);
+        
+        return orchestrator.execute(task)
+            .map(result -> {
+                Map<String, Object> output = (Map<String, Object>) result.output();
+                
+                LOG.info("Hierarchical orchestration completed");
+                LOG.info("Total steps executed: {}", 
+                    ((Map<String, Object>) output.get("metrics")).get("stepsExecuted"));
+                
+                return output;
+            });
+    }
+    
+    private NodeExecutionTask createHierarchicalTask(AgentExecutionRequest request) {
+        return null;
+    }
+}
+
+/**
+ * Example 5: Competitive Execution (Best Result Wins)
+ */
+@ApplicationScoped
+public class CompetitiveOrchestrationExample {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(CompetitiveOrchestrationExample.class);
+    
+    @Inject
+    AgentOrchestratorExecutor orchestrator;
+    
+    @Inject
+    AgentRegistry agentRegistry;
+    
+    /**
+     * Example: Multiple agents compete to provide best solution
+     */
+    public Uni<Map<String, Object>> competitiveSolution(String challenge) {
+        LOG.info("Starting competitive orchestration");
+        
+        // Register multiple competing agents
+        registerCompetingAgents().await().indefinitely();
+        
+        AgentExecutionRequest request = AgentExecutionRequest.builder()
+            .taskDescription(challenge)
+            .context("orchestrationType", OrchestrationType.COMPETITIVE.name())
+            .context("competingAgents", List.of(
+                "agent-approach-1",
+                "agent-approach-2",
+                "agent-approach-3"
+            ))
+            .context("selectionCriteria", "highest_quality_score")
+            .build();
+        
+        NodeExecutionTask task = createCompetitiveTask(request);
+        
+        return orchestrator.execute(task)
+            .map(result -> {
+                Map<String, Object> output = (Map<String, Object>) result.output();
+                
+                LOG.info("Winning agent: {}", output.get("winnerAgentId"));
+                LOG.info("Winning score: {}", output.get("winningScore"));
+                
+                return output;
+            });
+    }
+    
+    private Uni<Void> registerCompetingAgents() {
+        List<Uni<AgentRegistration>> registrations = new ArrayList<>();
+        
+        for (int i = 1; i <= 3; i++) {
+            final int agentNum = i;
+            Uni<AgentRegistration> reg = agentRegistry.registerAgent(
+                "agent-approach-" + i,
+                "Competitive Agent " + i,
+                new CommonAgent("approach-" + i, Set.of("problem-solving")),
+                Set.of(AgentCapability.REASONING),
+                new AgentEndpoint(EndpointType.GRPC, "localhost:909" + (5 + i), Map.of()),
+                "demo-tenant"
+            );
+            registrations.add(reg);
+        }
+        
+        return Uni.join().all(registrations).andFailFast().replaceWithVoid();
+    }
+    
+    private NodeExecutionTask createCompetitiveTask(AgentExecutionRequest request) {
+        return null;
+    }
+}
+
+/**
+ * Example 6: Adaptive Replanning on Failure
+ */
+@ApplicationScoped
+public class AdaptiveReplanningExample {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(AdaptiveReplanningExample.class);
+    
+    @Inject
+    AgentOrchestratorExecutor orchestrator;
+    
+    /**
+     * Example: Orchestration with automatic replanning on failure
+     */
+    public Uni<Map<String, Object>> resilientExecution(String task) {
+        LOG.info("Starting resilient execution with replanning enabled");
+        
+        AgentExecutionRequest request = AgentExecutionRequest.builder()
+            .taskDescription(task)
+            .context("enableAdaptivePlanning", true)
+            .context("maxReplanAttempts", 3)
+            .context("planningStrategy", PlanningStrategy.ADAPTIVE.name())
+            .build();
+        
+        NodeExecutionTask executionTask = createAdaptiveTask(request);
+        
+        return orchestrator.execute(executionTask)
+            .map(result -> {
+                Map<String, Object> output = (Map<String, Object>) result.output();
+                
+                // Check if replanning occurred
+                @SuppressWarnings("unchecked")
+                List<Object> events = (List<Object>) 
+                    ((Map<String, Object>) output.get("metadata")).get("events");
+                
+                boolean replanned = events.stream()
+                    .anyMatch(e -> e.toString().contains("REPLANNING_TRIGGERED"));
+                
+                if (replanned) {
+                    LOG.info("Task completed successfully after replanning");
+                } else {
+                    LOG.info("Task completed on first attempt");
+                }
+                
+                return output;
+            });
+    }
+    
+    private NodeExecutionTask createAdaptiveTask(AgentExecutionRequest request) {
+        return null;
+    }
+}
+
+/**
+ * Example 7: Real-time Monitoring and Metrics
+ */
+@ApplicationScoped
+public class OrchestrationMonitoringExample {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(OrchestrationMonitoringExample.class);
+    
+    @Inject
+    AgentOrchestratorExecutor orchestrator;
+    
+    /**
+     * Example: Monitor orchestration progress in real-time
+     */
+    public Uni<Map<String, Object>> monitoredExecution(String task) {
+        LOG.info("Starting monitored execution");
+        
+        AgentExecutionRequest request = AgentExecutionRequest.builder()
+            .taskDescription(task)
+            .context("enableMonitoring", true)
+            .context("metricsCollectionInterval", 1000) // every second
+            .build();
+        
+        NodeExecutionTask executionTask = createMonitoredTask(request);
+        
+        return orchestrator.execute(executionTask)
+            .onItem().invoke(result -> {
+                // Log detailed metrics
+                Map<String, Object> output = (Map<String, Object>) result.output();
+                @SuppressWarnings("unchecked")
+                Map<String, Object> metrics = (Map<String, Object>) output.get("metrics");
+                
+                LOG.info("=== Orchestration Metrics ===");
+                LOG.info("Execution Time: {} ms", metrics.get("executionTimeMs"));
+                LOG.info("Tokens Used: {}", metrics.get("tokensUsed"));
+                LOG.info("Tool Invocations: {}", metrics.get("toolInvocations"));
+                LOG.info("Success Score: {}", metrics.get("successScore"));
+                LOG.info("============================");
+            })
+            .map(result -> (Map<String, Object>) result.output());
+    }
+    
+    private NodeExecutionTask createMonitoredTask(AgentExecutionRequest request) {
+        return null;
+    }
+}
+
+// ==================== INTEGRATION TESTS ====================
+
+/**
+ * Integration test demonstrating full orchestrator lifecycle
+ */
+public class AgentOrchestratorIntegrationTest {
+    
+    @Inject
+    AgentOrchestratorExecutor orchestrator;
+    
+    @Inject
+    AgentRegistry registry;
+    
+    public void testCompleteOrchestrationFlow() {
+        // 1. Register agents
+        registry.registerAgent(
+            "test-agent",
+            "Test Agent",
+            new CommonAgent("test", Set.of("testing")),
+            Set.of(AgentCapability.REASONING),
+            new AgentEndpoint(EndpointType.INTERNAL, "internal://test", Map.of()),
+            "test-tenant"
+        ).await().indefinitely();
+        
+        // 2. Create execution request
+        AgentExecutionRequest request = AgentExecutionRequest.builder()
+            .taskDescription("Test orchestration flow")
+            .context("testMode", true)
+            .build();
+        
+        // 3. Execute
+        NodeExecutionTask task = new NodeExecutionTask(
+            tech.kayys.silat.core.domain.WorkflowRunId.generate(),
+            tech.kayys.silat.core.domain.NodeId.of("test-node"),
+            1,
+            new tech.kayys.silat.core.domain.ExecutionToken(
+                UUID.randomUUID().toString(),
+                tech.kayys.silat.core.domain.WorkflowRunId.generate(),
+                tech.kayys.silat.core.domain.NodeId.of("test-node"),
+                1,
+                Instant.now().plusSeconds(3600)
+            ),
+            new HashMap<>(request.context())
+        );
+        
+        tech.kayys.silat.executor.NodeExecutionResult result = 
+            orchestrator.execute(task).await().indefinitely();
+        
+        // 4. Verify results
+        assert result.status().equals(
+            tech.kayys.silat.core.domain.NodeExecutionStatus.COMPLETED);
+        
+        // 5. Cleanup
+        registry.deregisterAgent("test-agent").await().indefinitely();
+    }
+}
+
+/**
+ * ============================================================================
+ * BEST PRACTICES & RECOMMENDATIONS
+ * ============================================================================
+ * 
+ * 1. Agent Registration:
+ *    - Register agents on startup or dynamically as needed
+ *    - Use descriptive names and proper capability declarations
+ *    - Implement health checks and heartbeat mechanisms
+ * 
+ * 2. Error Handling:
+ *    - Enable adaptive replanning for critical workflows
+ *    - Set appropriate timeouts and retry policies
+ *    - Use circuit breakers to prevent cascading failures
+ * 
+ * 3. Performance:
+ *    - Use parallel execution for independent tasks
+ *    - Enable caching for idempotent operations
+ *    - Monitor and optimize token usage
+ * 
+ * 4. Security:
+ *    - Enforce tenant isolation
+ *    - Validate agent capabilities before delegation
+ *    - Implement proper authentication for agent endpoints
+ * 
+ * 5. Observability:
+ *    - Enable detailed logging and tracing
+ *    - Collect metrics on execution time and resource usage
+ *    - Monitor circuit breaker states
+ * 
+ * 6. Scalability:
+ *    - Use Kafka for asynchronous agent communication
+ *    - Implement proper load balancing
+ *    - Consider agent pooling for high-throughput scenarios
+ */
+

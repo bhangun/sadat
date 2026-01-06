@@ -1,0 +1,745 @@
+// Package postgres provides PostgreSQL storage implementation
+package postgres
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/lib/pq"
+	_ "github.com/lib/pq"
+	"go.uber.org/zap"
+
+	"tech.kayys.golek/pkg/core"
+	"tech.kayys.golek/pkg/engine"
+)
+
+// ============================================================================
+// POSTGRES STORAGE
+// ============================================================================
+
+// PostgresStorage provides PostgreSQL-backed storage
+type PostgresStorage struct {
+	db               *sql.DB
+	logger           *zap.Logger
+	definitionRepo   *PostgresDefinitionRepository
+	runRepo          *PostgresRunRepository
+	eventStore       *PostgresEventStore
+	executorRegistry *PostgresExecutorRegistry
+	lockManager      *PostgresLockManager
+}
+
+// NewPostgresStorage creates a new PostgreSQL storage instance
+func NewPostgresStorage(config DatabaseConfig, logger *zap.Logger) (*PostgresStorage, error) {
+	// Build connection string
+	connStr := fmt.Sprintf(
+		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		config.Host, config.Port, config.Username, config.Password,
+		config.Database, config.SSLMode,
+	)
+
+	// Open connection
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
+
+	// Configure connection pool
+	db.SetMaxOpenConns(config.MaxConnections)
+	db.SetMaxIdleConns(config.MaxIdleConns)
+	db.SetConnMaxLifetime(time.Duration(config.ConnMaxLifetime) * time.Second)
+
+	// Test connection
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	logger.Info("PostgreSQL connection established",
+		zap.String("host", config.Host),
+		zap.String("database", config.Database),
+	)
+
+	storage := &PostgresStorage{
+		db:     db,
+		logger: logger,
+	}
+
+	// Initialize repositories
+	storage.definitionRepo = NewPostgresDefinitionRepository(db, logger)
+	storage.runRepo = NewPostgresRunRepository(db, logger)
+	storage.eventStore = NewPostgresEventStore(db, logger)
+	storage.executorRegistry = NewPostgresExecutorRegistry(db, logger)
+	storage.lockManager = NewPostgresLockManager(db, logger)
+
+	// Run migrations
+	if err := storage.migrate(); err != nil {
+		return nil, fmt.Errorf("migration failed: %w", err)
+	}
+
+	return storage, nil
+}
+
+// GetDefinitionRepo returns the definition repository
+func (s *PostgresStorage) GetDefinitionRepo() core.WorkflowDefinitionRepository {
+	return s.definitionRepo
+}
+
+// GetRunRepo returns the run repository
+func (s *PostgresStorage) GetRunRepo() core.WorkflowRunRepository {
+	return s.runRepo
+}
+
+// GetEventStore returns the event store
+func (s *PostgresStorage) GetEventStore() core.EventStore {
+	return s.eventStore
+}
+
+// GetExecutorRegistry returns the executor registry
+func (s *PostgresStorage) GetExecutorRegistry() core.ExecutorRegistry {
+	return s.executorRegistry
+}
+
+// GetLockManager returns the lock manager
+func (s *PostgresStorage) GetLockManager() engine.DistributedLockManager {
+	return s.lockManager
+}
+
+// Close closes the database connection
+func (s *PostgresStorage) Close() error {
+	return s.db.Close()
+}
+
+// migrate runs database migrations
+func (s *PostgresStorage) migrate() error {
+	s.logger.Info("Running database migrations")
+
+	migrations := []string{
+		// Workflow definitions table
+		`CREATE TABLE IF NOT EXISTS workflow_definitions (
+			id VARCHAR(255) PRIMARY KEY,
+			tenant_id VARCHAR(255) NOT NULL,
+			name VARCHAR(255) NOT NULL,
+			version VARCHAR(50) NOT NULL,
+			description TEXT,
+			nodes JSONB NOT NULL,
+			inputs JSONB,
+			outputs JSONB,
+			metadata JSONB,
+			retry_policy JSONB,
+			compensation_policy JSONB,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			is_active BOOLEAN NOT NULL DEFAULT true,
+			UNIQUE(tenant_id, name, version)
+		)`,
+
+		`CREATE INDEX IF NOT EXISTS idx_definitions_tenant ON workflow_definitions(tenant_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_definitions_active ON workflow_definitions(is_active)`,
+
+		// Workflow runs table
+		`CREATE TABLE IF NOT EXISTS workflow_runs (
+			id VARCHAR(255) PRIMARY KEY,
+			tenant_id VARCHAR(255) NOT NULL,
+			definition_id VARCHAR(255) NOT NULL,
+			status VARCHAR(50) NOT NULL,
+			variables JSONB,
+			node_executions JSONB,
+			execution_path TEXT[],
+			pending_nodes TEXT[],
+			created_at TIMESTAMP NOT NULL,
+			started_at TIMESTAMP,
+			completed_at TIMESTAMP,
+			last_updated_at TIMESTAMP NOT NULL,
+			error JSONB,
+			labels JSONB,
+			version BIGINT NOT NULL DEFAULT 0
+		)`,
+
+		`CREATE INDEX IF NOT EXISTS idx_runs_tenant ON workflow_runs(tenant_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_runs_definition ON workflow_runs(definition_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_runs_status ON workflow_runs(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_runs_created ON workflow_runs(created_at DESC)`,
+
+		// Events table (event sourcing)
+		`CREATE TABLE IF NOT EXISTS workflow_events (
+			id BIGSERIAL PRIMARY KEY,
+			event_id VARCHAR(255) UNIQUE NOT NULL,
+			event_type VARCHAR(100) NOT NULL,
+			run_id VARCHAR(255) NOT NULL,
+			sequence_num BIGINT NOT NULL,
+			occurred_at TIMESTAMP NOT NULL,
+			payload JSONB NOT NULL,
+			UNIQUE(run_id, sequence_num)
+		)`,
+
+		`CREATE INDEX IF NOT EXISTS idx_events_run ON workflow_events(run_id, sequence_num)`,
+		`CREATE INDEX IF NOT EXISTS idx_events_type ON workflow_events(event_type)`,
+
+		// Executors table
+		`CREATE TABLE IF NOT EXISTS executors (
+			id VARCHAR(255) PRIMARY KEY,
+			executor_type VARCHAR(100) NOT NULL,
+			communication_type VARCHAR(50) NOT NULL,
+			endpoint VARCHAR(500),
+			metadata JSONB,
+			capabilities TEXT[],
+			max_concurrent INT NOT NULL,
+			status VARCHAR(50) NOT NULL,
+			last_heartbeat TIMESTAMP NOT NULL,
+			registered_at TIMESTAMP NOT NULL
+		)`,
+
+		`CREATE INDEX IF NOT EXISTS idx_executors_type ON executors(executor_type)`,
+		`CREATE INDEX IF NOT EXISTS idx_executors_status ON executors(status)`,
+
+		// Distributed locks table
+		`CREATE TABLE IF NOT EXISTS distributed_locks (
+			lock_key VARCHAR(500) PRIMARY KEY,
+			owner VARCHAR(255) NOT NULL,
+			acquired_at TIMESTAMP NOT NULL,
+			expires_at TIMESTAMP NOT NULL
+		)`,
+
+		`CREATE INDEX IF NOT EXISTS idx_locks_expires ON distributed_locks(expires_at)`,
+
+		// Execution tokens table (for idempotency)
+		`CREATE TABLE IF NOT EXISTS execution_tokens (
+			token VARCHAR(255) PRIMARY KEY,
+			run_id VARCHAR(255) NOT NULL,
+			node_id VARCHAR(255) NOT NULL,
+			attempt INT NOT NULL,
+			expires_at TIMESTAMP NOT NULL
+		)`,
+
+		`CREATE INDEX IF NOT EXISTS idx_tokens_expires ON execution_tokens(expires_at)`,
+	}
+
+	for _, migration := range migrations {
+		if _, err := s.db.Exec(migration); err != nil {
+			return fmt.Errorf("migration failed: %w", err)
+		}
+	}
+
+	s.logger.Info("Database migrations completed")
+
+	return nil
+}
+
+// ============================================================================
+// WORKFLOW DEFINITION REPOSITORY
+// ============================================================================
+
+type PostgresDefinitionRepository struct {
+	db     *sql.DB
+	logger *zap.Logger
+}
+
+func NewPostgresDefinitionRepository(db *sql.DB, logger *zap.Logger) *PostgresDefinitionRepository {
+	return &PostgresDefinitionRepository{db: db, logger: logger}
+}
+
+func (r *PostgresDefinitionRepository) Save(ctx context.Context, def *core.WorkflowDefinition) error {
+	query := `
+		INSERT INTO workflow_definitions (
+			id, tenant_id, name, version, description, nodes, inputs, outputs,
+			metadata, retry_policy, compensation_policy, created_at, updated_at, is_active
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		ON CONFLICT (id) DO UPDATE SET
+			description = $5, nodes = $6, inputs = $7, outputs = $8,
+			metadata = $9, retry_policy = $10, compensation_policy = $11,
+			updated_at = $13, is_active = $14
+	`
+
+	nodesJSON, _ := json.Marshal(def.Nodes)
+	inputsJSON, _ := json.Marshal(def.Inputs)
+	outputsJSON, _ := json.Marshal(def.Outputs)
+	metadataJSON, _ := json.Marshal(def.Metadata)
+	retryPolicyJSON, _ := json.Marshal(def.RetryPolicy)
+	compensationJSON, _ := json.Marshal(def.Compensation)
+
+	_, err := r.db.ExecContext(ctx, query,
+		def.ID, def.TenantID, def.Name, def.Version, def.Description,
+		nodesJSON, inputsJSON, outputsJSON, metadataJSON,
+		retryPolicyJSON, compensationJSON,
+		def.CreatedAt, def.UpdatedAt, def.IsActive,
+	)
+
+	return err
+}
+
+func (r *PostgresDefinitionRepository) FindByID(ctx context.Context, id core.WorkflowDefinitionID, tenantID core.TenantID) (*core.WorkflowDefinition, error) {
+	query := `
+		SELECT id, tenant_id, name, version, description, nodes, inputs, outputs,
+			metadata, retry_policy, compensation_policy, created_at, updated_at, is_active
+		FROM workflow_definitions
+		WHERE id = $1 AND tenant_id = $2
+	`
+
+	var def core.WorkflowDefinition
+	var nodesJSON, inputsJSON, outputsJSON, metadataJSON, retryPolicyJSON, compensationJSON []byte
+
+	err := r.db.QueryRowContext(ctx, query, id, tenantID).Scan(
+		&def.ID, &def.TenantID, &def.Name, &def.Version, &def.Description,
+		&nodesJSON, &inputsJSON, &outputsJSON, &metadataJSON,
+		&retryPolicyJSON, &compensationJSON,
+		&def.CreatedAt, &def.UpdatedAt, &def.IsActive,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("workflow definition not found")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	json.Unmarshal(nodesJSON, &def.Nodes)
+	json.Unmarshal(inputsJSON, &def.Inputs)
+	json.Unmarshal(outputsJSON, &def.Outputs)
+	json.Unmarshal(metadataJSON, &def.Metadata)
+	json.Unmarshal(retryPolicyJSON, &def.RetryPolicy)
+	json.Unmarshal(compensationJSON, &def.Compensation)
+
+	return &def, nil
+}
+
+func (r *PostgresDefinitionRepository) FindByName(ctx context.Context, name, version string, tenantID core.TenantID) (*core.WorkflowDefinition, error) {
+	query := `
+		SELECT id, tenant_id, name, version, description, nodes, inputs, outputs,
+			metadata, retry_policy, compensation_policy, created_at, updated_at, is_active
+		FROM workflow_definitions
+		WHERE name = $1 AND version = $2 AND tenant_id = $3
+	`
+
+	var def core.WorkflowDefinition
+	var nodesJSON, inputsJSON, outputsJSON, metadataJSON, retryPolicyJSON, compensationJSON []byte
+
+	err := r.db.QueryRowContext(ctx, query, name, version, tenantID).Scan(
+		&def.ID, &def.TenantID, &def.Name, &def.Version, &def.Description,
+		&nodesJSON, &inputsJSON, &outputsJSON, &metadataJSON,
+		&retryPolicyJSON, &compensationJSON,
+		&def.CreatedAt, &def.UpdatedAt, &def.IsActive,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("workflow definition not found")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	json.Unmarshal(nodesJSON, &def.Nodes)
+	json.Unmarshal(inputsJSON, &def.Inputs)
+	json.Unmarshal(outputsJSON, &def.Outputs)
+	json.Unmarshal(metadataJSON, &def.Metadata)
+	json.Unmarshal(retryPolicyJSON, &def.RetryPolicy)
+	json.Unmarshal(compensationJSON, &def.Compensation)
+
+	return &def, nil
+}
+
+func (r *PostgresDefinitionRepository) List(ctx context.Context, tenantID core.TenantID, activeOnly bool) ([]*core.WorkflowDefinition, error) {
+	query := `
+		SELECT id, tenant_id, name, version, description, nodes, inputs, outputs,
+			metadata, retry_policy, compensation_policy, created_at, updated_at, is_active
+		FROM workflow_definitions
+		WHERE tenant_id = $1
+	`
+
+	if activeOnly {
+		query += " AND is_active = true"
+	}
+
+	query += " ORDER BY created_at DESC"
+
+	rows, err := r.db.QueryContext(ctx, query, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var definitions []*core.WorkflowDefinition
+
+	for rows.Next() {
+		var def core.WorkflowDefinition
+		var nodesJSON, inputsJSON, outputsJSON, metadataJSON, retryPolicyJSON, compensationJSON []byte
+
+		if err := rows.Scan(
+			&def.ID, &def.TenantID, &def.Name, &def.Version, &def.Description,
+			&nodesJSON, &inputsJSON, &outputsJSON, &metadataJSON,
+			&retryPolicyJSON, &compensationJSON,
+			&def.CreatedAt, &def.UpdatedAt, &def.IsActive,
+		); err != nil {
+			return nil, err
+		}
+
+		json.Unmarshal(nodesJSON, &def.Nodes)
+		json.Unmarshal(inputsJSON, &def.Inputs)
+		json.Unmarshal(outputsJSON, &def.Outputs)
+		json.Unmarshal(metadataJSON, &def.Metadata)
+		json.Unmarshal(retryPolicyJSON, &def.RetryPolicy)
+		json.Unmarshal(compensationJSON, &def.Compensation)
+
+		definitions = append(definitions, &def)
+	}
+
+	return definitions, rows.Err()
+}
+
+func (r *PostgresDefinitionRepository) Delete(ctx context.Context, id core.WorkflowDefinitionID, tenantID core.TenantID) error {
+	query := `UPDATE workflow_definitions SET is_active = false WHERE id = $1 AND tenant_id = $2`
+	_, err := r.db.ExecContext(ctx, query, id, tenantID)
+	return err
+}
+
+// ============================================================================
+// WORKFLOW RUN REPOSITORY
+// ============================================================================
+
+type PostgresRunRepository struct {
+	db     *sql.DB
+	logger *zap.Logger
+}
+
+func NewPostgresRunRepository(db *sql.DB, logger *zap.Logger) *PostgresRunRepository {
+	return &PostgresRunRepository{db: db, logger: logger}
+}
+
+func (r *PostgresRunRepository) Save(ctx context.Context, run *core.WorkflowRun) error {
+	query := `
+		INSERT INTO workflow_runs (
+			id, tenant_id, definition_id, status, variables, node_executions,
+			execution_path, pending_nodes, created_at, started_at, completed_at,
+			last_updated_at, error, labels, version
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		ON CONFLICT (id) DO UPDATE SET
+			status = $4, variables = $5, node_executions = $6,
+			execution_path = $7, pending_nodes = $8, started_at = $10,
+			completed_at = $11, last_updated_at = $12, error = $13,
+			labels = $14, version = $15
+	`
+
+	variablesJSON, _ := json.Marshal(run.Variables)
+	nodeExecutionsJSON, _ := json.Marshal(run.NodeExecutions)
+	errorJSON, _ := json.Marshal(run.Error)
+	labelsJSON, _ := json.Marshal(run.Labels)
+
+	_, err := r.db.ExecContext(ctx, query,
+		run.ID, run.TenantID, run.DefinitionID, run.Status,
+		variablesJSON, nodeExecutionsJSON,
+		pq.Array(run.ExecutionPath), pq.Array(convertNodeIDs(run.PendingNodes)),
+		run.CreatedAt, run.StartedAt, run.CompletedAt,
+		run.LastUpdatedAt, errorJSON, labelsJSON, run.Version,
+	)
+
+	return err
+}
+
+func (r *PostgresRunRepository) FindByID(ctx context.Context, id core.WorkflowRunID, tenantID core.TenantID) (*core.WorkflowRun, error) {
+	query := `
+		SELECT id, tenant_id, definition_id, status, variables, node_executions,
+			execution_path, pending_nodes, created_at, started_at, completed_at,
+			last_updated_at, error, labels, version
+		FROM workflow_runs
+		WHERE id = $1
+	`
+
+	args := []interface{}{id}
+	if tenantID != "" {
+		query += " AND tenant_id = $2"
+		args = append(args, tenantID)
+	}
+
+	var run core.WorkflowRun
+	var variablesJSON, nodeExecutionsJSON, errorJSON, labelsJSON []byte
+	var executionPath, pendingNodes []string
+
+	err := r.db.QueryRowContext(ctx, query, args...).Scan(
+		&run.ID, &run.TenantID, &run.DefinitionID, &run.Status,
+		&variablesJSON, &nodeExecutionsJSON,
+		pq.Array(&executionPath), pq.Array(&pendingNodes),
+		&run.CreatedAt, &run.StartedAt, &run.CompletedAt,
+		&run.LastUpdatedAt, &errorJSON, &labelsJSON, &run.Version,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("workflow run not found")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	json.Unmarshal(variablesJSON, &run.Variables)
+	json.Unmarshal(nodeExecutionsJSON, &run.NodeExecutions)
+	json.Unmarshal(errorJSON, &run.Error)
+	json.Unmarshal(labelsJSON, &run.Labels)
+	run.ExecutionPath = executionPath
+	run.PendingNodes = convertToNodeIDs(pendingNodes)
+
+	return &run, nil
+}
+
+func (r *PostgresRunRepository) Query(ctx context.Context, query *core.RunQuery) ([]*core.WorkflowRun, error) {
+	sql := `
+		SELECT id, tenant_id, definition_id, status, variables, node_executions,
+			execution_path, pending_nodes, created_at, started_at, completed_at,
+			last_updated_at, error, labels, version
+		FROM workflow_runs
+		WHERE tenant_id = $1
+	`
+
+	args := []interface{}{query.TenantID}
+	argNum := 2
+
+	if query.DefinitionID != nil {
+		sql += fmt.Sprintf(" AND definition_id = $%d", argNum)
+		args = append(args, *query.DefinitionID)
+		argNum++
+	}
+
+	if query.Status != nil {
+		sql += fmt.Sprintf(" AND status = $%d", argNum)
+		args = append(args, *query.Status)
+		argNum++
+	}
+
+	if query.CreatedAfter != nil {
+		sql += fmt.Sprintf(" AND created_at > $%d", argNum)
+		args = append(args, *query.CreatedAfter)
+		argNum++
+	}
+
+	sql += " ORDER BY created_at DESC"
+
+	if query.Limit > 0 {
+		sql += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argNum, argNum+1)
+		args = append(args, query.Limit, query.Offset)
+	}
+
+	rows, err := r.db.QueryContext(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var runs []*core.WorkflowRun
+
+	for rows.Next() {
+		var run core.WorkflowRun
+		var variablesJSON, nodeExecutionsJSON, errorJSON, labelsJSON []byte
+		var executionPath, pendingNodes []string
+
+		if err := rows.Scan(
+			&run.ID, &run.TenantID, &run.DefinitionID, &run.Status,
+			&variablesJSON, &nodeExecutionsJSON,
+			pq.Array(&executionPath), pq.Array(&pendingNodes),
+			&run.CreatedAt, &run.StartedAt, &run.CompletedAt,
+			&run.LastUpdatedAt, &errorJSON, &labelsJSON, &run.Version,
+		); err != nil {
+			return nil, err
+		}
+
+		json.Unmarshal(variablesJSON, &run.Variables)
+		json.Unmarshal(nodeExecutionsJSON, &run.NodeExecutions)
+		json.Unmarshal(errorJSON, &run.Error)
+		json.Unmarshal(labelsJSON, &run.Labels)
+		run.ExecutionPath = executionPath
+		run.PendingNodes = convertToNodeIDs(pendingNodes)
+
+		runs = append(runs, &run)
+	}
+
+	return runs, rows.Err()
+}
+
+func (r *PostgresRunRepository) CountActive(ctx context.Context, tenantID core.TenantID) (int64, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM workflow_runs
+		WHERE tenant_id = $1 AND status IN ('PENDING', 'RUNNING', 'SUSPENDED')
+	`
+
+	var count int64
+	err := r.db.QueryRowContext(ctx, query, tenantID).Scan(&count)
+	return count, err
+}
+
+// Helper functions
+func convertNodeIDs(nodeIDs []core.NodeID) []string {
+	result := make([]string, len(nodeIDs))
+	for i, id := range nodeIDs {
+		result[i] = id.String()
+	}
+	return result
+}
+
+func convertToNodeIDs(strings []string) []core.NodeID {
+	result := make([]core.NodeID, len(strings))
+	for i, s := range strings {
+		result[i] = core.NodeID(s)
+	}
+	return result
+}
+
+// ============================================================================
+// EVENT STORE
+// ============================================================================
+
+type PostgresEventStore struct {
+	db     *sql.DB
+	logger *zap.Logger
+}
+
+func NewPostgresEventStore(db *sql.DB, logger *zap.Logger) *PostgresEventStore {
+	return &PostgresEventStore{db: db, logger: logger}
+}
+
+func (s *PostgresEventStore) AppendEvents(ctx context.Context, runID core.WorkflowRunID, events []core.Event, expectedVersion int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for i, event := range events {
+		payloadJSON, _ := json.Marshal(event.Payload())
+
+		query := `
+			INSERT INTO workflow_events (event_id, event_type, run_id, sequence_num, occurred_at, payload)
+			VALUES ($1, $2, $3, $4, $5, $6)
+		`
+
+		sequenceNum := expectedVersion + int64(i) + 1
+
+		_, err := tx.ExecContext(ctx, query,
+			event.EventID(), event.EventType(), runID, sequenceNum,
+			event.OccurredAt(), payloadJSON,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (s *PostgresEventStore) GetEvents(ctx context.Context, runID core.WorkflowRunID) ([]core.Event, error) {
+	query := `
+		SELECT event_id, event_type, run_id, sequence_num, occurred_at, payload
+		FROM workflow_events
+		WHERE run_id = $1
+		ORDER BY sequence_num ASC
+	`
+
+	rows, err := s.db.QueryContext(ctx, query, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []core.Event
+
+	for rows.Next() {
+		var eventID, eventType string
+		var rID core.WorkflowRunID
+		var sequenceNum int64
+		var occurredAt time.Time
+		var payloadJSON []byte
+
+		if err := rows.Scan(&eventID, &eventType, &rID, &sequenceNum, &occurredAt, &payloadJSON); err != nil {
+			return nil, err
+		}
+
+		// Reconstruct event based on type
+		event := s.reconstructEvent(eventID, eventType, rID, sequenceNum, occurredAt, payloadJSON)
+		if event != nil {
+			events = append(events, event)
+		}
+	}
+
+	return events, rows.Err()
+}
+
+func (s *PostgresEventStore) GetEventsSince(ctx context.Context, runID core.WorkflowRunID, version int64) ([]core.Event, error) {
+	query := `
+		SELECT event_id, event_type, run_id, sequence_num, occurred_at, payload
+		FROM workflow_events
+		WHERE run_id = $1 AND sequence_num > $2
+		ORDER BY sequence_num ASC
+	`
+
+	rows, err := s.db.QueryContext(ctx, query, runID, version)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []core.Event
+
+	for rows.Next() {
+		var eventID, eventType string
+		var rID core.WorkflowRunID
+		var sequenceNum int64
+		var occurredAt time.Time
+		var payloadJSON []byte
+
+		if err := rows.Scan(&eventID, &eventType, &rID, &sequenceNum, &occurredAt, &payloadJSON); err != nil {
+			return nil, err
+		}
+
+		event := s.reconstructEvent(eventID, eventType, rID, sequenceNum, occurredAt, payloadJSON)
+		if event != nil {
+			events = append(events, event)
+		}
+	}
+
+	return events, rows.Err()
+}
+
+func (s *PostgresEventStore) reconstructEvent(eventID, eventType string, runID core.WorkflowRunID, seqNum int64, occurredAt time.Time, payloadJSON []byte) core.Event {
+	baseEvent := core.BaseEvent{
+		ID:          eventID,
+		Type:        eventType,
+		Timestamp:   occurredAt,
+		RunID:       runID,
+		SequenceNum: seqNum,
+	}
+
+	var payload map[string]any
+	json.Unmarshal(payloadJSON, &payload)
+
+	// Reconstruct specific event types
+	switch eventType {
+	case "WorkflowStarted":
+		return &core.WorkflowStartedEvent{BaseEvent: baseEvent}
+	case "NodeScheduled":
+		return &core.NodeScheduledEvent{BaseEvent: baseEvent}
+	case "NodeCompleted":
+		return &core.NodeCompletedEvent{BaseEvent: baseEvent}
+	case "NodeFailed":
+		return &core.NodeFailedEvent{BaseEvent: baseEvent}
+	case "WorkflowCompleted":
+		return &core.WorkflowCompletedEvent{BaseEvent: baseEvent}
+	case "WorkflowFailed":
+		return &core.WorkflowFailedEvent{BaseEvent: baseEvent}
+	default:
+		return nil
+	}
+}
+
+// ============================================================================
+// EXECUTOR REGISTRY & LOCK MANAGER (Continued in next artifact)
+// ============================================================================
+
+type DatabaseConfig struct {
+	Host            string
+	Port            int
+	Database        string
+	Username        string
+	Password        string
+	MaxConnections  int
+	MaxIdleConns    int
+	ConnMaxLifetime int
+	SSLMode         string
+}

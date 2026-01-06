@@ -4,13 +4,13 @@ import io.quarkus.grpc.GrpcService;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
-import tech.kayys.wayang.workflow.engine.WorkflowRunManager;
 import tech.kayys.wayang.workflow.service.RunCheckpointService;
-import tech.kayys.wayang.workflow.engine.WorkflowEngine;
 import tech.kayys.wayang.workflow.v1.*;
 import tech.kayys.wayang.schema.execution.ErrorPayload;
 import com.google.protobuf.Empty;
 import io.grpc.Status;
+import tech.kayys.wayang.workflow.kernel.WorkflowEngine;
+import tech.kayys.wayang.workflow.kernel.WorkflowRunManager;
 import tech.kayys.wayang.workflow.security.annotations.ControlPlaneSecured;
 
 import java.util.Collections;
@@ -96,12 +96,12 @@ public class WorkflowRunGrpcService implements WorkflowRunService {
 
         return runManager.queryRuns(tenantId, request.getWorkflowId(), status, page, size)
                 .map(result -> ListRunsResponse.newBuilder()
-                        .addAllRuns(result.runs().stream().map(this::toProto).collect(Collectors.toList()))
+                        .addAllRuns(result.stream().map(this::toProtoDomain).collect(Collectors.toList()))
                         .setPagination(PaginationResponse.newBuilder()
                                 .setPage(page)
                                 .setSize(size)
-                                .setTotalElements(result.totalElements())
-                                .setTotalPages(result.totalPages())
+                                .setTotalElements(result.size())
+                                .setTotalPages(1) // Placeholder as List doesn't provide this anymore
                                 .build())
                         .build())
                 .onFailure().recoverWithUni(this::handleErrors);
@@ -147,20 +147,12 @@ public class WorkflowRunGrpcService implements WorkflowRunService {
 
     @Override
     public Uni<WorkflowRun> failRun(FailRunRequest request) {
-        ErrorPayload error = new ErrorPayload(
-                null,
-                "FAIL_RUN_API",
-                Collections.emptyMap(),
-                false,
-                "workflow-engine",
-                request.getError(),
-                500,
-                null,
-                java.time.LocalDateTime.now(),
-                null,
-                null,
-                null,
-                null);
+        tech.kayys.wayang.workflow.api.dto.ErrorResponse error = tech.kayys.wayang.workflow.api.dto.ErrorResponse
+                .builder()
+                .errorCode("FAIL_RUN_API")
+                .message(request.getError())
+                .timestamp(java.time.Instant.now())
+                .build();
         return runManager
                 .failRun(request.getRunId(), getTenantId(), error)
                 .map(this::toProto)
@@ -187,6 +179,18 @@ public class WorkflowRunGrpcService implements WorkflowRunService {
         return runManager.getActiveRunsCount(getTenantId())
                 .map(count -> ActiveRunCount.newBuilder().setCount(count).build())
                 .onFailure().recoverWithUni(this::handleErrors);
+    }
+
+    private WorkflowRun toProtoDomain(tech.kayys.wayang.workflow.api.dto.RunResponse domain) {
+        if (domain == null)
+            return null;
+        return WorkflowRun.newBuilder()
+                .setRunId(domain.getRunId())
+                .setWorkflowId(domain.getWorkflowId())
+                .setWorkflowVersion(domain.getWorkflowVersion() != null ? domain.getWorkflowVersion() : "")
+                .setStatus(domain.getStatus() != null ? domain.getStatus() : "")
+                .setCreatedAt(domain.getCreatedAt() != null ? domain.getCreatedAt().toEpochMilli() : 0)
+                .build();
     }
 
     private WorkflowRun toProto(tech.kayys.wayang.workflow.domain.WorkflowRun domain) {

@@ -10,7 +10,7 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.smallrye.mutiny.Uni;
-import io.vertx.mutiny.pgclient.PgPool;
+import io.vertx.mutiny.sqlclient.Pool;
 import io.vertx.mutiny.sqlclient.Row;
 import io.vertx.mutiny.sqlclient.RowSet;
 import io.vertx.mutiny.sqlclient.Tuple;
@@ -36,7 +36,7 @@ public class PostgresEventStore implements EventStore {
     private static final Logger LOG = LoggerFactory.getLogger(PostgresEventStore.class);
 
     @Inject
-    PgPool pgPool;
+    Pool pgPool;
 
     @Inject
     ObjectMapper objectMapper;

@@ -1,0 +1,5 @@
+// ========================================================================
+// DEFAULT IMPLEMENTATIONS (Can be replaced/swapped)
+// ========================================================================
+
+package tech.kayys.wayang.workflow.engine.impl;

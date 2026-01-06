@@ -1,0 +1,619 @@
+package tech.kayys.silat.plugin.registry;
+
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import tech.kayys.silat.core.scheduler.CommunicationType;
+import tech.kayys.silat.plugin.*;
+
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+
+/**
+ * ============================================================================
+ * UI WIDGET REGISTRY
+ * ============================================================================
+ * 
+ * Registry for UI widgets used in the visual designer.
+ * Widgets can be:
+ * - Built-in (React components from Silat)
+ * - Plugin-provided (custom React/Vue/Web Components)
+ * - External (CDN-hosted)
+ */
+@ApplicationScoped
+public class UIWidgetRegistry {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(UIWidgetRegistry.class);
+    
+    // Widget storage: widgetId -> WidgetDescriptor
+    private final Map<String, WidgetDescriptor> widgets = new ConcurrentHashMap<>();
+    
+    // Node type to widget mapping
+    private final Map<String, String> nodeTypeToWidget = new ConcurrentHashMap<>();
+    
+    @jakarta.annotation.PostConstruct
+    void initialize() {
+        LOG.info("Initializing UI widget registry");
+        registerBuiltInWidgets();
+    }
+    
+    /**
+     * Register built-in widgets
+     */
+    private void registerBuiltInWidgets() {
+        // Standard node widget (default)
+        register(WidgetDescriptor.builder()
+            .widgetId("silat.widget.standard-node")
+            .type("react")
+            .entryPoint("@silat/ui-designer/StandardNode")
+            .version("1.0.0")
+            .builtin(true)
+            .props(Map.of(
+                "resizable", true,
+                "draggable", true,
+                "selectable", true
+            ))
+            .build());
+        
+        // Code editor widget
+        register(WidgetDescriptor.builder()
+            .widgetId("silat.widget.code-editor")
+            .type("react")
+            .entryPoint("@silat/ui-designer/CodeEditorNode")
+            .version("1.0.0")
+            .builtin(true)
+            .dependencies(List.of("@monaco-editor/react"))
+            .build());
+        
+        // Form builder widget
+        register(WidgetDescriptor.builder()
+            .widgetId("silat.widget.form-builder")
+            .type("react")
+            .entryPoint("@silat/ui-designer/FormBuilderNode")
+            .version("1.0.0")
+            .builtin(true)
+            .build());
+        
+        // Decision widget (diamond shape)
+        register(WidgetDescriptor.builder()
+            .widgetId("silat.widget.decision")
+            .type("react")
+            .entryPoint("@silat/ui-designer/DecisionNode")
+            .version("1.0.0")
+            .builtin(true)
+            .build());
+        
+        // Agent widget (with status indicator)
+        register(WidgetDescriptor.builder()
+            .widgetId("silat.widget.agent")
+            .type("react")
+            .entryPoint("@silat/ui-designer/AgentNode")
+            .version("1.0.0")
+            .builtin(true)
+            .props(Map.of(
+                "showStatus", true,
+                "showMemory", true,
+                "showTools", true
+            ))
+            .build());
+        
+        LOG.info("Registered {} built-in widgets", widgets.size());
+    }
+    
+    /**
+     * Register widget from plugin
+     */
+    public void register(UIWidgetManifest manifest) {
+        WidgetDescriptor descriptor = WidgetDescriptor.fromManifest(manifest);
+        register(descriptor);
+    }
+    
+    /**
+     * Register widget descriptor
+     */
+    public void register(WidgetDescriptor descriptor) {
+        widgets.put(descriptor.widgetId, descriptor);
+        LOG.debug("Registered widget: {}", descriptor.widgetId);
+    }
+    
+    /**
+     * Associate widget with node type
+     */
+    public void mapNodeTypeToWidget(String nodeType, String widgetId) {
+        nodeTypeToWidget.put(nodeType, widgetId);
+    }
+    
+    /**
+     * Get widget by ID
+     */
+    public WidgetDescriptor getWidget(String widgetId) {
+        return widgets.get(widgetId);
+    }
+    
+    /**
+     * Get widget for node type
+     */
+    public WidgetDescriptor getWidgetForNodeType(String nodeType) {
+        String widgetId = nodeTypeToWidget.get(nodeType);
+        if (widgetId != null) {
+            return widgets.get(widgetId);
+        }
+        // Return default widget
+        return widgets.get("silat.widget.standard-node");
+    }
+    
+    /**
+     * List all widgets
+     */
+    public List<WidgetDescriptor> listWidgets() {
+        return new ArrayList<>(widgets.values());
+    }
+    
+    /**
+     * List widgets by type
+     */
+    public List<WidgetDescriptor> listWidgetsByType(String type) {
+        return widgets.values().stream()
+            .filter(w -> type.equals(w.type))
+            .collect(Collectors.toList());
+    }
+    
+    /**
+     * Unregister widget
+     */
+    public void unregister(String widgetId) {
+        widgets.remove(widgetId);
+        
+        // Remove from node type mappings
+        nodeTypeToWidget.entrySet().removeIf(
+            entry -> widgetId.equals(entry.getValue()));
+        
+        LOG.debug("Unregistered widget: {}", widgetId);
+    }
+    
+    /**
+     * Get widget bundle (for frontend)
+     * Returns widget descriptors with entry points and dependencies
+     */
+    public WidgetBundle getWidgetBundle() {
+        return new WidgetBundle(
+            new ArrayList<>(widgets.values()),
+            new HashMap<>(nodeTypeToWidget)
+        );
+    }
+}
+
+/**
+ * Widget descriptor
+ */
+public class WidgetDescriptor {
+    public String widgetId;
+    public String type; // react, vue, web-component
+    public String entryPoint;
+    public String version;
+    public List<String> dependencies = new ArrayList<>();
+    public Map<String, Object> props = new HashMap<>();
+    public boolean builtin;
+    public String cdnUrl;
+    public Map<String, Object> metadata = new HashMap<>();
+    
+    public static WidgetDescriptor fromManifest(UIWidgetManifest manifest) {
+        WidgetDescriptor descriptor = new WidgetDescriptor();
+        descriptor.widgetId = manifest.widgetId;
+        descriptor.type = manifest.type;
+        descriptor.entryPoint = manifest.entryPoint;
+        descriptor.version = manifest.version;
+        descriptor.dependencies = new ArrayList<>(manifest.dependencies);
+        descriptor.props = new HashMap<>(manifest.props);
+        descriptor.builtin = false;
+        return descriptor;
+    }
+    
+    public static Builder builder() {
+        return new Builder();
+    }
+    
+    public static class Builder {
+        private final WidgetDescriptor widget = new WidgetDescriptor();
+        
+        public Builder widgetId(String widgetId) {
+            widget.widgetId = widgetId;
+            return this;
+        }
+        
+        public Builder type(String type) {
+            widget.type = type;
+            return this;
+        }
+        
+        public Builder entryPoint(String entryPoint) {
+            widget.entryPoint = entryPoint;
+            return this;
+        }
+        
+        public Builder version(String version) {
+            widget.version = version;
+            return this;
+        }
+        
+        public Builder dependencies(List<String> dependencies) {
+            widget.dependencies = new ArrayList<>(dependencies);
+            return this;
+        }
+        
+        public Builder props(Map<String, Object> props) {
+            widget.props = new HashMap<>(props);
+            return this;
+        }
+        
+        public Builder builtin(boolean builtin) {
+            widget.builtin = builtin;
+            return this;
+        }
+        
+        public Builder cdnUrl(String cdnUrl) {
+            widget.cdnUrl = cdnUrl;
+            return this;
+        }
+        
+        public WidgetDescriptor build() {
+            return widget;
+        }
+    }
+}
+
+/**
+ * Widget bundle for frontend
+ */
+public record WidgetBundle(
+    List<WidgetDescriptor> widgets,
+    Map<String, String> nodeTypeMapping
+) {}
+
+/**
+ * ============================================================================
+ * EXECUTOR REGISTRY
+ * ============================================================================
+ * 
+ * Registry for node executors.
+ * Manages executor lifecycle, routing, and communication.
+ */
+@ApplicationScoped
+public class ExecutorRegistry {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(ExecutorRegistry.class);
+    
+    @Inject
+    tech.kayys.silat.core.scheduler.ExecutorRegistry coreExecutorRegistry;
+    
+    // Executor storage: executorId -> ExecutorDescriptor
+    private final Map<String, ExecutorDescriptor> executors = new ConcurrentHashMap<>();
+    
+    // Node type to executor mapping
+    private final Map<String, String> nodeTypeToExecutor = new ConcurrentHashMap<>();
+    
+    // In-process executor instances
+    private final Map<String, Object> inProcessExecutors = new ConcurrentHashMap<>();
+    
+    @jakarta.annotation.PostConstruct
+    void initialize() {
+        LOG.info("Initializing executor registry");
+        registerBuiltInExecutors();
+    }
+    
+    /**
+     * Register built-in executors
+     */
+    private void registerBuiltInExecutors() {
+        // Generic executor (handles basic tasks)
+        register(ExecutorDescriptor.builder()
+            .executorId("silat.executor.generic")
+            .strategy(CommunicationStrategy.IN_PROCESS)
+            .inProcess(true)
+            .className("tech.kayys.silat.executor.GenericExecutor")
+            .nodeTypes(List.of("task", "action"))
+            .maxConcurrency(100)
+            .timeout(300000L)
+            .builtin(true)
+            .build());
+        
+        // AI Agent executor
+        register(ExecutorDescriptor.builder()
+            .executorId("silat.executor.ai-agent")
+            .strategy(CommunicationStrategy.GRPC)
+            .inProcess(false)
+            .endpoint("silat-agent-executor:9090")
+            .nodeTypes(List.of(
+                "agent.conversational",
+                "agent.rag",
+                "agent.task"
+            ))
+            .maxConcurrency(50)
+            .timeout(60000L)
+            .builtin(true)
+            .build());
+        
+        // Integration executor
+        register(ExecutorDescriptor.builder()
+            .executorId("silat.executor.integration")
+            .strategy(CommunicationStrategy.KAFKA)
+            .inProcess(false)
+            .endpoint("kafka:9092")
+            .nodeTypes(List.of(
+                "integration.http",
+                "integration.database",
+                "integration.kafka"
+            ))
+            .maxConcurrency(200)
+            .timeout(30000L)
+            .builtin(true)
+            .build());
+        
+        // EIP executor
+        register(ExecutorDescriptor.builder()
+            .executorId("silat.executor.eip")
+            .strategy(CommunicationStrategy.IN_PROCESS)
+            .inProcess(true)
+            .className("tech.kayys.silat.executor.EIPExecutor")
+            .nodeTypes(List.of(
+                "eip.router",
+                "eip.transformer",
+                "eip.splitter",
+                "eip.aggregator"
+            ))
+            .maxConcurrency(500)
+            .timeout(10000L)
+            .builtin(true)
+            .build());
+        
+        LOG.info("Registered {} built-in executors", executors.size());
+    }
+    
+    /**
+     * Register executor from plugin
+     */
+    public void register(ExecutorManifest manifest, LoadedPlugin plugin) {
+        ExecutorDescriptor descriptor = ExecutorDescriptor.fromManifest(manifest);
+        
+        // If in-process, get instance from loaded plugin
+        if (manifest.inProcess && manifest.className != null) {
+            Object instance = plugin.instances.get(manifest.className);
+            if (instance != null) {
+                inProcessExecutors.put(manifest.executorId, instance);
+                descriptor.inProcessInstance = instance;
+            }
+        }
+        
+        register(descriptor);
+        
+        // Register with core executor registry
+        registerWithCore(descriptor);
+    }
+    
+    /**
+     * Register executor descriptor
+     */
+    public void register(ExecutorDescriptor descriptor) {
+        executors.put(descriptor.executorId, descriptor);
+        
+        // Map node types to executor
+        for (String nodeType : descriptor.nodeTypes) {
+            nodeTypeToExecutor.put(nodeType, descriptor.executorId);
+        }
+        
+        LOG.info("Registered executor: {} ({})", 
+            descriptor.executorId, descriptor.strategy);
+    }
+    
+    /**
+     * Register with core executor registry
+     */
+    private void registerWithCore(ExecutorDescriptor descriptor) {
+        tech.kayys.silat.core.scheduler.ExecutorInfo coreInfo = 
+            new tech.kayys.silat.core.scheduler.ExecutorInfo(
+                descriptor.executorId,
+                String.join(",", descriptor.nodeTypes),
+                mapCommunicationType(descriptor.strategy),
+                descriptor.endpoint,
+                descriptor.config
+            );
+        
+        coreExecutorRegistry.registerExecutor(coreInfo);
+    }
+    
+    /**
+     * Get executor by ID
+     */
+    public ExecutorDescriptor getExecutor(String executorId) {
+        return executors.get(executorId);
+    }
+    
+    /**
+     * Get executor for node type
+     */
+    public ExecutorDescriptor getExecutorForNodeType(String nodeType) {
+        String executorId = nodeTypeToExecutor.get(nodeType);
+        if (executorId != null) {
+            return executors.get(executorId);
+        }
+        // Return default executor
+        return executors.get("silat.executor.generic");
+    }
+    
+    /**
+     * Get in-process executor instance
+     */
+    public Object getInProcessExecutor(String executorId) {
+        return inProcessExecutors.get(executorId);
+    }
+    
+    /**
+     * List all executors
+     */
+    public List<ExecutorDescriptor> listExecutors() {
+        return new ArrayList<>(executors.values());
+    }
+    
+    /**
+     * List executors by strategy
+     */
+    public List<ExecutorDescriptor> listExecutorsByStrategy(
+            CommunicationStrategy strategy) {
+        return executors.values().stream()
+            .filter(e -> strategy == e.strategy)
+            .collect(Collectors.toList());
+    }
+    
+    /**
+     * Unregister executor
+     */
+    public void unregister(String executorId) {
+        ExecutorDescriptor descriptor = executors.remove(executorId);
+        
+        if (descriptor != null) {
+            // Remove from node type mappings
+            descriptor.nodeTypes.forEach(nodeTypeToExecutor::remove);
+            
+            // Remove in-process instance
+            inProcessExecutors.remove(executorId);
+            
+            // Unregister from core
+            coreExecutorRegistry.unregisterExecutor(executorId);
+            
+            LOG.debug("Unregistered executor: {}", executorId);
+        }
+    }
+    
+    /**
+     * Check if executor is available
+     */
+    public boolean isAvailable(String executorId) {
+        ExecutorDescriptor descriptor = executors.get(executorId);
+        if (descriptor == null) return false;
+        
+        if (descriptor.inProcess) {
+            return inProcessExecutors.containsKey(executorId);
+        } else {
+            // Check remote executor health
+            return checkRemoteExecutorHealth(descriptor);
+        }
+    }
+    
+    /**
+     * Check remote executor health
+     */
+    private boolean checkRemoteExecutorHealth(ExecutorDescriptor descriptor) {
+        // Implementation depends on communication strategy
+        // For now, assume available
+        return true;
+    }
+    
+    /**
+     * Map communication strategy enum
+     */
+    private CommunicationType mapCommunicationType(CommunicationStrategy strategy) {
+        return switch (strategy) {
+            case GRPC -> CommunicationType.GRPC;
+            case KAFKA -> CommunicationType.KAFKA;
+            case REST -> CommunicationType.REST;
+            case IN_PROCESS -> CommunicationType.GRPC; // Fallback
+        };
+    }
+}
+
+/**
+ * Executor descriptor
+ */
+public class ExecutorDescriptor {
+    public String executorId;
+    public CommunicationStrategy strategy;
+    public String endpoint;
+    public boolean inProcess;
+    public String className;
+    public List<String> nodeTypes = new ArrayList<>();
+    public int maxConcurrency;
+    public long timeout;
+    public Map<String, Object> config = new HashMap<>();
+    public boolean builtin;
+    public Object inProcessInstance; // For in-process executors
+    
+    public static ExecutorDescriptor fromManifest(ExecutorManifest manifest) {
+        ExecutorDescriptor descriptor = new ExecutorDescriptor();
+        descriptor.executorId = manifest.executorId;
+        descriptor.strategy = manifest.strategy;
+        descriptor.endpoint = manifest.endpoint;
+        descriptor.inProcess = manifest.inProcess;
+        descriptor.className = manifest.className;
+        descriptor.nodeTypes = new ArrayList<>(manifest.nodeTypes);
+        descriptor.maxConcurrency = manifest.maxConcurrency;
+        descriptor.timeout = manifest.timeout;
+        descriptor.config = new HashMap<>(manifest.config);
+        descriptor.builtin = false;
+        return descriptor;
+    }
+    
+    public static Builder builder() {
+        return new Builder();
+    }
+    
+    public static class Builder {
+        private final ExecutorDescriptor executor = new ExecutorDescriptor();
+        
+        public Builder executorId(String executorId) {
+            executor.executorId = executorId;
+            return this;
+        }
+        
+        public Builder strategy(CommunicationStrategy strategy) {
+            executor.strategy = strategy;
+            return this;
+        }
+        
+        public Builder endpoint(String endpoint) {
+            executor.endpoint = endpoint;
+            return this;
+        }
+        
+        public Builder inProcess(boolean inProcess) {
+            executor.inProcess = inProcess;
+            return this;
+        }
+        
+        public Builder className(String className) {
+            executor.className = className;
+            return this;
+        }
+        
+        public Builder nodeTypes(List<String> nodeTypes) {
+            executor.nodeTypes = new ArrayList<>(nodeTypes);
+            return this;
+        }
+        
+        public Builder maxConcurrency(int maxConcurrency) {
+            executor.maxConcurrency = maxConcurrency;
+            return this;
+        }
+        
+        public Builder timeout(long timeout) {
+            executor.timeout = timeout;
+            return this;
+        }
+        
+        public Builder config(Map<String, Object> config) {
+            executor.config = new HashMap<>(config);
+            return this;
+        }
+        
+        public Builder builtin(boolean builtin) {
+            executor.builtin = builtin;
+            return this;
+        }
+        
+        public ExecutorDescriptor build() {
+            return executor;
+        }
+    }
+}

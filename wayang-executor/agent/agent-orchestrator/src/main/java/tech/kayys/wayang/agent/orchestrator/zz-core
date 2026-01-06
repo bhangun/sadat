@@ -1,0 +1,246 @@
+package tech.kayys.silat.agent.domain;
+
+
+
+
+
+// ==================== AGENT EXECUTION CONTEXT ====================
+
+
+
+
+
+
+
+// ==================== AGENT PLAN ====================
+
+
+
+
+
+// ==================== AGENT COORDINATION ====================
+
+
+
+
+
+
+
+
+
+// ==================== AGENT COMMUNICATION ====================
+
+
+
+
+
+// ==================== AGENT REGISTRY ====================
+
+
+
+
+
+
+
+// ==================== ORCHESTRATOR CONTEXT ====================
+
+
+
+
+
+
+package tech.kayys.silat.agent.executor;
+
+
+// ==================== SUPPORTING CLASSES ====================
+
+
+package tech.kayys.silat.agent.executor;
+
+
+// ==================== SUPPORTING TYPES ====================
+
+
+
+
+
+
+
+
+
+
+
+// ==================== PERSISTENCE ====================
+
+
+// ==================== CLIENT IMPLEMENTATIONS ====================
+
+
+
+
+
+
+// ==================== SUPPORTING TYPES ====================
+
+
+
+package tech.kayys.silat.agent;
+
+import io.quarkus.runtime.StartupEvent;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
+import jakarta.inject.Inject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import tech.kayys.silat.agent.domain.*;
+import tech.kayys.silat.agent.executor.AgentOrchestratorExecutor;
+import tech.kayys.silat.agent.infrastructure.*;
+import tech.kayys.silat.executor.NodeExecutionTask;
+
+import java.time.Instant;
+import java.util.*;
+
+/**
+ * ============================================================================
+ * AGENT ORCHESTRATOR CONFIGURATION & USAGE EXAMPLES
+ * ============================================================================
+ * 
+ * Complete configuration and usage examples for the Agent Orchestrator
+ * 
+ * Package: tech.kayys.silat.agent
+ */
+
+// ==================== CONFIGURATION ====================
+
+/**
+ * Agent Orchestrator Configuration
+ * application.yml / application.properties
+ */
+/*
+# Agent Orchestrator Configuration
+silat:
+  agent:
+    orchestrator:
+      # Built-in agents
+      planner:
+        strategy: PLAN_AND_EXECUTE
+        enable-adaptive: true
+        max-replan-attempts: 3
+      
+      executor:
+        mode: ADAPTIVE
+        max-parallel-tasks: 5
+        enable-failover: true
+      
+      evaluator:
+        criteria:
+          - CORRECTNESS
+          - COMPLETENESS
+          - QUALITY
+          - EFFICIENCY
+        success-threshold: 0.8
+        enable-continuous: true
+      
+      # Orchestration settings
+      orchestration:
+        default-type: SEQUENTIAL
+        coordination-strategy: CENTRALIZED
+        max-concurrent-agents: 10
+        enable-recursive: true
+      
+      # Circuit breaker
+      circuit-breaker:
+        failure-threshold: 5
+        reset-timeout-seconds: 60
+        half-open-max-requests: 3
+      
+      # Communication
+      communication:
+        default-transport: GRPC
+        request-timeout-ms: 300000
+        enable-caching: true
+        cache-ttl-seconds: 3600
+      
+      # Monitoring
+      monitoring:
+        enable-metrics: true
+        enable-tracing: true
+        heartbeat-interval-seconds: 10
+
+# Kafka Configuration for Agent Communication
+kafka:
+  bootstrap:
+    servers: localhost:9092
+mp:
+  messaging:
+    outgoing:
+      agent-requests:
+        connector: smallrye-kafka
+        topic: silat-agent-requests
+        value:
+          serializer: io.quarkus.kafka.client.serialization.JsonbSerializer
+    incoming:
+      agent-responses:
+        connector: smallrye-kafka
+        topic: silat-agent-responses
+        value:
+          deserializer: io.quarkus.kafka.client.serialization.JsonbDeserializer
+
+# gRPC Configuration
+quarkus:
+  grpc:
+    server:
+      port: 9090
+      enable-reflection-service: true
+    clients:
+      agent-client:
+        host: localhost
+        port: 9091
+*/
+
+
+// ==================== USAGE EXAMPLES ====================
+
+
+
+
+
+// ==================== INTEGRATION TESTS ====================
+
+/**
+ * ============================================================================
+ * BEST PRACTICES & RECOMMENDATIONS
+ * ============================================================================
+ * 
+ * 1. Agent Registration:
+ *    - Register agents on startup or dynamically as needed
+ *    - Use descriptive names and proper capability declarations
+ *    - Implement health checks and heartbeat mechanisms
+ * 
+ * 2. Error Handling:
+ *    - Enable adaptive replanning for critical workflows
+ *    - Set appropriate timeouts and retry policies
+ *    - Use circuit breakers to prevent cascading failures
+ * 
+ * 3. Performance:
+ *    - Use parallel execution for independent tasks
+ *    - Enable caching for idempotent operations
+ *    - Monitor and optimize token usage
+ * 
+ * 4. Security:
+ *    - Enforce tenant isolation
+ *    - Validate agent capabilities before delegation
+ *    - Implement proper authentication for agent endpoints
+ * 
+ * 5. Observability:
+ *    - Enable detailed logging and tracing
+ *    - Collect metrics on execution time and resource usage
+ *    - Monitor circuit breaker states
+ * 
+ * 6. Scalability:
+ *    - Use Kafka for asynchronous agent communication
+ *    - Implement proper load balancing
+ *    - Consider agent pooling for high-throughput scenarios
+ */
+

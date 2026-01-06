@@ -1,0 +1,759 @@
+# golek Complete Deployment Guide
+
+## 📦 What You've Got
+
+A **complete, production-ready** polyglot workflow engine with:
+
+### ✅ Core Components (Go)
+- **Workflow Engine** - Full lifecycle, event sourcing, distributed locking
+- **PostgreSQL Storage** - Complete with migrations and indexes
+- **Kafka Messaging** - Task scheduling and event streaming
+- **gRPC & REST APIs** - Complete implementations
+- **Plugin System** - Hot-pluggable with runtime enable/disable
+- **SAGA Pattern** - Distributed transactions with compensation
+
+### ✅ SDKs
+- **Go Executor SDK** - High-performance, concurrent
+- **Java/Quarkus Executor SDK** - Enterprise-grade with CDI
+- **Java/Quarkus Client SDK** - Full control plane operations
+- **Python Executor SDK** - Async/await, modern Python
+
+### ✅ Enterprise Plugins
+- **Advanced Security** - JWT, RBAC, audit logging, rate limiting
+- **Advanced Observability** - Prometheus metrics, OpenTelemetry tracing
+- **Circuit Breaker** - Fault tolerance and resilience
+
+---
+
+## 🚀 Quick Start (5 Minutes)
+
+### Option 1: Docker Compose (Recommended for Development)
+
+```bash
+# Clone and start
+git clone https://github.com/kayys/golek.git
+cd golek
+docker-compose up -d
+
+# Check status
+docker-compose ps
+
+# View logs
+docker-compose logs -f golek-engine
+```
+
+**Services Available:**
+- REST API: http://localhost:8080
+- gRPC API: localhost:9090
+- Metrics: http://localhost:9090/metrics
+- PostgreSQL: localhost:5432
+- Kafka: localhost:9092
+
+### Option 2: Local Development
+
+```bash
+# Install dependencies
+go mod download
+
+# Start PostgreSQL & Kafka
+docker-compose up -d postgres kafka
+
+# Run migrations
+go run cmd/engine/main.go migrate
+
+# Start engine
+go run cmd/engine/main.go serve
+
+# In another terminal, start an executor
+go run cmd/executor/main.go
+```
+
+---
+
+## 📋 Complete docker-compose.yml
+
+```yaml
+version: '3.8'
+
+services:
+  # ============================================================================
+  # golek ENGINE
+  # ============================================================================
+  golek-engine:
+    image: golek/engine:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.engine
+    ports:
+      - "8080:8080"  # REST API
+      - "9090:9090"  # gRPC API
+      - "9091:9091"  # Metrics
+    environment:
+      # Database
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: golek
+      DATABASE_USER: golek
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-password}
+      DATABASE_SSL_MODE: disable
+      DATABASE_MAX_CONNECTIONS: 25
+      
+      # Messaging
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: golek-events
+      KAFKA_GROUP_ID: golek-engine
+      
+      # Security
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-min-32-chars}
+      JWT_EXPIRY: 24h
+      REQUIRE_TLS: false
+      RATE_LIMIT_ENABLED: true
+      RATE_LIMIT_RPS: 100
+      
+      # Engine
+      MAX_CONCURRENT_RUNS: 1000
+      NODE_EXECUTION_TIMEOUT: 300s
+      ENABLE_EVENT_SOURCING: true
+      ENABLE_COMPENSATION: true
+      
+      # Observability
+      METRICS_ENABLED: true
+      METRICS_PORT: 9091
+      TRACING_ENABLED: true
+      TRACING_ENDPOINT: jaeger:4318
+      LOG_LEVEL: info
+      
+      # Plugins
+      PLUGINS_ENABLED: security,observability,circuit-breaker
+      
+    depends_on:
+      - postgres
+      - kafka
+      - jaeger
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - golek-network
+
+  # ============================================================================
+  # EXECUTORS
+  # ============================================================================
+  
+  # Go Executors
+  executor-go-validator:
+    image: golek/executor-go:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.executor-go
+    environment:
+      EXECUTOR_TYPE: order-validator
+      golek_ENGINE_ENDPOINT: golek-engine:9090
+      MAX_CONCURRENT: 20
+    deploy:
+      replicas: 3
+    depends_on:
+      - golek-engine
+    networks:
+      - golek-network
+
+  # Java/Quarkus Executors
+  executor-java-payment:
+    image: golek/executor-java:latest
+    build:
+      context: ./executors/java
+      dockerfile: Dockerfile
+    environment:
+      EXECUTOR_TYPE: payment-processor
+      golek_ENGINE_ENDPOINT: golek-engine:9090
+      QUARKUS_HTTP_PORT: 8081
+      # Service dependencies
+      STRIPE_API_KEY: ${STRIPE_API_KEY}
+    deploy:
+      replicas: 2
+    depends_on:
+      - golek-engine
+    networks:
+      - golek-network
+
+  # Python Executors
+  executor-python-ai:
+    image: golek/executor-python:latest
+    build:
+      context: ./executors/python
+      dockerfile: Dockerfile
+    environment:
+      EXECUTOR_TYPE: ai-agent
+      golek_ENGINE_ENDPOINT: golek-engine:9090
+      # AI dependencies
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    deploy:
+      replicas: 1
+    depends_on:
+      - golek-engine
+    networks:
+      - golek-network
+
+  executor-python-data:
+    image: golek/executor-python:latest
+    environment:
+      EXECUTOR_TYPE: data-transformer
+      golek_ENGINE_ENDPOINT: golek-engine:9090
+    deploy:
+      replicas: 2
+    depends_on:
+      - golek-engine
+    networks:
+      - golek-network
+
+  # ============================================================================
+  # INFRASTRUCTURE
+  # ============================================================================
+  
+  # PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: golek
+      POSTGRES_USER: golek
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-password}
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U golek"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - golek-network
+
+  # Kafka & Zookeeper
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+    networks:
+      - golek-network
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    networks:
+      - golek-network
+
+  # Jaeger (Distributed Tracing)
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"  # UI
+      - "4318:4318"    # OTLP gRPC
+    environment:
+      COLLECTOR_OTLP_ENABLED: true
+    networks:
+      - golek-network
+
+  # Prometheus (Metrics)
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deployments/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - golek-network
+
+  # Grafana (Dashboards)
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_INSTALL_PLUGINS: grafana-clock-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deployments/grafana-dashboards:/etc/grafana/provisioning/dashboards
+      - ./deployments/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+    depends_on:
+      - prometheus
+    networks:
+      - golek-network
+
+volumes:
+  postgres_data:
+  kafka_data:
+  zookeeper_data:
+  zookeeper_logs:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  golek-network:
+    driver: bridge
+```
+
+---
+
+## ☸️ Kubernetes Production Deployment
+
+### Complete Kubernetes Manifests
+
+#### 1. Namespace and ConfigMap
+
+```yaml
+# namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: golek
+---
+# configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: golek-config
+  namespace: golek
+data:
+  config.yaml: |
+    server:
+      rest_enabled: true
+      rest_port: 8080
+      grpc_enabled: true
+      grpc_port: 9090
+    
+    database:
+      type: postgres
+      host: postgres-service
+      port: 5432
+      database: golek
+      max_connections: 50
+      ssl_mode: require
+    
+    messaging:
+      type: kafka
+      brokers:
+        - kafka-0.kafka-headless:9092
+        - kafka-1.kafka-headless:9092
+        - kafka-2.kafka-headless:9092
+      topic: golek-events
+      group_id: golek-engine
+    
+    engine:
+      max_concurrent_runs: 5000
+      node_execution_timeout: 300
+      enable_event_sourcing: true
+      enable_compensation: true
+    
+    security:
+      enabled: true
+      require_tls: true
+      rate_limit_enabled: true
+      rate_limit_rps: 1000
+    
+    observability:
+      metrics_enabled: true
+      metrics_port: 9091
+      tracing_enabled: true
+      tracing_endpoint: "jaeger-collector:4318"
+      log_level: info
+```
+
+#### 2. Secrets
+
+```yaml
+# secrets.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: golek-secrets
+  namespace: golek
+type: Opaque
+stringData:
+  database-url: "postgres://golek:PASSWORD@postgres-service:5432/golek?sslmode=require"
+  jwt-secret: "your-production-jwt-secret-min-32-characters-long"
+  stripe-api-key: "sk_live_..."
+  openai-api-key: "sk-..."
+```
+
+#### 3. Engine Deployment
+
+```yaml
+# engine-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: golek-engine
+  namespace: golek
+  labels:
+    app: golek-engine
+    component: engine
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: golek-engine
+  template:
+    metadata:
+      labels:
+        app: golek-engine
+        component: engine
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9091"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: golek-engine
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      
+      initContainers:
+      - name: wait-for-postgres
+        image: postgres:15-alpine
+        command: ['sh', '-c', 'until pg_isready -h postgres-service -p 5432; do echo waiting for postgres; sleep 2; done;']
+      
+      - name: migrations
+        image: golek/engine:1.0.0
+        command: ["/golek-engine", "migrate"]
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: golek-secrets
+              key: database-url
+      
+      containers:
+      - name: engine
+        image: golek/engine:1.0.0
+        imagePullPolicy: Always
+        ports:
+        - name: rest
+          containerPort: 8080
+          protocol: TCP
+        - name: grpc
+          containerPort: 9090
+          protocol: TCP
+        - name: metrics
+          containerPort: 9091
+          protocol: TCP
+        
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: golek-secrets
+              key: database-url
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: golek-secrets
+              key: jwt-secret
+        - name: KAFKA_BROKERS
+          value: "kafka-0.kafka-headless:9092,kafka-1.kafka-headless:9092"
+        
+        volumeMounts:
+        - name: config
+          mountPath: /etc/golek
+          readOnly: true
+        
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 15"]
+      
+      volumes:
+      - name: config
+        configMap:
+          name: golek-config
+      
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - golek-engine
+              topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: golek-engine
+  namespace: golek
+  labels:
+    app: golek-engine
+spec:
+  type: LoadBalancer
+  ports:
+  - name: rest
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  - name: grpc
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+  - name: metrics
+    port: 9091
+    targetPort: 9091
+    protocol: TCP
+  selector:
+    app: golek-engine
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: golek-engine
+  namespace: golek
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: golek-engine-hpa
+  namespace: golek
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: golek-engine
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+```
+
+#### 4. Executor Deployments
+
+```yaml
+# executor-java-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: golek-executor-java
+  namespace: golek
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: golek-executor
+      language: java
+  template:
+    metadata:
+      labels:
+        app: golek-executor
+        language: java
+        executor-type: payment-processor
+    spec:
+      containers:
+      - name: executor
+        image: golek/executor-java:1.0.0
+        env:
+        - name: EXECUTOR_TYPE
+          value: "payment-processor"
+        - name: golek_ENGINE_ENDPOINT
+          value: "golek-engine:9090"
+        - name: STRIPE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: golek-secrets
+              key: stripe-api-key
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+---
+# executor-python-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: golek-executor-python
+  namespace: golek
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: golek-executor
+      language: python
+  template:
+    metadata:
+      labels:
+        app: golek-executor
+        language: python
+        executor-type: ai-agent
+    spec:
+      containers:
+      - name: executor
+        image: golek/executor-python:1.0.0
+        env:
+        - name: EXECUTOR_TYPE
+          value: "ai-agent"
+        - name: golek_ENGINE_ENDPOINT
+          value: "golek-engine:9090"
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: golek-secrets
+              key: openai-api-key
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+```
+
+---
+
+## 🔧 Configuration Files
+
+### prometheus.yml
+```yaml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'golek-engine'
+    kubernetes_sd_configs:
+    - role: pod
+      namespaces:
+        names:
+        - golek
+    relabel_configs:
+    - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+      action: keep
+      regex: true
+    - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+      action: replace
+      target_label: __metrics_path__
+      regex: (.+)
+    - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+      action: replace
+      regex: ([^:]+)(?::\d+)?;(\d+)
+      replacement: $1:$2
+      target_label: __address__
+```
+
+---
+
+## 📊 Monitoring Dashboard
+
+Access Grafana at http://localhost:3000 (docker-compose) with these dashboards:
+
+1. **Workflow Overview**
+   - Active workflows
+   - Completion rate
+   - Average duration
+   - Failure rate
+
+2. **Node Execution**
+   - Nodes executed per second
+   - Node failure rate
+   - Execution duration histogram
+
+3. **Executor Health**
+   - Active executors
+   - Task throughput
+   - Error rates
+
+4. **Infrastructure**
+   - CPU/Memory usage
+   - Database connections
+   - Kafka lag
+
+---
+
+## 🎯 What's Next?
+
+You now have a **complete, production-ready** workflow engine! Here's what you can do:
+
+1. **Deploy locally**: `docker-compose up -d`
+2. **Deploy to K8s**: `kubectl apply -f deployments/kubernetes/`
+3. **Create workflows**: Use SDKs (Go/Java/Python)
+4. **Build executors**: In any language using provided SDKs
+5. **Monitor**: Grafana dashboards, Prometheus metrics, Jaeger traces
+
+**Everything is ready to go!** 🚀

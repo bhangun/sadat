@@ -1,0 +1,33 @@
+// workflow-client-sdk/src/main/java/tech/kayys/wayang/workflow/client/model/WorkflowDefinition.java
+package tech.kayys.wayang.workflow.client.model;
+
+
+// workflow-client-sdk/src/main/java/tech/kayys/wayang/workflow/client/model/NodeDefinition.java
+package tech.kayys.wayang.workflow.client.model;
+
+// workflow-client-sdk/src/main/java/tech/kayys/wayang/workflow/client/model/WorkflowRun.java
+package tech.kayys.wayang.workflow.client.model;
+
+// workflow-client-sdk/src/main/java/tech/kayys/wayang/workflow/client/model/StartWorkflowRequest.java
+package tech.kayys.wayang.workflow.client.model;
+
+// workflow-client-sdk/src/main/java/tech/kayys/wayang/workflow/client/model/TriggerWorkflowRequest.java
+package tech.kayys.wayang.workflow.client.model;
+
+
+// workflow-client-sdk/src/main/java/tech/kayys/wayang/workflow/client/model/WorkflowEvent.java
+package tech.kayys.wayang.workflow.client.model;
+
+
+// workflow-client-sdk/src/main/java/tech/kayys/wayang/workflow/client/model/WorkflowProgress.java
+package tech.kayys.wayang.workflow.client.model;
+
+// workflow-client-sdk/src/main/java/tech/kayys/wayang/workflow/client/model/NodeExecutionResult.java
+package tech.kayys.wayang.workflow.client.model;
+
+
+// workflow-client-sdk/src/main/java/tech/kayys/wayang/workflow/client/model/WorkflowSignal.java
+package tech.kayys.wayang.workflow.client.model;
+
+// workflow-client-sdk/src/main/java/tech/kayys/wayang/workflow/client/model/ClientConfig.java
+package tech.kayys.wayang.workflow.client.model;

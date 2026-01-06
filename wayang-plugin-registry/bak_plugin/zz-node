@@ -1,0 +1,1066 @@
+package tech.kayys.silat.controlplane.nodes.extended;
+
+import tech.kayys.silat.controlplane.nodes.*;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * ============================================================================
+ * EXTENDED BUILT-IN NODES LIBRARY
+ * ============================================================================
+ * 
+ * Additional 100+ nodes covering:
+ * - Advanced AI (embeddings, vision, audio)
+ * - Cloud services (AWS, Azure, GCP)
+ * - Databases (MongoDB, Cassandra, Neo4j)
+ * - Message queues (RabbitMQ, SQS, PubSub)
+ * - File operations
+ * - Data transformation
+ * - Monitoring & observability
+ * - Security & encryption
+ * - Business logic
+ */
+public class ExtendedNodeRegistry {
+    
+    // ==================== ADVANCED AI NODES ====================
+    
+    public static void registerAINodes(NodeDefinitionRegistry registry) {
+        
+        // Embeddings
+        registry.register(NodeDefinition.builder()
+            .type("ai.embeddings.openai")
+            .label("OpenAI Embeddings")
+            .category("AI")
+            .subCategory("Embeddings")
+            .description("Generate text embeddings using OpenAI")
+            .icon("layers")
+            .color("#10A37F")
+            .isAtomic(true)
+            .addConfigField(ConfigField.select("model", "Model", true,
+                List.of("text-embedding-3-large", "text-embedding-3-small", "text-embedding-ada-002"),
+                "text-embedding-3-small"))
+            .addConfigField(ConfigField.password("apiKey", "API Key", true))
+            .addConfigField(ConfigField.number("dimensions", "Dimensions", false, 1536))
+            .addPort(NodePort.input("text", "Text", "string"))
+            .addPort(NodePort.input("texts", "Texts (batch)", "array"))
+            .addPort(NodePort.output("embedding", "Embedding", "vector"))
+            .addPort(NodePort.output("embeddings", "Embeddings", "array"))
+            .build());
+        
+        registry.register(NodeDefinition.builder()
+            .type("ai.embeddings.cohere")
+            .label("Cohere Embeddings")
+            .category("AI")
+            .subCategory("Embeddings")
+            .description("Generate embeddings using Cohere")
+            .icon("layers")
+            .color("#D18EE2")
+            .isAtomic(true)
+            .addConfigField(ConfigField.select("model", "Model", true,
+                List.of("embed-english-v3.0", "embed-multilingual-v3.0"), "embed-english-v3.0"))
+            .addConfigField(ConfigField.password("apiKey", "API Key", true))
+            .addConfigField(ConfigField.select("inputType", "Input Type", true,
+                List.of("search_document", "search_query", "classification", "clustering"), "search_document"))
+            .addPort(NodePort.input("texts", "Texts", "array"))
+            .addPort(NodePort.output("embeddings", "Embeddings", "array"))
+            .build());
+        
+        // Vision AI
+        registry.register(NodeDefinition.builder()
+            .type("ai.vision.openai")
+            .label("GPT-4 Vision")
+            .category("AI")
+            .subCategory("Vision")
+            .description("Analyze images with GPT-4 Vision")
+            .icon("eye")
+            .color("#10A37F")
+            .isAtomic(true)
+            .addConfigField(ConfigField.password("apiKey", "API Key", true))
+            .addConfigField(ConfigField.text("prompt", "Prompt", true, "What's in this image?"))
+            .addConfigField(ConfigField.number("maxTokens", "Max Tokens", false, 300))
+            .addPort(NodePort.input("imageUrl", "Image URL", "string"))
+            .addPort(NodePort.input("imageBase64", "Image Base64", "string"))
+            .addPort(NodePort.output("description", "Description", "string"))
+            .addPort(NodePort.output("details", "Details", "object"))
+            .build());
+        
+        registry.register(NodeDefinition.builder()
+            .type("ai.vision.anthropic")
+            .label("Claude Vision")
+            .category("AI")
+            .subCategory("Vision")
+            .description("Analyze images with Claude 3")
+            .icon("eye")
+            .color("#CC785C")
+            .isAtomic(true)
+            .addConfigField(ConfigField.select("model", "Model", true,
+                List.of("claude-3-opus-20240229", "claude-3-sonnet-20240229"), "claude-3-sonnet-20240229"))
+            .addConfigField(ConfigField.password("apiKey", "API Key", true))
+            .addConfigField(ConfigField.textarea("prompt", "Prompt", true))
+            .addPort(NodePort.input("imageUrl", "Image URL", "string"))
+            .addPort(NodePort.input("imageBase64", "Image Base64", "string"))
+            .addPort(NodePort.output("analysis", "Analysis", "string"))
+            .build());
+        
+        // Audio/Speech
+        registry.register(NodeDefinition.builder()
+            .type("ai.speech.text-to-speech")
+            .label("Text to Speech")
+            .category("AI")
+            .subCategory("Audio")
+            .description("Convert text to speech using OpenAI")
+            .icon("volume-2")
+            .color("#10A37F")
+            .isAtomic(true)
+            .addConfigField(ConfigField.select("voice", "Voice", true,
+                List.of("alloy", "echo", "fable", "onyx", "nova", "shimmer"), "alloy"))
+            .addConfigField(ConfigField.select("model", "Model", true,
+                List.of("tts-1", "tts-1-hd"), "tts-1"))
+            .addConfigField(ConfigField.slider("speed", "Speed", false, 1.0, 0.25, 4.0, 0.25))
+            .addPort(NodePort.input("text", "Text", "string"))
+            .addPort(NodePort.output("audioUrl", "Audio URL", "string"))
+            .addPort(NodePort.output("audioBase64", "Audio Base64", "string"))
+            .build());
+        
+        registry.register(NodeDefinition.builder()
+            .type("ai.speech.speech-to-text")
+            .label("Speech to Text")
+            .category("AI")
+            .subCategory("Audio")
+            .description("Transcribe audio using Whisper")
+            .icon("mic")
+            .color("#10A37F")
+            .isAtomic(true)
+            .addConfigField(ConfigField.select("model", "Model", true,
+                List.of("whisper-1"), "whisper-1"))
+            .addConfigField(ConfigField.select("language", "Language", false,
+                List.of("en", "es", "fr", "de", "it", "pt", "nl", "pl", "ru", "ja", "ko", "zh")))
+            .addConfigField(ConfigField.text("prompt", "Prompt (optional)", false))
+            .addPort(NodePort.input("audioUrl", "Audio URL", "string"))
+            .addPort(NodePort.input("audioFile", "Audio File", "file"))
+            .addPort(NodePort.output("text", "Transcription", "string"))
+            .addPort(NodePort.output("language", "Detected Language", "string"))
+            .build());
+        
+        // Moderation
+        registry.register(NodeDefinition.builder()
+            .type("ai.moderation.openai")
+            .label("Content Moderation")
+            .category("AI")
+            .subCategory("Safety")
+            .description("Detect harmful content using OpenAI")
+            .icon("shield")
+            .color("#EF4444")
+            .isAtomic(true)
+            .addConfigField(ConfigField.password("apiKey", "API Key", true))
+            .addPort(NodePort.input("text", "Text", "string"))
+            .addPort(NodePort.output("flagged", "Is Flagged", "boolean"))
+            .addPort(NodePort.output("categories", "Categories", "object"))
+            .addPort(NodePort.output("scores", "Category Scores", "object"))
+            .build());
+    }
+    
+    // ==================== CLOUD SERVICE NODES ====================
+    
+    public static void registerCloudNodes(NodeDefinitionRegistry registry) {
+        
+        // AWS S3
+        registry.register(NodeDefinition.builder()
+            .type("cloud.aws.s3.upload")
+            .label("AWS S3 Upload")
+            .category("Cloud")
+            .subCategory("AWS Storage")
+            .description("Upload file to S3 bucket")
+            .icon("upload-cloud")
+            .color("#FF9900")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("bucket", "Bucket Name", true))
+            .addConfigField(ConfigField.text("region", "Region", true, "us-east-1"))
+            .addConfigField(ConfigField.password("accessKeyId", "Access Key ID", true))
+            .addConfigField(ConfigField.password("secretAccessKey", "Secret Access Key", true))
+            .addConfigField(ConfigField.text("key", "Object Key", true))
+            .addConfigField(ConfigField.select("acl", "ACL", false,
+                List.of("private", "public-read", "public-read-write"), "private"))
+            .addPort(NodePort.input("file", "File Data", "file"))
+            .addPort(NodePort.input("fileUrl", "File URL", "string"))
+            .addPort(NodePort.output("url", "S3 URL", "string"))
+            .addPort(NodePort.output("etag", "ETag", "string"))
+            .build());
+        
+        registry.register(NodeDefinition.builder()
+            .type("cloud.aws.s3.download")
+            .label("AWS S3 Download")
+            .category("Cloud")
+            .subCategory("AWS Storage")
+            .description("Download file from S3")
+            .icon("download-cloud")
+            .color("#FF9900")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("bucket", "Bucket Name", true))
+            .addConfigField(ConfigField.text("region", "Region", true, "us-east-1"))
+            .addConfigField(ConfigField.password("accessKeyId", "Access Key ID", true))
+            .addConfigField(ConfigField.password("secretAccessKey", "Secret Access Key", true))
+            .addConfigField(ConfigField.text("key", "Object Key", true))
+            .addPort(NodePort.input("key", "Object Key", "string"))
+            .addPort(NodePort.output("file", "File Data", "file"))
+            .addPort(NodePort.output("url", "Signed URL", "string"))
+            .build());
+        
+        // AWS Lambda
+        registry.register(NodeDefinition.builder()
+            .type("cloud.aws.lambda.invoke")
+            .label("AWS Lambda Invoke")
+            .category("Cloud")
+            .subCategory("AWS Compute")
+            .description("Invoke AWS Lambda function")
+            .icon("zap")
+            .color("#FF9900")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("functionName", "Function Name", true))
+            .addConfigField(ConfigField.text("region", "Region", true, "us-east-1"))
+            .addConfigField(ConfigField.password("accessKeyId", "Access Key ID", true))
+            .addConfigField(ConfigField.password("secretAccessKey", "Secret Access Key", true))
+            .addConfigField(ConfigField.select("invocationType", "Invocation Type", false,
+                List.of("RequestResponse", "Event", "DryRun"), "RequestResponse"))
+            .addPort(NodePort.input("payload", "Payload", "object"))
+            .addPort(NodePort.output("response", "Response", "object"))
+            .addPort(NodePort.output("statusCode", "Status Code", "number"))
+            .build());
+        
+        // AWS SQS
+        registry.register(NodeDefinition.builder()
+            .type("cloud.aws.sqs.send")
+            .label("AWS SQS Send Message")
+            .category("Cloud")
+            .subCategory("AWS Messaging")
+            .description("Send message to SQS queue")
+            .icon("send")
+            .color("#FF9900")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("queueUrl", "Queue URL", true))
+            .addConfigField(ConfigField.text("region", "Region", true, "us-east-1"))
+            .addConfigField(ConfigField.password("accessKeyId", "Access Key ID", true))
+            .addConfigField(ConfigField.password("secretAccessKey", "Secret Access Key", true))
+            .addConfigField(ConfigField.number("delaySeconds", "Delay Seconds", false, 0))
+            .addPort(NodePort.input("message", "Message Body", "string"))
+            .addPort(NodePort.input("attributes", "Message Attributes", "object"))
+            .addPort(NodePort.output("messageId", "Message ID", "string"))
+            .build());
+        
+        // Azure Blob Storage
+        registry.register(NodeDefinition.builder()
+            .type("cloud.azure.blob.upload")
+            .label("Azure Blob Upload")
+            .category("Cloud")
+            .subCategory("Azure Storage")
+            .description("Upload to Azure Blob Storage")
+            .icon("upload-cloud")
+            .color("#0078D4")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("accountName", "Account Name", true))
+            .addConfigField(ConfigField.password("accountKey", "Account Key", true))
+            .addConfigField(ConfigField.text("containerName", "Container Name", true))
+            .addConfigField(ConfigField.text("blobName", "Blob Name", true))
+            .addPort(NodePort.input("file", "File Data", "file"))
+            .addPort(NodePort.output("url", "Blob URL", "string"))
+            .build());
+        
+        // GCP Storage
+        registry.register(NodeDefinition.builder()
+            .type("cloud.gcp.storage.upload")
+            .label("GCP Storage Upload")
+            .category("Cloud")
+            .subCategory("GCP Storage")
+            .description("Upload to Google Cloud Storage")
+            .icon("upload-cloud")
+            .color("#4285F4")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("bucketName", "Bucket Name", true))
+            .addConfigField(ConfigField.text("projectId", "Project ID", true))
+            .addConfigField(ConfigField.code("credentials", "Service Account JSON", true, "json"))
+            .addConfigField(ConfigField.text("objectName", "Object Name", true))
+            .addPort(NodePort.input("file", "File Data", "file"))
+            .addPort(NodePort.output("url", "Public URL", "string"))
+            .addPort(NodePort.output("mediaLink", "Media Link", "string"))
+            .build());
+    }
+    
+    // ==================== DATABASE NODES ====================
+    
+    public static void registerDatabaseNodes(NodeDefinitionRegistry registry) {
+        
+        // MongoDB
+        registry.register(NodeDefinition.builder()
+            .type("database.mongodb.find")
+            .label("MongoDB Find")
+            .category("Database")
+            .subCategory("NoSQL")
+            .description("Query documents from MongoDB")
+            .icon("database")
+            .color("#47A248")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("connectionString", "Connection String", true,
+                "mongodb://localhost:27017"))
+            .addConfigField(ConfigField.text("database", "Database", true))
+            .addConfigField(ConfigField.text("collection", "Collection", true))
+            .addConfigField(ConfigField.code("query", "Query (JSON)", true, "json"))
+            .addConfigField(ConfigField.code("projection", "Projection", false, "json"))
+            .addConfigField(ConfigField.number("limit", "Limit", false, 100))
+            .addPort(NodePort.input("filter", "Filter", "object"))
+            .addPort(NodePort.output("documents", "Documents", "array"))
+            .addPort(NodePort.output("count", "Count", "number"))
+            .build());
+        
+        registry.register(NodeDefinition.builder()
+            .type("database.mongodb.insert")
+            .label("MongoDB Insert")
+            .category("Database")
+            .subCategory("NoSQL")
+            .description("Insert document(s) into MongoDB")
+            .icon("database")
+            .color("#47A248")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("connectionString", "Connection String", true))
+            .addConfigField(ConfigField.text("database", "Database", true))
+            .addConfigField(ConfigField.text("collection", "Collection", true))
+            .addPort(NodePort.input("document", "Document", "object"))
+            .addPort(NodePort.input("documents", "Documents (array)", "array"))
+            .addPort(NodePort.output("insertedIds", "Inserted IDs", "array"))
+            .build());
+        
+        // Redis
+        registry.register(NodeDefinition.builder()
+            .type("database.redis.get")
+            .label("Redis Get")
+            .category("Database")
+            .subCategory("Cache")
+            .description("Get value from Redis")
+            .icon("database")
+            .color("#DC382D")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("host", "Host", true, "localhost"))
+            .addConfigField(ConfigField.number("port", "Port", true, 6379))
+            .addConfigField(ConfigField.password("password", "Password", false))
+            .addConfigField(ConfigField.number("database", "Database", false, 0))
+            .addPort(NodePort.input("key", "Key", "string"))
+            .addPort(NodePort.output("value", "Value", "string"))
+            .addPort(NodePort.output("exists", "Exists", "boolean"))
+            .build());
+        
+        registry.register(NodeDefinition.builder()
+            .type("database.redis.set")
+            .label("Redis Set")
+            .category("Database")
+            .subCategory("Cache")
+            .description("Set value in Redis")
+            .icon("database")
+            .color("#DC382D")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("host", "Host", true, "localhost"))
+            .addConfigField(ConfigField.number("port", "Port", true, 6379))
+            .addConfigField(ConfigField.password("password", "Password", false))
+            .addConfigField(ConfigField.number("ttl", "TTL (seconds)", false))
+            .addPort(NodePort.input("key", "Key", "string"))
+            .addPort(NodePort.input("value", "Value", "any"))
+            .addPort(NodePort.output("success", "Success", "boolean"))
+            .build());
+        
+        // Elasticsearch
+        registry.register(NodeDefinition.builder()
+            .type("database.elasticsearch.search")
+            .label("Elasticsearch Search")
+            .category("Database")
+            .subCategory("Search")
+            .description("Search documents in Elasticsearch")
+            .icon("search")
+            .color("#005571")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("url", "Elasticsearch URL", true, "http://localhost:9200"))
+            .addConfigField(ConfigField.text("index", "Index", true))
+            .addConfigField(ConfigField.code("query", "Query DSL", true, "json"))
+            .addConfigField(ConfigField.number("size", "Size", false, 10))
+            .addPort(NodePort.input("searchTerm", "Search Term", "string"))
+            .addPort(NodePort.output("hits", "Hits", "array"))
+            .addPort(NodePort.output("total", "Total", "number"))
+            .build());
+        
+        // Neo4j
+        registry.register(NodeDefinition.builder()
+            .type("database.neo4j.query")
+            .label("Neo4j Query")
+            .category("Database")
+            .subCategory("Graph")
+            .description("Execute Cypher query in Neo4j")
+            .icon("share-2")
+            .color("#008CC1")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("url", "Neo4j URL", true, "bolt://localhost:7687"))
+            .addConfigField(ConfigField.text("username", "Username", true, "neo4j"))
+            .addConfigField(ConfigField.password("password", "Password", true))
+            .addConfigField(ConfigField.code("cypher", "Cypher Query", true, "cypher"))
+            .addPort(NodePort.input("parameters", "Parameters", "object"))
+            .addPort(NodePort.output("records", "Records", "array"))
+            .build());
+    }
+    
+    // ==================== MESSAGE QUEUE NODES ====================
+    
+    public static void registerMessageQueueNodes(NodeDefinitionRegistry registry) {
+        
+        // RabbitMQ
+        registry.register(NodeDefinition.builder()
+            .type("mq.rabbitmq.publish")
+            .label("RabbitMQ Publish")
+            .category("Message Queue")
+            .subCategory("AMQP")
+            .description("Publish message to RabbitMQ")
+            .icon("send")
+            .color("#FF6600")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("host", "Host", true, "localhost"))
+            .addConfigField(ConfigField.number("port", "Port", true, 5672))
+            .addConfigField(ConfigField.text("username", "Username", true, "guest"))
+            .addConfigField(ConfigField.password("password", "Password", true))
+            .addConfigField(ConfigField.text("exchange", "Exchange", true))
+            .addConfigField(ConfigField.text("routingKey", "Routing Key", true))
+            .addPort(NodePort.input("message", "Message", "any"))
+            .addPort(NodePort.output("success", "Success", "boolean"))
+            .build());
+        
+        registry.register(NodeDefinition.builder()
+            .type("mq.rabbitmq.consume")
+            .label("RabbitMQ Consume")
+            .category("Message Queue")
+            .subCategory("AMQP")
+            .description("Consume messages from RabbitMQ")
+            .icon("inbox")
+            .color("#FF6600")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("host", "Host", true, "localhost"))
+            .addConfigField(ConfigField.number("port", "Port", true, 5672))
+            .addConfigField(ConfigField.text("username", "Username", true, "guest"))
+            .addConfigField(ConfigField.password("password", "Password", true))
+            .addConfigField(ConfigField.text("queue", "Queue", true))
+            .addConfigField(ConfigField.toggle("autoAck", "Auto Acknowledge", false, true))
+            .addPort(NodePort.output("message", "Message", "object"))
+            .addPort(NodePort.output("properties", "Properties", "object"))
+            .build());
+        
+        // Apache Kafka
+        registry.register(NodeDefinition.builder()
+            .type("mq.kafka.produce")
+            .label("Kafka Producer")
+            .category("Message Queue")
+            .subCategory("Kafka")
+            .description("Produce message to Kafka topic")
+            .icon("send")
+            .color("#231F20")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("brokers", "Bootstrap Servers", true, "localhost:9092"))
+            .addConfigField(ConfigField.text("topic", "Topic", true))
+            .addConfigField(ConfigField.text("key", "Message Key", false))
+            .addConfigField(ConfigField.select("compression", "Compression", false,
+                List.of("none", "gzip", "snappy", "lz4", "zstd"), "none"))
+            .addPort(NodePort.input("message", "Message", "any"))
+            .addPort(NodePort.input("headers", "Headers", "object"))
+            .addPort(NodePort.output("partition", "Partition", "number"))
+            .addPort(NodePort.output("offset", "Offset", "number"))
+            .build());
+        
+        // Google Pub/Sub
+        registry.register(NodeDefinition.builder()
+            .type("mq.pubsub.publish")
+            .label("Pub/Sub Publish")
+            .category("Message Queue")
+            .subCategory("GCP")
+            .description("Publish to Google Pub/Sub")
+            .icon("send")
+            .color("#4285F4")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("projectId", "Project ID", true))
+            .addConfigField(ConfigField.text("topic", "Topic", true))
+            .addConfigField(ConfigField.code("credentials", "Service Account JSON", true, "json"))
+            .addPort(NodePort.input("message", "Message", "any"))
+            .addPort(NodePort.input("attributes", "Attributes", "object"))
+            .addPort(NodePort.output("messageId", "Message ID", "string"))
+            .build());
+    }
+    
+    // ==================== FILE OPERATION NODES ====================
+    
+    public static void registerFileNodes(NodeDefinitionRegistry registry) {
+        
+        // CSV
+        registry.register(NodeDefinition.builder()
+            .type("file.csv.parse")
+            .label("Parse CSV")
+            .category("File Operations")
+            .subCategory("Data")
+            .description("Parse CSV file to JSON")
+            .icon("file-text")
+            .color("#10B981")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("delimiter", "Delimiter", false, ","))
+            .addConfigField(ConfigField.toggle("hasHeader", "Has Header", false, true))
+            .addConfigField(ConfigField.text("encoding", "Encoding", false, "UTF-8"))
+            .addPort(NodePort.input("file", "CSV File", "file"))
+            .addPort(NodePort.input("url", "CSV URL", "string"))
+            .addPort(NodePort.output("rows", "Rows", "array"))
+            .addPort(NodePort.output("headers", "Headers", "array"))
+            .build());
+        
+        registry.register(NodeDefinition.builder()
+            .type("file.csv.generate")
+            .label("Generate CSV")
+            .category("File Operations")
+            .subCategory("Data")
+            .description("Generate CSV from JSON data")
+            .icon("file-text")
+            .color("#10B981")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("delimiter", "Delimiter", false, ","))
+            .addConfigField(ConfigField.toggle("includeHeader", "Include Header", false, true))
+            .addPort(NodePort.input("data", "Data Array", "array"))
+            .addPort(NodePort.output("csv", "CSV String", "string"))
+            .addPort(NodePort.output("file", "CSV File", "file"))
+            .build());
+        
+        // Excel
+        registry.register(NodeDefinition.builder()
+            .type("file.excel.read")
+            .label("Read Excel")
+            .category("File Operations")
+            .subCategory("Data")
+            .description("Read Excel file (XLSX)")
+            .icon("file-spreadsheet")
+            .color("#217346")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("sheetName", "Sheet Name", false))
+            .addConfigField(ConfigField.number("sheetIndex", "Sheet Index", false, 0))
+            .addConfigField(ConfigField.toggle("hasHeader", "Has Header", false, true))
+            .addPort(NodePort.input("file", "Excel File", "file"))
+            .addPort(NodePort.output("rows", "Rows", "array"))
+            .addPort(NodePort.output("sheets", "Sheet Names", "array"))
+            .build());
+        
+        // PDF
+        registry.register(NodeDefinition.builder()
+            .type("file.pdf.extract")
+            .label("Extract PDF Text")
+            .category("File Operations")
+            .subCategory("Documents")
+            .description("Extract text from PDF")
+            .icon("file-text")
+            .color("#EF4444")
+            .isAtomic(true)
+            .addConfigField(ConfigField.toggle("preserveLayout", "Preserve Layout", false, false))
+            .addConfigField(ConfigField.number("startPage", "Start Page", false, 1))
+            .addConfigField(ConfigField.number("endPage", "End Page", false))
+            .addPort(NodePort.input("file", "PDF File", "file"))
+            .addPort(NodePort.input("url", "PDF URL", "string"))
+            .addPort(NodePort.output("text", "Extracted Text", "string"))
+            .addPort(NodePort.output("pages", "Pages", "array"))
+            .addPort(NodePort.output("metadata", "Metadata", "object"))
+            .build());
+        
+        // Image Processing
+        registry.register(NodeDefinition.builder()
+            .type("file.image.resize")
+            .label("Resize Image")
+            .category("File Operations")
+            .subCategory("Image")
+            .description("Resize and transform images")
+            .icon("image")
+            .color("#8B5CF6")
+            .isAtomic(true)
+            .addConfigField(ConfigField.number("width", "Width", false))
+            .addConfigField(ConfigField.number("height", "Height", false))
+            .addConfigField(ConfigField.select("fit", "Fit Mode", false,
+                List.of("cover", "contain", "fill", "inside", "outside"), "cover"))
+            .addConfigField(ConfigField.select("format", "Output Format", false,
+                List.of("jpeg", "png", "webp", "avif"), "jpeg"))
+            .addConfigField(ConfigField.slider("quality", "Quality", false, 80.0, 1.0, 100.0, 1.0))
+            .addPort(NodePort.input("image", "Image", "file"))
+            .addPort(NodePort.output("resized", "Resized Image", "file"))
+            .build());
+        
+        // ZIP/Compression
+        registry.register(NodeDefinition.builder()
+            .type("file.zip.compress")
+            .label("Create ZIP")
+            .category("File Operations")
+            .subCategory("Compression")
+            .description("Compress files into ZIP archive")
+            .icon("archive")
+            .color("#6366F1")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("archiveName", "Archive Name", true, "archive.zip"))
+            .addConfigField(ConfigField.select("compressionLevel", "Compression", false,
+                List.of("0", "1", "5", "9"), "5"))
+            .addPort(NodePort.input("files", "Files", "array"))
+            .addPort(NodePort.output("zip", "ZIP File", "file"))
+            .addPort(NodePort.output("size", "Compressed Size", "number"))
+            .build());
+    }
+    
+    // ==================== DATA TRANSFORMATION NODES ====================
+    
+    public static void registerTransformNodes(NodeDefinitionRegistry registry) {
+        
+        // JSON Operations
+        registry.register(NodeDefinition.builder()
+            .type("transform.json.path")
+            .label("JSONPath Query")
+            .category("Data Transform")
+            .subCategory("JSON")
+            .description("Extract data using JSONPath")
+            .icon("filter")
+            .color("#F59E0B")
+            .isAtomic(true)
+            .addConfigField(ConfigField.code("path", "JSONPath Expression", true, "json"))
+            .addPort(NodePort.input("json", "JSON Data", "object"))
+            .addPort(NodePort.output("result", "Result", "any"))
+            .build());
+        
+        registry.register(NodeDefinition.builder()
+            .type("transform.json.merge")
+            .label("Merge JSON")
+            .category("Data Transform")
+            .subCategory("JSON")
+            .description("Merge multiple JSON objects")
+            .icon("layers")
+            .color("#F59E0B")
+            .isAtomic(true)
+            .addConfigField(ConfigField.select("strategy", "Merge Strategy", true,
+                List.of("deep", "shallow", "replace"), "deep"))
+            .addPort(NodePort.input("objects", "Objects Array", "array"))
+            .addPort(NodePort.output("merged", "Merged Object", "object"))
+            .build());
+        
+        // XML Operations
+        registry.register(NodeDefinition.builder()
+            .type("transform.xml.parse")
+            .label("Parse XML")
+            .category("Data Transform")
+            .subCategory("XML")
+            .description("Parse XML to JSON")
+            .icon("code")
+            .color("#EC4899")
+            .isAtomic(true)
+            .addConfigField(ConfigField.toggle("preserveAttributes", "Preserve Attributes", false, true))
+            .addConfigField(ConfigField.toggle("ignoreNamespace", "Ignore Namespace", false, false))
+            .addPort(NodePort.input("xml", "XML String", "string"))
+            .addPort(NodePort.output("json", "JSON Object", "object"))
+            .build());
+        
+        // Data Validation
+        registry.register(NodeDefinition.builder()
+            .type("transform.validate.schema")
+            .label("Validate JSON Schema")
+            .category("Data Transform")
+            .subCategory("Validation")
+            .description("Validate data against JSON Schema")
+            .icon("check-circle")
+            .color("#10B981")
+            .isAtomic(true)
+            .addConfigField(ConfigField.code("schema", "JSON Schema", true, "json"))
+            .addPort(NodePort.input("data", "Data", "object"))
+            .addPort(NodePort.output("isValid", "Is Valid", "boolean"))
+            .addPort(NodePort.output("errors", "Validation Errors", "array"))
+            .build());
+        
+        // Data Mapping
+        registry.register(NodeDefinition.builder()
+            .type("transform.map.template")
+            .label("Template Mapper")
+            .category("Data Transform")
+            .subCategory("Mapping")
+            .description("Transform data using template")
+            .icon("map")
+            .color("#8B5CF6")
+            .isAtomic(true)
+            .addConfigField(ConfigField.select("engine", "Template Engine", true,
+                List.of("handlebars", "mustache", "jinja2"), "handlebars"))
+            .addConfigField(ConfigField.code("template", "Template", true, "handlebars"))
+            .addPort(NodePort.input("data", "Input Data", "object"))
+            .addPort(NodePort.output("result", "Transformed Result", "any"))
+            .build());
+    }
+    
+    // ==================== MONITORING & OBSERVABILITY ====================
+    
+    public static void registerMonitoringNodes(NodeDefinitionRegistry registry) {
+        
+        // Logging
+        registry.register(NodeDefinition.builder()
+            .type("monitor.log")
+            .label("Log Message")
+            .category("Monitoring")
+            .subCategory("Logging")
+            .description("Log message to console/file")
+            .icon("file-text")
+            .color("#6B7280")
+            .isAtomic(true)
+            .addConfigField(ConfigField.select("level", "Log Level", true,
+                List.of("DEBUG", "INFO", "WARN", "ERROR"), "INFO"))
+            .addConfigField(ConfigField.text("message", "Message Template", false))
+            .addConfigField(ConfigField.toggle("includeTimestamp", "Include Timestamp", false, true))
+            .addPort(NodePort.input("data", "Data to Log", "any"))
+            .addPort(NodePort.output("logged", "Logged", "boolean"))
+            .build());
+        
+        // Metrics
+        registry.register(NodeDefinition.builder()
+            .type("monitor.metric.counter")
+            .label("Counter Metric")
+            .category("Monitoring")
+            .subCategory("Metrics")
+            .description("Increment counter metric")
+            .icon("bar-chart-2")
+            .color("#3B82F6")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("name", "Metric Name", true))
+            .addConfigField(ConfigField.code("labels", "Labels (JSON)", false, "json"))
+            .addConfigField(ConfigField.number("increment", "Increment By", false, 1))
+            .addPort(NodePort.input("value", "Value", "number"))
+            .addPort(NodePort.output("total", "Total Count", "number"))
+            .build());
+        
+        // Alerts
+        registry.register(NodeDefinition.builder()
+            .type("monitor.alert.send")
+            .label("Send Alert")
+            .category("Monitoring")
+            .subCategory("Alerting")
+            .description("Send alert notification")
+            .icon("alert-triangle")
+            .color("#EF4444")
+            .isAtomic(true)
+            .addConfigField(ConfigField.select("severity", "Severity", true,
+                List.of("INFO", "WARNING", "ERROR", "CRITICAL"), "WARNING"))
+            .addConfigField(ConfigField.multiSelect("channels", "Channels", true,
+                List.of("email", "slack", "pagerduty", "webhook")))
+            .addConfigField(ConfigField.text("title", "Alert Title", true))
+            .addConfigField(ConfigField.textarea("message", "Message", true))
+            .addPort(NodePort.input("data", "Alert Data", "object"))
+            .addPort(NodePort.output("sent", "Alert Sent", "boolean"))
+            .build());
+        
+        // Tracing
+        registry.register(NodeDefinition.builder()
+            .type("monitor.trace.span")
+            .label("Trace Span")
+            .category("Monitoring")
+            .subCategory("Tracing")
+            .description("Create distributed trace span")
+            .icon("activity")
+            .color("#10B981")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("operationName", "Operation Name", true))
+            .addConfigField(ConfigField.code("tags", "Tags (JSON)", false, "json"))
+            .addPort(NodePort.input("parentSpanId", "Parent Span ID", "string"))
+            .addPort(NodePort.output("spanId", "Span ID", "string"))
+            .addPort(NodePort.output("traceId", "Trace ID", "string"))
+            .build());
+    }
+    
+    // ==================== SECURITY & ENCRYPTION ====================
+    
+    public static void registerSecurityNodes(NodeDefinitionRegistry registry) {
+        
+        // Encryption
+        registry.register(NodeDefinition.builder()
+            .type("security.encrypt.aes")
+            .label("AES Encryption")
+            .category("Security")
+            .subCategory("Encryption")
+            .description("Encrypt data using AES")
+            .icon("lock")
+            .color("#EF4444")
+            .isAtomic(true)
+            .addConfigField(ConfigField.password("key", "Encryption Key", true))
+            .addConfigField(ConfigField.select("mode", "Mode", true,
+                List.of("AES-256-GCM", "AES-256-CBC", "AES-128-GCM"), "AES-256-GCM"))
+            .addPort(NodePort.input("plaintext", "Plaintext", "string"))
+            .addPort(NodePort.output("ciphertext", "Ciphertext", "string"))
+            .addPort(NodePort.output("iv", "Initialization Vector", "string"))
+            .build());
+        
+        registry.register(NodeDefinition.builder()
+            .type("security.decrypt.aes")
+            .label("AES Decryption")
+            .category("Security")
+            .subCategory("Encryption")
+            .description("Decrypt AES encrypted data")
+            .icon("unlock")
+            .color("#10B981")
+            .isAtomic(true)
+            .addConfigField(ConfigField.password("key", "Decryption Key", true))
+            .addConfigField(ConfigField.select("mode", "Mode", true,
+                List.of("AES-256-GCM", "AES-256-CBC", "AES-128-GCM"), "AES-256-GCM"))
+            .addPort(NodePort.input("ciphertext", "Ciphertext", "string"))
+            .addPort(NodePort.input("iv", "Initialization Vector", "string"))
+            .addPort(NodePort.output("plaintext", "Plaintext", "string"))
+            .build());
+        
+        // Hashing
+        registry.register(NodeDefinition.builder()
+            .type("security.hash")
+            .label("Hash Data")
+            .category("Security")
+            .subCategory("Hashing")
+            .description("Generate cryptographic hash")
+            .icon("hash")
+            .color("#8B5CF6")
+            .isAtomic(true)
+            .addConfigField(ConfigField.select("algorithm", "Algorithm", true,
+                List.of("SHA-256", "SHA-512", "MD5", "SHA-1"), "SHA-256"))
+            .addConfigField(ConfigField.select("encoding", "Output Encoding", false,
+                List.of("hex", "base64"), "hex"))
+            .addPort(NodePort.input("data", "Data", "string"))
+            .addPort(NodePort.output("hash", "Hash", "string"))
+            .build());
+        
+        // JWT
+        registry.register(NodeDefinition.builder()
+            .type("security.jwt.sign")
+            .label("Sign JWT")
+            .category("Security")
+            .subCategory("JWT")
+            .description("Create signed JWT token")
+            .icon("key")
+            .color("#F59E0B")
+            .isAtomic(true)
+            .addConfigField(ConfigField.password("secret", "Secret Key", true))
+            .addConfigField(ConfigField.select("algorithm", "Algorithm", true,
+                List.of("HS256", "HS512", "RS256"), "HS256"))
+            .addConfigField(ConfigField.number("expiresIn", "Expires In (seconds)", false, 3600))
+            .addPort(NodePort.input("payload", "Payload", "object"))
+            .addPort(NodePort.output("token", "JWT Token", "string"))
+            .build());
+        
+        registry.register(NodeDefinition.builder()
+            .type("security.jwt.verify")
+            .label("Verify JWT")
+            .category("Security")
+            .subCategory("JWT")
+            .description("Verify and decode JWT token")
+            .icon("shield-check")
+            .color("#10B981")
+            .isAtomic(true)
+            .addConfigField(ConfigField.password("secret", "Secret Key", true))
+            .addConfigField(ConfigField.select("algorithm", "Algorithm", true,
+                List.of("HS256", "HS512", "RS256"), "HS256"))
+            .addPort(NodePort.input("token", "JWT Token", "string"))
+            .addPort(NodePort.output("payload", "Decoded Payload", "object"))
+            .addPort(NodePort.output("isValid", "Is Valid", "boolean"))
+            .build());
+    }
+    
+    // ==================== BUSINESS LOGIC NODES ====================
+    
+    public static void registerBusinessNodes(NodeDefinitionRegistry registry) {
+        
+        // Math Operations
+        registry.register(NodeDefinition.builder()
+            .type("business.math.calculate")
+            .label("Calculator")
+            .category("Business Logic")
+            .subCategory("Math")
+            .description("Perform mathematical calculations")
+            .icon("calculator")
+            .color("#6366F1")
+            .isAtomic(true)
+            .addConfigField(ConfigField.code("expression", "Expression", true, "javascript"))
+            .addPort(NodePort.input("variables", "Variables", "object"))
+            .addPort(NodePort.output("result", "Result", "number"))
+            .build());
+        
+        // Date/Time
+        registry.register(NodeDefinition.builder()
+            .type("business.datetime.format")
+            .label("Format Date/Time")
+            .category("Business Logic")
+            .subCategory("Date/Time")
+            .description("Format date and time")
+            .icon("calendar")
+            .color("#10B981")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("format", "Format String", true, "YYYY-MM-DD HH:mm:ss"))
+            .addConfigField(ConfigField.text("timezone", "Timezone", false, "UTC"))
+            .addPort(NodePort.input("datetime", "Date/Time", "string"))
+            .addPort(NodePort.output("formatted", "Formatted", "string"))
+            .build());
+        
+        registry.register(NodeDefinition.builder()
+            .type("business.datetime.add")
+            .label("Add Time Duration")
+            .category("Business Logic")
+            .subCategory("Date/Time")
+            .description("Add duration to date/time")
+            .icon("clock")
+            .color("#10B981")
+            .isAtomic(true)
+            .addConfigField(ConfigField.number("amount", "Amount", true))
+            .addConfigField(ConfigField.select("unit", "Unit", true,
+                List.of("seconds", "minutes", "hours", "days", "weeks", "months", "years"), "days"))
+            .addPort(NodePort.input("datetime", "Date/Time", "string"))
+            .addPort(NodePort.output("result", "Result", "string"))
+            .build());
+        
+        // String Operations
+        registry.register(NodeDefinition.builder()
+            .type("business.string.template")
+            .label("String Template")
+            .category("Business Logic")
+            .subCategory("String")
+            .description("Format string with variables")
+            .icon("type")
+            .color("#8B5CF6")
+            .isAtomic(true)
+            .addConfigField(ConfigField.textarea("template", "Template", true))
+            .addPort(NodePort.input("variables", "Variables", "object"))
+            .addPort(NodePort.output("result", "Result", "string"))
+            .build());
+        
+        // Conditional Logic
+        registry.register(NodeDefinition.builder()
+            .type("business.condition.evaluate")
+            .label("Evaluate Condition")
+            .category("Business Logic")
+            .subCategory("Conditional")
+            .description("Evaluate boolean condition")
+            .icon("git-branch")
+            .color("#F59E0B")
+            .isAtomic(true)
+            .addConfigField(ConfigField.code("condition", "Condition Expression", true, "javascript"))
+            .addPort(NodePort.input("data", "Input Data", "object"))
+            .addPort(NodePort.output("result", "Result", "boolean"))
+            .addPort(NodePort.output("matched", "Matched Branch", "string"))
+            .build());
+        
+        // Delay/Wait
+        registry.register(NodeDefinition.builder()
+            .type("business.delay")
+            .label("Delay")
+            .category("Business Logic")
+            .subCategory("Control")
+            .description("Wait for specified duration")
+            .icon("pause-circle")
+            .color("#6B7280")
+            .isAtomic(true)
+            .addConfigField(ConfigField.number("duration", "Duration", true))
+            .addConfigField(ConfigField.select("unit", "Unit", true,
+                List.of("milliseconds", "seconds", "minutes", "hours"), "seconds"))
+            .addPort(NodePort.input("trigger", "Trigger", "any"))
+            .addPort(NodePort.output("continue", "Continue", "any"))
+            .build());
+        
+        // Loop/Iterator
+        registry.register(NodeDefinition.builder()
+            .type("business.loop.foreach")
+            .label("For Each")
+            .category("Business Logic")
+            .subCategory("Iteration")
+            .description("Iterate over array items")
+            .icon("repeat")
+            .color("#3B82F6")
+            .isAtomic(true)
+            .addConfigField(ConfigField.number("batchSize", "Batch Size", false, 1))
+            .addConfigField(ConfigField.toggle("parallel", "Parallel Execution", false, false))
+            .addPort(NodePort.input("items", "Items", "array"))
+            .addPort(NodePort.output("item", "Current Item", "any"))
+            .addPort(NodePort.output("index", "Current Index", "number"))
+            .addPort(NodePort.output("results", "All Results", "array"))
+            .build());
+    }
+    
+    // ==================== NOTIFICATION NODES ====================
+    
+    public static void registerNotificationNodes(NodeDefinitionRegistry registry) {
+        
+        // Email
+        registry.register(NodeDefinition.builder()
+            .type("notify.email.send")
+            .label("Send Email")
+            .category("Notifications")
+            .subCategory("Email")
+            .description("Send email via SMTP")
+            .icon("mail")
+            .color("#3B82F6")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("host", "SMTP Host", true))
+            .addConfigField(ConfigField.number("port", "SMTP Port", true, 587))
+            .addConfigField(ConfigField.text("username", "Username", true))
+            .addConfigField(ConfigField.password("password", "Password", true))
+            .addConfigField(ConfigField.text("from", "From Address", true))
+            .addConfigField(ConfigField.text("to", "To Address(es)", true))
+            .addConfigField(ConfigField.text("subject", "Subject", true))
+            .addConfigField(ConfigField.select("contentType", "Content Type", false,
+                List.of("text/plain", "text/html"), "text/html"))
+            .addPort(NodePort.input("body", "Email Body", "string"))
+            .addPort(NodePort.input("attachments", "Attachments", "array"))
+            .addPort(NodePort.output("sent", "Sent Successfully", "boolean"))
+            .addPort(NodePort.output("messageId", "Message ID", "string"))
+            .build());
+        
+        // Slack
+        registry.register(NodeDefinition.builder()
+            .type("notify.slack.message")
+            .label("Send Slack Message")
+            .category("Notifications")
+            .subCategory("Chat")
+            .description("Send message to Slack")
+            .icon("message-square")
+            .color("#4A154B")
+            .isAtomic(true)
+            .addConfigField(ConfigField.password("webhookUrl", "Webhook URL", true))
+            .addConfigField(ConfigField.text("channel", "Channel", false))
+            .addConfigField(ConfigField.text("username", "Bot Username", false))
+            .addConfigField(ConfigField.text("iconEmoji", "Icon Emoji", false, ":robot_face:"))
+            .addPort(NodePort.input("text", "Message Text", "string"))
+            .addPort(NodePort.input("blocks", "Blocks (JSON)", "array"))
+            .addPort(NodePort.output("sent", "Sent", "boolean"))
+            .build());
+        
+        // SMS
+        registry.register(NodeDefinition.builder()
+            .type("notify.sms.twilio")
+            .label("Send SMS (Twilio)")
+            .category("Notifications")
+            .subCategory("SMS")
+            .description("Send SMS via Twilio")
+            .icon("smartphone")
+            .color("#F22F46")
+            .isAtomic(true)
+            .addConfigField(ConfigField.text("accountSid", "Account SID", true))
+            .addConfigField(ConfigField.password("authToken", "Auth Token", true))
+            .addConfigField(ConfigField.tel("fromNumber", "From Number", true))
+            .addConfigField(ConfigField.tel("toNumber", "To Number", true))
+            .addPort(NodePort.input("message", "Message", "string"))
+            .addPort(NodePort.output("sid", "Message SID", "string"))
+            .addPort(NodePort.output("status", "Status", "string"))
+            .build());
+        
+        // Push Notifications
+        registry.register(NodeDefinition.builder()
+            .type("notify.push.firebase")
+            .label("Firebase Push Notification")
+            .category("Notifications")
+            .subCategory("Mobile")
+            .description("Send push notification via Firebase")
+            .icon("bell")
+            .color("#FFCA28")
+            .isAtomic(true)
+            .addConfigField(ConfigField.code("serviceAccount", "Service Account JSON", true, "json"))
+            .addConfigField(ConfigField.text("title", "Title", true))
+            .addConfigField(ConfigField.textarea("body", "Body", true))
+            .addPort(NodePort.input("token", "Device Token", "string"))
+            .addPort(NodePort.input("tokens", "Device Tokens", "array"))
+            .addPort(NodePort.input("data", "Custom Data", "object"))
+            .addPort(NodePort.output("sent", "Sent Count", "number"))
+            .addPort(NodePort.output("failed", "Failed Count", "number"))
+            .build());
+    }
+}

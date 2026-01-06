@@ -67,4 +67,28 @@ public class WorkflowEventEntity {
         this.data = data;
         this.createdAt = createdAt;
     }
+
+    public String getId() {
+        return id;
+    }
+
+    public String getRunId() {
+        return runId;
+    }
+
+    public Long getSequence() {
+        return sequence;
+    }
+
+    public WorkflowEventType getType() {
+        return type;
+    }
+
+    public Map<String, Object> getData() {
+        return data;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
 }

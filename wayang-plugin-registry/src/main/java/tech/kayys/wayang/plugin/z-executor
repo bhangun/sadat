@@ -1,0 +1,740 @@
+package tech.kayys.silat.executor.sdk;
+
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.jboss.logging.Logger;
+
+import java.lang.annotation.*;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.*;
+
+/**
+ * ============================================================================
+ * SILAT EXECUTOR SDK - JAVA
+ * ============================================================================
+ * 
+ * Philosophy:
+ * - Stateless workers
+ * - Capability-based
+ * - Schema-driven
+ * - Replaceable
+ * - Horizontally scalable
+ * 
+ * SDK hides:
+ * - Protocol (REST / gRPC / Kafka)
+ * - Schema validation
+ * - Error handling
+ * - Observability
+ */
+
+// ==================== CORE INTERFACES ====================
+
+/**
+ * Base executor interface - All executors implement this
+ */
+public interface Executor {
+    
+    /**
+     * Get executor metadata (capabilities, supported nodes, etc.)
+     */
+    ExecutorMetadata metadata();
+    
+    /**
+     * Execute a node task
+     * 
+     * @param request The execution request with inputs, config, context
+     * @return Execution result with outputs or error
+     * @throws ExecutorException if execution fails critically
+     */
+    ExecutionResult execute(ExecutionRequest request) throws ExecutorException;
+    
+    /**
+     * Check if this executor supports a node type
+     */
+    default boolean supports(String nodeType) {
+        return metadata().supportedNodes().contains(nodeType);
+    }
+    
+    /**
+     * Validate request before execution (optional override)
+     */
+    default ValidationResult validate(ExecutionRequest request) {
+        return ValidationResult.success();
+    }
+    
+    /**
+     * Lifecycle hook: called before execution
+     */
+    default Uni<Void> beforeExecute(ExecutionRequest request) {
+        return Uni.createFrom().voidItem();
+    }
+    
+    /**
+     * Lifecycle hook: called after execution
+     */
+    default Uni<Void> afterExecute(ExecutionRequest request, ExecutionResult result) {
+        return Uni.createFrom().voidItem();
+    }
+}
+
+/**
+ * Executor metadata - Describes capabilities
+ */
+public record ExecutorMetadata(
+    String executorId,
+    String executorType,           // "agent", "integration", "business"
+    Set<String> supportedNodes,
+    ExecutionMode mode,            // SYNC, ASYNC, STREAM
+    Set<String> protocols,         // "REST", "GRPC", "KAFKA"
+    Set<String> capabilities,      // "nlp", "vector-search", "email"
+    String version,
+    Map<String, Object> config
+) {
+    public static Builder builder() {
+        return new Builder();
+    }
+    
+    public static class Builder {
+        private String executorId;
+        private String executorType;
+        private Set<String> supportedNodes = new HashSet<>();
+        private ExecutionMode mode = ExecutionMode.SYNC;
+        private Set<String> protocols = new HashSet<>();
+        private Set<String> capabilities = new HashSet<>();
+        private String version = "1.0.0";
+        private Map<String, Object> config = new HashMap<>();
+        
+        public Builder executorId(String id) {
+            this.executorId = id;
+            return this;
+        }
+        
+        public Builder executorType(String type) {
+            this.executorType = type;
+            return this;
+        }
+        
+        public Builder supportNode(String... nodes) {
+            supportedNodes.addAll(Arrays.asList(nodes));
+            return this;
+        }
+        
+        public Builder mode(ExecutionMode mode) {
+            this.mode = mode;
+            return this;
+        }
+        
+        public Builder protocol(String... protocols) {
+            this.protocols.addAll(Arrays.asList(protocols));
+            return this;
+        }
+        
+        public Builder capability(String... capabilities) {
+            this.capabilities.addAll(Arrays.asList(capabilities));
+            return this;
+        }
+        
+        public Builder version(String version) {
+            this.version = version;
+            return this;
+        }
+        
+        public ExecutorMetadata build() {
+            return new ExecutorMetadata(
+                executorId,
+                executorType,
+                supportedNodes,
+                mode,
+                protocols,
+                capabilities,
+                version,
+                config
+            );
+        }
+    }
+}
+
+enum ExecutionMode {
+    SYNC,
+    ASYNC,
+    STREAM
+}
+
+/**
+ * Execution Request - What executor receives
+ */
+public record ExecutionRequest(
+    String executionId,
+    String workflowRunId,
+    NodeDescriptor node,
+    Map<String, Object> inputs,
+    Map<String, Object> config,
+    ExecutionContext context,
+    TraceContext trace
+) {
+    /**
+     * Get input value with type casting
+     */
+    @SuppressWarnings("unchecked")
+    public <T> T getInput(String key, Class<T> type) {
+        return (T) inputs.get(key);
+    }
+    
+    /**
+     * Get input with default value
+     */
+    @SuppressWarnings("unchecked")
+    public <T> T getInput(String key, T defaultValue) {
+        return (T) inputs.getOrDefault(key, defaultValue);
+    }
+    
+    /**
+     * Get config value
+     */
+    @SuppressWarnings("unchecked")
+    public <T> T getConfig(String key, T defaultValue) {
+        return (T) config.getOrDefault(key, defaultValue);
+    }
+}
+
+/**
+ * Node Descriptor
+ */
+public record NodeDescriptor(
+    String type,
+    String version,
+    String instanceId
+) {}
+
+/**
+ * Execution Context - Variables, secrets, headers
+ */
+public record ExecutionContext(
+    Map<String, Object> variables,
+    String secretsRef,
+    Map<String, String> headers,
+    Map<String, Object> metadata
+) {
+    public ExecutionContext() {
+        this(new HashMap<>(), null, new HashMap<>(), new HashMap<>());
+    }
+}
+
+/**
+ * Trace Context - OpenTelemetry compatible
+ */
+public record TraceContext(
+    String traceId,
+    String spanId,
+    String parentSpanId,
+    Map<String, String> baggage
+) {
+    public TraceContext() {
+        this(
+            UUID.randomUUID().toString(),
+            UUID.randomUUID().toString(),
+            null,
+            new HashMap<>()
+        );
+    }
+}
+
+/**
+ * Execution Result - What executor returns
+ */
+public record ExecutionResult(
+    ExecutionStatus status,
+    Map<String, Object> outputs,
+    ExecutionError error,
+    ExecutionMetrics metrics
+) {
+    /**
+     * Create success result
+     */
+    public static ExecutionResult success(Map<String, Object> outputs) {
+        return new ExecutionResult(
+            ExecutionStatus.SUCCESS,
+            outputs,
+            null,
+            new ExecutionMetrics()
+        );
+    }
+    
+    /**
+     * Create failure result
+     */
+    public static ExecutionResult failure(ExecutionError error) {
+        return new ExecutionResult(
+            ExecutionStatus.FAILURE,
+            Map.of(),
+            error,
+            new ExecutionMetrics()
+        );
+    }
+    
+    /**
+     * Create failure result from exception
+     */
+    public static ExecutionResult failure(Exception e) {
+        return failure(ExecutionError.fromException(e));
+    }
+}
+
+enum ExecutionStatus {
+    SUCCESS,
+    FAILURE,
+    TIMEOUT,
+    CANCELLED,
+    PARTIAL
+}
+
+/**
+ * Execution Error
+ */
+public record ExecutionError(
+    String code,
+    String message,
+    String type,
+    Map<String, Object> details,
+    String stackTrace,
+    boolean retryable
+) {
+    public static ExecutionError fromException(Exception e) {
+        return new ExecutionError(
+            "EXECUTION_ERROR",
+            e.getMessage(),
+            e.getClass().getSimpleName(),
+            Map.of(),
+            getStackTrace(e),
+            false
+        );
+    }
+    
+    private static String getStackTrace(Exception e) {
+        java.io.StringWriter sw = new java.io.StringWriter();
+        e.printStackTrace(new java.io.PrintWriter(sw));
+        return sw.toString();
+    }
+}
+
+/**
+ * Execution Metrics
+ */
+public class ExecutionMetrics {
+    public long durationMs;
+    public long tokens;
+    public long bytesProcessed;
+    public int retryCount;
+    public Map<String, Object> custom = new HashMap<>();
+    
+    public ExecutionMetrics() {}
+    
+    public ExecutionMetrics withDuration(Duration duration) {
+        this.durationMs = duration.toMillis();
+        return this;
+    }
+    
+    public ExecutionMetrics withTokens(long tokens) {
+        this.tokens = tokens;
+        return this;
+    }
+    
+    public ExecutionMetrics withCustom(String key, Object value) {
+        this.custom.put(key, value);
+        return this;
+    }
+}
+
+/**
+ * Validation Result
+ */
+public record ValidationResult(boolean valid, String message) {
+    public static ValidationResult success() {
+        return new ValidationResult(true, null);
+    }
+    
+    public static ValidationResult failure(String message) {
+        return new ValidationResult(false, message);
+    }
+}
+
+// ==================== ANNOTATIONS ====================
+
+/**
+ * Marks a class as an executor component
+ * Enables auto-registration with Control Plane
+ */
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+public @interface ExecutorComponent {
+    
+    /**
+     * Unique executor ID
+     */
+    String executorId();
+    
+    /**
+     * Executor type
+     */
+    String type() default "custom";
+    
+    /**
+     * Supported node types
+     */
+    String[] nodes();
+    
+    /**
+     * Execution mode
+     */
+    ExecutionMode mode() default ExecutionMode.SYNC;
+    
+    /**
+     * Supported protocols
+     */
+    String[] protocols() default {"REST"};
+}
+
+// ==================== ABSTRACT BASE EXECUTOR ====================
+
+/**
+ * Abstract base executor with built-in functionality
+ * Most executors should extend this
+ */
+public abstract class AbstractExecutor implements Executor {
+    
+    private static final Logger LOG = Logger.getLogger(AbstractExecutor.class);
+    
+    @Inject
+    protected SchemaValidator schemaValidator;
+    
+    @Inject
+    protected SecretResolver secretResolver;
+    
+    @Inject
+    protected MetricEmitter metricEmitter;
+    
+    @Inject
+    protected ExecutionContextProvider contextProvider;
+    
+    protected final ExecutorMetadata executorMetadata;
+    
+    protected AbstractExecutor() {
+        // Extract metadata from annotation
+        ExecutorComponent annotation = getClass().getAnnotation(ExecutorComponent.class);
+        if (annotation == null) {
+            throw new IllegalStateException(
+                "Executor must be annotated with @ExecutorComponent");
+        }
+        
+        this.executorMetadata = ExecutorMetadata.builder()
+            .executorId(annotation.executorId())
+            .executorType(annotation.type())
+            .supportNode(annotation.nodes())
+            .mode(annotation.mode())
+            .protocol(annotation.protocols())
+            .build();
+    }
+    
+    @Override
+    public final ExecutorMetadata metadata() {
+        return executorMetadata;
+    }
+    
+    @Override
+    public final ExecutionResult execute(ExecutionRequest request) throws ExecutorException {
+        Instant startTime = Instant.now();
+        
+        try {
+            LOG.infof("Executing: %s for node %s (execution: %s)",
+                executorMetadata.executorId(),
+                request.node().type(),
+                request.executionId());
+            
+            // Validate request
+            ValidationResult validation = validate(request);
+            if (!validation.valid()) {
+                return ExecutionResult.failure(new ExecutionError(
+                    "VALIDATION_ERROR",
+                    validation.message(),
+                    "ValidationError",
+                    Map.of(),
+                    "",
+                    false
+                ));
+            }
+            
+            // Execute lifecycle
+            beforeExecute(request).await().indefinitely();
+            
+            // Execute actual logic
+            ExecutionResult result = doExecute(request);
+            
+            // Add metrics
+            Duration duration = Duration.between(startTime, Instant.now());
+            result.metrics().durationMs = duration.toMillis();
+            
+            // Emit metrics
+            metricEmitter.emitExecutionMetrics(executorMetadata.executorId(), result.metrics());
+            
+            // After execute hook
+            afterExecute(request, result).await().indefinitely();
+            
+            LOG.infof("Execution completed: %s in %dms with status %s",
+                request.executionId(),
+                duration.toMillis(),
+                result.status());
+            
+            return result;
+            
+        } catch (Exception e) {
+            Duration duration = Duration.between(startTime, Instant.now());
+            LOG.errorf(e, "Execution failed: %s after %dms",
+                request.executionId(), duration.toMillis());
+            
+            return ExecutionResult.failure(e);
+        }
+    }
+    
+    /**
+     * Subclasses implement actual execution logic
+     */
+    protected abstract ExecutionResult doExecute(ExecutionRequest request) 
+        throws ExecutorException;
+}
+
+// ==================== SDK SERVICES ====================
+
+
+
+/**
+ * Secret resolver service
+ */
+@ApplicationScoped
+public class SecretResolver {
+    
+    private static final Logger LOG = Logger.getLogger(SecretResolver.class);
+    
+    /**
+     * Resolve secret from reference
+     * Example: vault://workflow/123/api-key
+     */
+    public String resolve(String secretRef) {
+        if (secretRef == null || !secretRef.startsWith("vault://")) {
+            return secretRef;
+        }
+        
+        // In production, integrate with HashiCorp Vault, AWS Secrets Manager, etc.
+        LOG.debugf("Resolving secret: %s", secretRef);
+        
+        // For now, return masked value
+        return "***MASKED***";
+    }
+}
+
+/**
+ * Metric emitter service
+ */
+@ApplicationScoped
+public class MetricEmitter {
+    
+    private static final Logger LOG = Logger.getLogger(MetricEmitter.class);
+    
+    /**
+     * Emit execution metrics to monitoring system
+     */
+    public void emitExecutionMetrics(String executorId, ExecutionMetrics metrics) {
+        // In production, send to Prometheus, DataDog, etc.
+        LOG.debugf("Metrics for %s: duration=%dms, tokens=%d",
+            executorId, metrics.durationMs, metrics.tokens);
+    }
+}
+
+/**
+ * Execution context provider
+ */
+@ApplicationScoped
+public class ExecutionContextProvider {
+    
+    /**
+     * Get current execution context (thread-local or context propagation)
+     */
+    public ExecutionContext getCurrentContext() {
+        // In production, integrate with OpenTelemetry context
+        return new ExecutionContext();
+    }
+}
+
+// ==================== EXECUTOR EXCEPTION ====================
+
+/**
+ * Base exception for executor errors
+ */
+public class ExecutorException extends Exception {
+    private final boolean retryable;
+    
+    public ExecutorException(String message) {
+        super(message);
+        this.retryable = false;
+    }
+    
+    public ExecutorException(String message, boolean retryable) {
+        super(message);
+        this.retryable = retryable;
+    }
+    
+    public ExecutorException(String message, Throwable cause) {
+        super(message, cause);
+        this.retryable = false;
+    }
+    
+    public boolean isRetryable() {
+        return retryable;
+    }
+}
+
+// ==================== EXAMPLE EXECUTOR IMPLEMENTATION ====================
+
+/**
+ * Example: Sentiment analyzer executor
+ */
+@ExecutorComponent(
+    executorId = "executor.sentiment.analyzer",
+    type = "ai",
+    nodes = {"sentiment.analyzer"},
+    mode = ExecutionMode.SYNC,
+    protocols = {"REST", "GRPC"}
+)
+@ApplicationScoped
+public class SentimentAnalyzerExecutor extends AbstractExecutor {
+    
+    private static final Logger LOG = Logger.getLogger(SentimentAnalyzerExecutor.class);
+    
+    @Override
+    protected ExecutionResult doExecute(ExecutionRequest request) throws ExecutorException {
+        // Extract inputs
+        String text = request.getInput("text", String.class);
+        if (text == null || text.isEmpty()) {
+            throw new ExecutorException("Text input is required");
+        }
+        
+        // Extract config
+        String model = request.getConfig("model", "default");
+        double threshold = request.getConfig("threshold", 0.5);
+        
+        // Perform analysis (real implementation)
+        SentimentResult result = analyzeSentiment(text, model, threshold);
+        
+        // Build outputs
+        Map<String, Object> outputs = new HashMap<>();
+        outputs.put("sentiment", result.sentiment);
+        outputs.put("score", result.score);
+        outputs.put("confidence", result.confidence);
+        outputs.put("emotions", result.emotions);
+        
+        // Build metrics
+        ExecutionMetrics metrics = new ExecutionMetrics()
+            .withTokens(text.length() / 4) // Rough estimate
+            .withCustom("textLength", text.length());
+        
+        return new ExecutionResult(
+            ExecutionStatus.SUCCESS,
+            outputs,
+            null,
+            metrics
+        );
+    }
+    
+    private SentimentResult analyzeSentiment(String text, String model, double threshold) {
+        // Real implementation here
+        return new SentimentResult("POSITIVE", 0.85, 0.92, Map.of(
+            "joy", 0.8,
+            "surprise", 0.3
+        ));
+    }
+    
+    record SentimentResult(
+        String sentiment,
+        double score,
+        double confidence,
+        Map<String, Double> emotions
+    ) {}
+}
+
+/**
+ * ============================================================================
+ * PYTHON EXECUTOR SDK (API-compatible)
+ * ============================================================================
+ * 
+ * from silat_executor_sdk import Executor, ExecutorMetadata, ExecutionRequest
+ * from silat_executor_sdk import ExecutionResult, ExecutionStatus
+ * from silat_executor_sdk import executor_component
+ * from fastapi import FastAPI
+ * from typing import Dict, Any
+ * 
+ * @executor_component(
+ *     executor_id="executor.sentiment.analyzer.python",
+ *     executor_type="ai",
+ *     nodes=["sentiment.analyzer"],
+ *     mode="SYNC"
+ * )
+ * class SentimentAnalyzerExecutor(Executor):
+ *     
+ *     def metadata(self) -> ExecutorMetadata:
+ *         return ExecutorMetadata(
+ *             executor_id="executor.sentiment.analyzer.python",
+ *             executor_type="ai",
+ *             supported_nodes={"sentiment.analyzer"},
+ *             mode="SYNC",
+ *             protocols={"REST"},
+ *             capabilities={"nlp", "sentiment"},
+ *             version="1.0.0",
+ *             config={}
+ *         )
+ *     
+ *     async def execute(self, request: ExecutionRequest) -> ExecutionResult:
+ *         # Extract inputs
+ *         text = request.inputs.get("text")
+ *         if not text:
+ *             return ExecutionResult.failure("Text input required")
+ *         
+ *         # Extract config
+ *         model = request.config.get("model", "default")
+ *         threshold = request.config.get("threshold", 0.5)
+ *         
+ *         # Analyze
+ *         result = await self.analyze_sentiment(text, model, threshold)
+ *         
+ *         # Return result
+ *         return ExecutionResult.success({
+ *             "sentiment": result["sentiment"],
+ *             "score": result["score"],
+ *             "confidence": result["confidence"]
+ *         })
+ *     
+ *     async def analyze_sentiment(self, text: str, model: str, threshold: float):
+ *         # Real ML implementation
+ *         return {
+ *             "sentiment": "POSITIVE",
+ *             "score": 0.85,
+ *             "confidence": 0.92
+ *         }
+ * 
+ * # FastAPI integration
+ * app = FastAPI()
+ * executor = SentimentAnalyzerExecutor()
+ * 
+ * @app.post("/execute")
+ * async def execute_endpoint(request: ExecutionRequest):
+ *     return await executor.execute(request)
+ * 
+ * @app.get("/health")
+ * async def health():
+ *     return {"status": "healthy"}
+ * 
+ * @app.get("/metadata")
+ * async def get_metadata():
+ *     return executor.metadata()
+ */

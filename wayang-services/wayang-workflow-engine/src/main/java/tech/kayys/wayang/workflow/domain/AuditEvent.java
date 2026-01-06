@@ -51,4 +51,44 @@ public class AuditEvent {
     private String hash;
 
     private String summary;
+
+    public String getId() {
+        return id;
+    }
+
+    public String getRunId() {
+        return runId;
+    }
+
+    public String getNodeId() {
+        return nodeId;
+    }
+
+    public EventType getEventType() {
+        return eventType;
+    }
+
+    public Map<String, Object> getEventData() {
+        return eventData;
+    }
+
+    public ActorType getActorType() {
+        return actorType;
+    }
+
+    public String getActorId() {
+        return actorId;
+    }
+
+    public Instant getTimestamp() {
+        return timestamp;
+    }
+
+    public String getHash() {
+        return hash;
+    }
+
+    public String getSummary() {
+        return summary;
+    }
 }

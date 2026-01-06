@@ -1,8 +1,8 @@
 package tech.kayys.silat.sdk.client;
 
 import java.util.List;
-
 import io.smallrye.mutiny.Uni;
+import tech.kayys.silat.model.WorkflowDefinition;
 
 /**
  * Fluent API for workflow definition operations
@@ -25,14 +25,14 @@ public class WorkflowDefinitionOperations {
     /**
      * Get a workflow definition
      */
-    public Uni<WorkflowDefinitionResponse> get(String definitionId) {
+    public Uni<WorkflowDefinition> get(String definitionId) {
         return client.getDefinition(definitionId);
     }
 
     /**
      * List workflow definitions
      */
-    public Uni<List<WorkflowDefinitionResponse>> list() {
+    public Uni<List<WorkflowDefinition>> list() {
         return client.listDefinitions(true);
     }
 

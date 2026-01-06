@@ -808,6 +808,64 @@ public class ProvenanceService {
         private final boolean valid;
         private final List<String> violations;
         private final int totalEvents;
+
+        public ChainVerification(String runId, boolean valid, List<String> violations, int totalEvents) {
+            this.runId = runId;
+            this.valid = valid;
+            this.violations = violations;
+            this.totalEvents = totalEvents;
+        }
+
+        public String getRunId() {
+            return runId;
+        }
+
+        public boolean isValid() {
+            return valid;
+        }
+
+        public List<String> getViolations() {
+            return violations;
+        }
+
+        public int getTotalEvents() {
+            return totalEvents;
+        }
+
+        public static ChainVerificationBuilder builder() {
+            return new ChainVerificationBuilder();
+        }
+
+        public static class ChainVerificationBuilder {
+            private String runId;
+            private boolean valid;
+            private List<String> violations;
+            private int totalEvents;
+
+            public ChainVerificationBuilder runId(String runId) {
+                this.runId = runId;
+                return this;
+            }
+
+            public ChainVerificationBuilder valid(boolean valid) {
+                this.valid = valid;
+                return this;
+            }
+
+            public ChainVerificationBuilder violations(List<String> violations) {
+                this.violations = violations;
+                return this;
+            }
+
+            public ChainVerificationBuilder totalEvents(int totalEvents) {
+                this.totalEvents = totalEvents;
+                return this;
+            }
+
+            public ChainVerification build() {
+                return new ChainVerification(runId, valid, violations, totalEvents);
+            }
+        }
     }
 
     public static class ComplianceReport {

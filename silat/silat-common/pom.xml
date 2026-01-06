@@ -9,20 +9,11 @@
     </parent>
 
     <artifactId>silat-common</artifactId>
-    <properties>
-
-        <lombok.version>1.18.30</lombok.version>
-    </properties>
     <dependencies>
         <dependency>
             <groupId>io.smallrye.reactive</groupId>
             <artifactId>mutiny</artifactId>
             <version>2.1.0</version>
-        </dependency>
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <version>${lombok.version}</version>
         </dependency>
         <dependency>
             <groupId>jakarta.validation</groupId>
@@ -34,7 +25,32 @@
             <artifactId>jackson-databind</artifactId>
             <version>2.16.1</version>
         </dependency>
-
-
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>21</release>
+                </configuration>
+            </plugin>
+        
+            <plugin>
+                <groupId>io.smallrye</groupId>
+                <artifactId>jandex-maven-plugin</artifactId>
+                <version>3.1.2</version>
+                <executions>
+                    <execution>
+                        <id>make-index</id>
+                        <goals>
+                            <goal>jandex</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

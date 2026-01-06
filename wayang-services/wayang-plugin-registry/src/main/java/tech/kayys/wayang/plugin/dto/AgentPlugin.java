@@ -1,5 +1,7 @@
 package tech.kayys.wayang.plugin.dto;
 
+import io.smallrye.mutiny.Uni;
+
 public sealed interface AgentPlugin extends Plugin permits PlanningAgent, ExecutionAgent,
         OrchestrationAgent, RAGAgent, AnalyticsAgent {
 

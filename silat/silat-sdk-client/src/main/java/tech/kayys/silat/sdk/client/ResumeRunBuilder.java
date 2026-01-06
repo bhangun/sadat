@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import io.smallrye.mutiny.Uni;
+import tech.kayys.silat.model.RunResponse;
 
 /**
  * Builder for resuming runs

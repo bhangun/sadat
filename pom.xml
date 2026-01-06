@@ -13,6 +13,7 @@
   </scm>
 
   <modules>
+    <module>wayang-runtime</module>
     <!-- <module>wayang-core</module>
     <module>wayang-agent</module>
     <module>wayang-annotations</module>
@@ -22,8 +23,9 @@
     <module>wayang-chatpot</module> -->
     <!--  <module>mcp-openapi</module>
     <module>examples/quarkus-agent-app</module> -->
-    <module>wayang-library</module>
-    <module>wayang-extension</module>
+
+    <module>wayang-plugin-registry</module>
+    <module>wayang-executor</module>
   </modules>
 
   <properties>

@@ -1,18 +1,17 @@
 package tech.kayys.silat.sdk.client;
 
-import io.smallrye.mutiny.Uni;
-
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * ============================================================================
  * SILAT CLIENT SDK
  * ============================================================================
- * 
+ *
  * Fluent, type-safe API for interacting with the Silat workflow engine.
  * Supports both REST and gRPC transports.
- * 
+ *
  * Example Usage:
  * ```java
  * SilatClient client = SilatClient.builder()
@@ -20,7 +19,7 @@ import java.util.*;
  * .tenantId("acme-corp")
  * .apiKey("secret-key")
  * .build();
- * 
+ *
  * WorkflowRun run = client.workflows()
  * .create("order-processing")
  * .input("orderId", "ORDER-123")
@@ -28,7 +27,7 @@ import java.util.*;
  * .label("environment", "production")
  * .execute()
  * .await().indefinitely();
- * 
+ *
  * client.runs()
  * .get(run.runId())
  * .await().indefinitely();
@@ -39,6 +38,7 @@ public class SilatClient {
     private final SilatClientConfig config;
     private final WorkflowRunClient runClient;
     private final WorkflowDefinitionClient definitionClient;
+    private final AtomicBoolean closed = new AtomicBoolean(false);
 
     private SilatClient(SilatClientConfig config) {
         this.config = config;
@@ -53,6 +53,13 @@ public class SilatClient {
         } else {
             throw new IllegalArgumentException("Unsupported transport: " + config.transport());
         }
+    }
+
+    /**
+     * Get the client configuration
+     */
+    public SilatClientConfig config() {
+        return config;
     }
 
     // ==================== BUILDER ====================
@@ -102,16 +109,15 @@ public class SilatClient {
         }
 
         public SilatClient build() {
-            Objects.requireNonNull(endpoint, "Endpoint is required");
-            Objects.requireNonNull(tenantId, "Tenant ID is required");
-
-            SilatClientConfig config = new SilatClientConfig(
-                    endpoint,
-                    tenantId,
-                    apiKey,
-                    transport,
-                    timeout,
-                    headers);
+            // Use the SilatClientConfig builder to create the config with validation
+            SilatClientConfig config = SilatClientConfig.builder()
+                    .endpoint(endpoint)
+                    .tenantId(tenantId)
+                    .apiKey(apiKey)
+                    .transport(transport)
+                    .timeout(timeout)
+                    .headers(headers)
+                    .build();
 
             return new SilatClient(config);
         }
@@ -123,6 +129,7 @@ public class SilatClient {
      * Access workflow run operations
      */
     public WorkflowRunOperations runs() {
+        checkClosed();
         return new WorkflowRunOperations(runClient);
     }
 
@@ -130,13 +137,38 @@ public class SilatClient {
      * Access workflow definition operations
      */
     public WorkflowDefinitionOperations workflows() {
+        checkClosed();
         return new WorkflowDefinitionOperations(definitionClient);
+    }
+
+    private void checkClosed() {
+        if (closed.get()) {
+            throw new IllegalStateException("SilatClient is closed");
+        }
     }
 
     /**
      * Close the client and release resources
      */
     public void close() {
-        // Close connections
+        if (closed.compareAndSet(false, true)) {
+            try {
+                if (runClient != null) {
+                    runClient.close();
+                }
+            } catch (Exception e) {
+                // Log error but don't throw to avoid masking other potential issues
+                System.err.println("Error closing run client: " + e.getMessage());
+            }
+
+            try {
+                if (definitionClient != null) {
+                    definitionClient.close();
+                }
+            } catch (Exception e) {
+                // Log error but don't throw to avoid masking other potential issues
+                System.err.println("Error closing definition client: " + e.getMessage());
+            }
+        }
     }
 }

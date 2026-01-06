@@ -1,0 +1,462 @@
+# ============================================================================
+# APPLICATION.PROPERTIES - Silat Plugin System Configuration
+# ============================================================================
+
+# Application Info
+quarkus.application.name=Silat Workflow Engine
+quarkus.application.version=1.0.0
+
+# HTTP Configuration
+quarkus.http.port=8080
+quarkus.http.host=0.0.0.0
+quarkus.http.cors=true
+quarkus.http.cors.origins=*
+quarkus.http.cors.methods=GET,POST,PUT,DELETE,OPTIONS
+quarkus.http.cors.headers=accept,authorization,content-type,x-requested-with,x-tenant-id
+
+# Enable HTTP/2
+quarkus.http.http2=true
+
+# File Upload
+quarkus.http.body.uploads-directory=${java.io.tmpdir}/silat-uploads
+quarkus.http.limits.max-body-size=100M
+
+# Logging
+quarkus.log.level=INFO
+quarkus.log.category."tech.kayys.silat".level=DEBUG
+quarkus.log.category."com.acme.silat".level=DEBUG
+quarkus.log.console.format=%d{HH:mm:ss} %-5p [%c{2.}] (%t) %s%e%n
+quarkus.log.console.color=true
+
+# Datasource (PostgreSQL)
+quarkus.datasource.db-kind=postgresql
+quarkus.datasource.username=silat
+quarkus.datasource.password=silat123
+quarkus.datasource.jdbc.url=jdbc:postgresql://localhost:5432/silat
+quarkus.datasource.reactive.url=postgresql://localhost:5432/silat
+
+# Hibernate
+quarkus.hibernate-orm.database.generation=update
+quarkus.hibernate-orm.log.sql=false
+quarkus.hibernate-orm.sql-load-script=no-file
+
+# Plugin System Configuration
+silat.plugin.directory=/var/lib/silat/plugins
+silat.plugin.temp-directory=${java.io.tmpdir}/silat-plugin-temp
+silat.plugin.max-size=100MB
+silat.plugin.auto-scan=true
+silat.plugin.scan-interval=60s
+silat.plugin.enable-hot-reload=true
+
+# Security
+quarkus.security.jpa.enabled=false
+quarkus.oidc.enabled=false
+
+# For development - disable auth
+quarkus.http.auth.permission.public.paths=/*
+quarkus.http.auth.permission.public.policy=permit
+
+# Multi-tenancy
+silat.multitenancy.enabled=true
+silat.multitenancy.default-tenant=default
+silat.multitenancy.isolation-level=SCHEMA
+
+# Cache Configuration
+quarkus.cache.enabled=true
+quarkus.cache.type=caffeine
+quarkus.cache.caffeine."plugin-cache".initial-capacity=100
+quarkus.cache.caffeine."plugin-cache".maximum-size=1000
+quarkus.cache.caffeine."plugin-cache".expire-after-write=1H
+
+# OpenAPI/Swagger
+quarkus.swagger-ui.always-include=true
+quarkus.swagger-ui.path=/swagger-ui
+quarkus.smallrye-openapi.path=/openapi
+quarkus.smallrye-openapi.info-title=Silat Plugin System API
+quarkus.smallrye-openapi.info-version=1.0.0
+quarkus.smallrye-openapi.info-description=Plugin management and node definition API
+
+# Jackson JSON Configuration
+quarkus.jackson.fail-on-unknown-properties=false
+quarkus.jackson.fail-on-empty-beans=false
+quarkus.jackson.serialization-inclusion=non_null
+quarkus.jackson.write-dates-as-timestamps=false
+
+# Reactive Configuration
+quarkus.reactive-messaging.auto-discover=true
+
+# gRPC Configuration (if using gRPC executors)
+quarkus.grpc.server.port=9090
+quarkus.grpc.server.enable-reflection-service=true
+
+# Kafka Configuration (if using Kafka executors)
+kafka.bootstrap.servers=localhost:9092
+mp.messaging.outgoing.workflow-tasks.connector=smallrye-kafka
+mp.messaging.outgoing.workflow-tasks.topic=silat-workflow-tasks
+mp.messaging.incoming.workflow-results.connector=smallrye-kafka
+mp.messaging.incoming.workflow-results.topic=silat-workflow-results
+
+# Health Check
+quarkus.health.extensions.enabled=true
+quarkus.smallrye-health.root-path=/health
+
+# Metrics
+quarkus.micrometer.enabled=true
+quarkus.micrometer.binder.http-server.enabled=true
+quarkus.micrometer.binder.jvm.enabled=true
+quarkus.micrometer.export.prometheus.enabled=true
+quarkus.micrometer.export.prometheus.path=/metrics
+
+# Dev Mode Configuration
+%dev.quarkus.log.level=DEBUG
+%dev.quarkus.log.category."io.quarkus".level=INFO
+%dev.quarkus.http.port=8080
+%dev.quarkus.live-reload.instrumentation=true
+
+# Test Configuration
+%test.quarkus.datasource.db-kind=h2
+%test.quarkus.datasource.jdbc.url=jdbc:h2:mem:test
+%test.quarkus.hibernate-orm.database.generation=drop-and-create
+
+---
+# ============================================================================
+# POM.XML - Maven Project Configuration
+# ============================================================================
+
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>tech.kayys.silat</groupId>
+    <artifactId>silat-workflow-engine</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>Silat Workflow Engine</name>
+    <description>Polyglot workflow engine for agentic AI, EIP, and business automation</description>
+
+    <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <quarkus.version>3.6.4</quarkus.version>
+        <compiler-plugin.version>3.11.0</compiler-plugin.version>
+        <surefire-plugin.version>3.0.0</surefire-plugin.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.quarkus.platform</groupId>
+                <artifactId>quarkus-bom</artifactId>
+                <version>${quarkus.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- Quarkus Core -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-arc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-resteasy-reactive</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-resteasy-reactive-jackson</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest-client-reactive-jackson</artifactId>
+        </dependency>
+        
+        <!-- Reactive -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-mutiny</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.smallrye.reactive</groupId>
+            <artifactId>smallrye-mutiny-vertx-web-client</artifactId>
+        </dependency>
+
+        <!-- Database -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-hibernate-orm-panache</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-hibernate-reactive-panache</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-reactive-pg-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-jdbc-postgresql</artifactId>
+        </dependency>
+
+        <!-- gRPC -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-grpc</artifactId>
+        </dependency>
+
+        <!-- Kafka -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-reactive-messaging-kafka</artifactId>
+        </dependency>
+
+        <!-- Security -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-oidc</artifactId>
+        </dependency>
+
+        <!-- OpenAPI/Swagger -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-openapi</artifactId>
+        </dependency>
+
+        <!-- Health & Metrics -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-health</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- Cache -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-cache</artifactId>
+        </dependency>
+
+        <!-- YAML Support -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+        </dependency>
+
+        <!-- File Upload -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-resteasy-reactive-multipart</artifactId>
+        </dependency>
+
+        <!-- Validation -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-hibernate-validator</artifactId>
+        </dependency>
+
+        <!-- Testing -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>rest-assured</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-test-h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>io.quarkus.platform</groupId>
+                <artifactId>quarkus-maven-plugin</artifactId>
+                <version>${quarkus.version}</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>build</goal>
+                            <goal>generate-code</goal>
+                            <goal>generate-code-tests</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>${compiler-plugin.version}</version>
+                <configuration>
+                    <compilerArgs>
+                        <arg>-parameters</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${surefire-plugin.version}</version>
+                <configuration>
+                    <systemPropertyVariables>
+                        <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>native</id>
+            <properties>
+                <quarkus.package.type>native</quarkus.package.type>
+            </properties>
+        </profile>
+    </profiles>
+</project>
+
+---
+# ============================================================================
+# DOCKER-COMPOSE.YML - Development Environment
+# ============================================================================
+
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: silat-postgres
+    environment:
+      POSTGRES_DB: silat
+      POSTGRES_USER: silat
+      POSTGRES_PASSWORD: silat123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - silat-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: silat-kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+    networks:
+      - silat-network
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: silat-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - silat-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: silat-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - silat-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: silat-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    networks:
+      - silat-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: silat-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - silat-network
+
+volumes:
+  postgres-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  silat-network:
+    driver: bridge
+
+---
+# ============================================================================
+# USAGE INSTRUCTIONS
+# ============================================================================
+
+# 1. Start infrastructure
+docker-compose up -d
+
+# 2. Build the project
+mvn clean package
+
+# 3. Run in development mode
+mvn quarkus:dev
+
+# 4. Access endpoints
+# - API: http://localhost:8080
+# - Swagger UI: http://localhost:8080/swagger-ui
+# - OpenAPI Spec: http://localhost:8080/openapi
+# - Health: http://localhost:8080/health
+# - Metrics: http://localhost:8080/metrics
+
+# 5. Install example plugin
+curl -X POST http://localhost:8080/api/v1/plugins/install \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@sentiment-analyzer-plugin-1.0.0.jar"
+
+# 6. List installed plugins
+curl http://localhost:8080/api/v1/plugins
+
+# 7. Get node catalog
+curl http://localhost:8080/api/v1/nodes
+
+# 8. Build native executable (optional)
+mvn package -Pnative
+
+# 9. Run tests
+mvn test

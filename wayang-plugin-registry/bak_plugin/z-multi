@@ -1,0 +1,891 @@
+package tech.kayys.silat.plugin.multinode;
+
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.jboss.logging.Logger;
+import tech.kayys.silat.executor.sdk.*;
+import tech.kayys.silat.plugin.refined.*;
+
+import java.lang.annotation.*;
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * ============================================================================
+ * MULTI-NODE PLUGIN SYSTEM - COMPLETE IMPLEMENTATION
+ * ============================================================================
+ * 
+ * Handles multiple node definitions in a single JAR:
+ * 
+ * 1. Plugin Manifest approach (YAML/JSON)
+ * 2. Annotation-based discovery
+ * 3. Single executor handling multiple nodes
+ * 4. Multiple executors in one plugin
+ * 5. Node families (related nodes)
+ * 6. Shared resources across nodes
+ * 
+ * Example Use Cases:
+ * - AI Plugin: sentiment, classification, NER, summarization
+ * - Database Plugin: query, insert, update, delete
+ * - HTTP Plugin: GET, POST, PUT, DELETE
+ * - Vector Store Plugin: insert, search, delete
+ */
+
+// ==================== PLUGIN ANNOTATIONS ====================
+
+/**
+ * Marks a plugin that contains multiple nodes
+ */
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+public @interface MultiNodePlugin {
+    
+    /**
+     * Plugin ID (reverse domain notation)
+     */
+    String id();
+    
+    /**
+     * Plugin name
+     */
+    String name();
+    
+    /**
+     * Plugin version
+     */
+    String version() default "1.0.0";
+    
+    /**
+     * Node family/category
+     */
+    String family() default "";
+    
+    /**
+     * Author
+     */
+    String author() default "";
+    
+    /**
+     * Description
+     */
+    String description() default "";
+}
+
+/**
+ * Defines a node within a multi-node plugin
+ */
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@Repeatable(NodeDefinitions.class)
+public @interface NodeDefinition {
+    
+    /**
+     * Node type identifier
+     */
+    String type();
+    
+    /**
+     * Node label
+     */
+    String label();
+    
+    /**
+     * Category
+     */
+    String category() default "";
+    
+    /**
+     * Subcategory
+     */
+    String subCategory() default "";
+    
+    /**
+     * Description
+     */
+    String description() default "";
+    
+    /**
+     * Icon
+     */
+    String icon() default "box";
+    
+    /**
+     * Color (hex)
+     */
+    String color() default "#6B7280";
+    
+    /**
+     * Config schema (JSON Schema as string or resource path)
+     */
+    String configSchema() default "";
+    
+    /**
+     * Input schema
+     */
+    String inputSchema() default "";
+    
+    /**
+     * Output schema
+     */
+    String outputSchema() default "";
+    
+    /**
+     * Executor ID (if different from plugin default)
+     */
+    String executorId() default "";
+    
+    /**
+     * Widget ID
+     */
+    String widgetId() default "";
+}
+
+/**
+ * Container for multiple NodeDefinition annotations
+ */
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+public @interface NodeDefinitions {
+    NodeDefinition[] value();
+}
+
+/**
+ * Marks an executor that handles multiple node types
+ */
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+public @interface MultiNodeExecutor {
+    
+    /**
+     * Executor ID
+     */
+    String executorId();
+    
+    /**
+     * Node types this executor handles
+     */
+    String[] nodeTypes();
+    
+    /**
+     * Execution mode
+     */
+    ExecutionMode mode() default ExecutionMode.SYNC;
+    
+    /**
+     * Protocols
+     */
+    String[] protocols() default {"REST"};
+}
+
+// ==================== PLUGIN MANIFEST (YAML) ====================
+
+/**
+ * Complete plugin manifest for multiple nodes
+ */
+public class MultiNodePluginManifest {
+    
+    // Plugin metadata
+    public String pluginId;
+    public String name;
+    public String version;
+    public String family;           // "ai", "database", "http", "vector"
+    public String author;
+    public String description;
+    
+    // Multiple node definitions
+    public List<NodeManifest> nodes = new ArrayList<>();
+    
+    // Multiple executors (optional - can share one executor)
+    public List<ExecutorManifest> executors = new ArrayList<>();
+    
+    // Shared resources
+    public SharedResources shared = new SharedResources();
+    
+    // Configuration
+    public Map<String, Object> config = new HashMap<>();
+}
+
+/**
+ * Node manifest entry
+ */
+public class NodeManifest {
+    public String type;
+    public String label;
+    public String category;
+    public String subCategory;
+    public String description;
+    public String icon;
+    public String color;
+    
+    // Schema references (can be inline or file paths)
+    public SchemaReference configSchema;
+    public SchemaReference inputSchema;
+    public SchemaReference outputSchema;
+    
+    // Executor binding
+    public String executorId;
+    
+    // UI binding
+    public String widgetId;
+    
+    // Node-specific config
+    public Map<String, Object> config = new HashMap<>();
+}
+
+/**
+ * Schema reference - can be inline JSON or file path
+ */
+public class SchemaReference {
+    public SchemaType type;         // INLINE, FILE, URL
+    public String content;          // Schema content or path
+    
+    public enum SchemaType {
+        INLINE,     // Inline JSON
+        FILE,       // File path in JAR
+        URL         // External URL
+    }
+}
+
+/**
+ * Executor manifest
+ */
+public class ExecutorManifest {
+    public String executorId;
+    public String className;
+    public List<String> nodeTypes = new ArrayList<>();
+    public ExecutionMode mode;
+    public List<String> protocols = new ArrayList<>();
+    public boolean inProcess;
+    public Map<String, Object> config = new HashMap<>();
+}
+
+/**
+ * Shared resources across nodes
+ */
+public class SharedResources {
+    public Map<String, String> schemas = new HashMap<>();     // name -> path
+    public Map<String, String> widgets = new HashMap<>();     // name -> path
+    public Map<String, String> scripts = new HashMap<>();     // name -> path
+    public Map<String, Object> constants = new HashMap<>();   // Shared constants
+}
+
+// ==================== MULTI-NODE PLUGIN LOADER ====================
+
+/**
+ * Loads and registers plugins with multiple nodes
+ */
+@ApplicationScoped
+public class MultiNodePluginLoader {
+    
+    private static final Logger LOG = Logger.getLogger(MultiNodePluginLoader.class);
+    
+    @Inject
+    ControlPlaneNodeRegistry nodeRegistry;
+    
+    @Inject
+    ControlPlaneExecutorRegistry executorRegistry;
+    
+    @Inject
+    SchemaValidator schemaValidator;
+    
+    @Inject
+    PluginResourceLoader resourceLoader;
+    
+    /**
+     * Load plugin with multiple nodes
+     */
+    public Uni<PluginRegistration> loadPlugin(
+            MultiNodePluginManifest manifest,
+            LoadedPlugin loadedPlugin) {
+        
+        LOG.infof("Loading multi-node plugin: %s with %d nodes",
+            manifest.name, manifest.nodes.size());
+        
+        return Uni.createFrom().item(() -> {
+            
+            PluginRegistration registration = new PluginRegistration();
+            registration.pluginId = manifest.pluginId;
+            registration.pluginName = manifest.name;
+            registration.version = manifest.version;
+            registration.family = manifest.family;
+            registration.registeredAt = java.time.Instant.now();
+            
+            // 1. Load shared resources
+            loadSharedResources(manifest.shared, loadedPlugin);
+            
+            // 2. Register executors
+            for (ExecutorManifest executorManifest : manifest.executors) {
+                registerExecutor(executorManifest, loadedPlugin, registration);
+            }
+            
+            // 3. Register all nodes
+            for (NodeManifest nodeManifest : manifest.nodes) {
+                registerNode(nodeManifest, manifest, loadedPlugin, registration);
+            }
+            
+            LOG.infof("Successfully registered plugin %s with %d nodes and %d executors",
+                manifest.pluginId, 
+                registration.registeredNodes.size(),
+                registration.registeredExecutors.size());
+            
+            return registration;
+        });
+    }
+    
+    /**
+     * Load shared resources (schemas, widgets, etc.)
+     */
+    private void loadSharedResources(SharedResources shared, LoadedPlugin loadedPlugin) {
+        // Load shared schemas
+        for (Map.Entry<String, String> entry : shared.schemas.entrySet()) {
+            String schemaName = entry.getKey();
+            String schemaPath = entry.getValue();
+            
+            byte[] schemaContent = loadedPlugin.resources.get(schemaPath);
+            if (schemaContent != null) {
+                // Cache schema for reuse
+                resourceLoader.cacheSchema(schemaName, new String(schemaContent));
+                LOG.debugf("Loaded shared schema: %s", schemaName);
+            }
+        }
+        
+        // Load shared widgets
+        for (Map.Entry<String, String> entry : shared.widgets.entrySet()) {
+            String widgetName = entry.getKey();
+            String widgetPath = entry.getValue();
+            
+            byte[] widgetContent = loadedPlugin.resources.get(widgetPath);
+            if (widgetContent != null) {
+                resourceLoader.cacheWidget(widgetName, widgetContent);
+                LOG.debugf("Loaded shared widget: %s", widgetName);
+            }
+        }
+    }
+    
+    /**
+     * Register executor
+     */
+    private void registerExecutor(
+            ExecutorManifest executorManifest,
+            LoadedPlugin loadedPlugin,
+            PluginRegistration registration) {
+        
+        LOG.infof("Registering executor: %s for nodes: %s",
+            executorManifest.executorId, executorManifest.nodeTypes);
+        
+        ExecutorRegistration executorReg = new ExecutorRegistration();
+        executorReg.executorId = executorManifest.executorId;
+        executorReg.executorType = "plugin";
+        executorReg.protocol = CommunicationProtocol.GRPC; // Default
+        executorReg.inProcess = executorManifest.inProcess;
+        executorReg.supportedNodes = new HashSet<>(executorManifest.nodeTypes);
+        
+        // Get executor instance from loaded plugin
+        if (executorManifest.inProcess && executorManifest.className != null) {
+            Object executorInstance = loadedPlugin.instances.get(executorManifest.className);
+            if (executorInstance != null) {
+                // Store for in-process execution
+                executorRegistry.registerInProcessExecutor(
+                    executorManifest.executorId, executorInstance);
+            }
+        }
+        
+        executorRegistry.register(executorReg).await().indefinitely();
+        registration.registeredExecutors.add(executorManifest.executorId);
+    }
+    
+    /**
+     * Register node definition
+     */
+    private void registerNode(
+            NodeManifest nodeManifest,
+            MultiNodePluginManifest pluginManifest,
+            LoadedPlugin loadedPlugin,
+            PluginRegistration registration) {
+        
+        LOG.infof("Registering node: %s (%s)",
+            nodeManifest.type, nodeManifest.label);
+        
+        // Create node definition
+        tech.kayys.silat.plugin.refined.NodeDefinition nodeDef = 
+            new tech.kayys.silat.plugin.refined.NodeDefinition();
+        
+        nodeDef.type = nodeManifest.type;
+        nodeDef.label = nodeManifest.label;
+        nodeDef.category = nodeManifest.category != null ? 
+            nodeManifest.category : pluginManifest.family;
+        nodeDef.subCategory = nodeManifest.subCategory;
+        nodeDef.description = nodeManifest.description;
+        nodeDef.version = pluginManifest.version;
+        nodeDef.author = pluginManifest.author;
+        
+        // Load schemas
+        nodeDef.configSchema = loadSchema(nodeManifest.configSchema, loadedPlugin);
+        nodeDef.inputSchema = loadSchema(nodeManifest.inputSchema, loadedPlugin);
+        nodeDef.outputSchema = loadSchema(nodeManifest.outputSchema, loadedPlugin);
+        
+        // Executor binding
+        String executorId = nodeManifest.executorId != null ? 
+            nodeManifest.executorId : 
+            getDefaultExecutorId(pluginManifest, nodeManifest);
+        
+        nodeDef.executorBinding = new ExecutorBinding(
+            executorId,
+            ExecutionMode.SYNC,
+            CommunicationProtocol.GRPC
+        );
+        
+        // UI reference
+        if (nodeManifest.widgetId != null) {
+            nodeDef.uiReference = new UIReference(nodeManifest.widgetId);
+        }
+        
+        // Register
+        nodeRegistry.register(nodeDef);
+        registration.registeredNodes.add(nodeManifest.type);
+    }
+    
+    /**
+     * Load schema from reference
+     */
+    private com.networknt.schema.JsonSchema loadSchema(
+            SchemaReference schemaRef,
+            LoadedPlugin loadedPlugin) {
+        
+        if (schemaRef == null || schemaRef.content == null) {
+            return null;
+        }
+        
+        String schemaJson = switch (schemaRef.type) {
+            case INLINE -> schemaRef.content;
+            case FILE -> {
+                byte[] content = loadedPlugin.resources.get(schemaRef.content);
+                yield content != null ? new String(content) : null;
+            }
+            case URL -> resourceLoader.loadFromUrl(schemaRef.content);
+        };
+        
+        if (schemaJson != null) {
+            return schemaValidator.createSchema(schemaJson);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Get default executor ID for node
+     */
+    private String getDefaultExecutorId(
+            MultiNodePluginManifest plugin,
+            NodeManifest node) {
+        
+        // If plugin has only one executor, use it
+        if (plugin.executors.size() == 1) {
+            return plugin.executors.get(0).executorId;
+        }
+        
+        // Otherwise, construct from plugin ID and node type
+        return plugin.pluginId + ".executor." + node.type.replace(".", "-");
+    }
+}
+
+/**
+ * Plugin registration result
+ */
+public class PluginRegistration {
+    public String pluginId;
+    public String pluginName;
+    public String version;
+    public String family;
+    public List<String> registeredNodes = new ArrayList<>();
+    public List<String> registeredExecutors = new ArrayList<>();
+    public java.time.Instant registeredAt;
+}
+
+/**
+ * Resource loader for shared resources
+ */
+@ApplicationScoped
+public class PluginResourceLoader {
+    
+    private static final Logger LOG = Logger.getLogger(PluginResourceLoader.class);
+    
+    private final Map<String, String> schemaCache = new HashMap<>();
+    private final Map<String, byte[]> widgetCache = new HashMap<>();
+    
+    public void cacheSchema(String name, String schema) {
+        schemaCache.put(name, schema);
+    }
+    
+    public String getSchema(String name) {
+        return schemaCache.get(name);
+    }
+    
+    public void cacheWidget(String name, byte[] widget) {
+        widgetCache.put(name, widget);
+    }
+    
+    public byte[] getWidget(String name) {
+        return widgetCache.get(name);
+    }
+    
+    public String loadFromUrl(String url) {
+        // Load schema from external URL
+        // Implementation depends on HTTP client
+        LOG.warnf("Loading from URL not yet implemented: %s", url);
+        return null;
+    }
+}
+
+// ==================== ANNOTATION-BASED DISCOVERY ====================
+
+/**
+ * Discovers nodes from annotations
+ */
+@ApplicationScoped
+public class AnnotationBasedNodeDiscovery {
+    
+    private static final Logger LOG = Logger.getLogger(AnnotationBasedNodeDiscovery.class);
+    
+    @Inject
+    SchemaValidator schemaValidator;
+    
+    /**
+     * Discover all nodes from a plugin class
+     */
+    public List<tech.kayys.silat.plugin.refined.NodeDefinition> discoverNodes(
+            Class<?> pluginClass) {
+        
+        List<tech.kayys.silat.plugin.refined.NodeDefinition> nodes = new ArrayList<>();
+        
+        // Get plugin metadata
+        MultiNodePlugin pluginAnnotation = pluginClass.getAnnotation(MultiNodePlugin.class);
+        if (pluginAnnotation == null) {
+            LOG.warnf("Class %s is not annotated with @MultiNodePlugin", 
+                pluginClass.getName());
+            return nodes;
+        }
+        
+        // Get node definitions
+        NodeDefinitions nodeDefinitions = pluginClass.getAnnotation(NodeDefinitions.class);
+        NodeDefinition[] nodeDefs = nodeDefinitions != null ? 
+            nodeDefinitions.value() : 
+            new NodeDefinition[] { pluginClass.getAnnotation(NodeDefinition.class) };
+        
+        if (nodeDefs[0] == null) {
+            LOG.warnf("No node definitions found in %s", pluginClass.getName());
+            return nodes;
+        }
+        
+        // Convert annotations to node definitions
+        for (NodeDefinition nodeDef : nodeDefs) {
+            tech.kayys.silat.plugin.refined.NodeDefinition node = 
+                convertAnnotationToNode(nodeDef, pluginAnnotation, pluginClass);
+            nodes.add(node);
+        }
+        
+        LOG.infof("Discovered %d nodes from %s", nodes.size(), pluginClass.getName());
+        
+        return nodes;
+    }
+    
+    private tech.kayys.silat.plugin.refined.NodeDefinition convertAnnotationToNode(
+            NodeDefinition annotation,
+            MultiNodePlugin plugin,
+            Class<?> pluginClass) {
+        
+        tech.kayys.silat.plugin.refined.NodeDefinition node = 
+            new tech.kayys.silat.plugin.refined.NodeDefinition();
+        
+        node.type = annotation.type();
+        node.label = annotation.label();
+        node.category = !annotation.category().isEmpty() ? 
+            annotation.category() : plugin.family();
+        node.subCategory = annotation.subCategory();
+        node.description = annotation.description();
+        node.version = plugin.version();
+        node.author = plugin.author();
+        
+        // Load schemas (from resources)
+        if (!annotation.configSchema().isEmpty()) {
+            node.configSchema = loadSchemaFromResource(
+                annotation.configSchema(), pluginClass);
+        }
+        
+        if (!annotation.inputSchema().isEmpty()) {
+            node.inputSchema = loadSchemaFromResource(
+                annotation.inputSchema(), pluginClass);
+        }
+        
+        if (!annotation.outputSchema().isEmpty()) {
+            node.outputSchema = loadSchemaFromResource(
+                annotation.outputSchema(), pluginClass);
+        }
+        
+        // Executor binding
+        String executorId = !annotation.executorId().isEmpty() ? 
+            annotation.executorId() : 
+            plugin.id() + ".executor";
+        
+        node.executorBinding = new ExecutorBinding(
+            executorId,
+            ExecutionMode.SYNC,
+            CommunicationProtocol.GRPC
+        );
+        
+        // UI reference
+        if (!annotation.widgetId().isEmpty()) {
+            node.uiReference = new UIReference(annotation.widgetId());
+        }
+        
+        return node;
+    }
+    
+    private com.networknt.schema.JsonSchema loadSchemaFromResource(
+            String schemaPath, 
+            Class<?> pluginClass) {
+        
+        try {
+            // Try as inline JSON first
+            if (schemaPath.trim().startsWith("{")) {
+                return schemaValidator.createSchema(schemaPath);
+            }
+            
+            // Load from resource
+            java.io.InputStream is = pluginClass.getResourceAsStream(schemaPath);
+            if (is != null) {
+                String schemaJson = new String(is.readAllBytes());
+                return schemaValidator.createSchema(schemaJson);
+            }
+        } catch (Exception e) {
+            LOG.errorf(e, "Failed to load schema from: %s", schemaPath);
+        }
+        
+        return null;
+    }
+}
+
+// ==================== EXAMPLE: AI PLUGIN WITH MULTIPLE NODES ====================
+
+/**
+ * Example: AI Plugin with 4 different nodes using annotations
+ */
+@MultiNodePlugin(
+    id = "com.acme.ai.nlp",
+    name = "AI NLP Plugin",
+    version = "1.0.0",
+    family = "AI",
+    author = "ACME Corp",
+    description = "Natural Language Processing nodes"
+)
+@NodeDefinitions({
+    @NodeDefinition(
+        type = "ai.sentiment",
+        label = "Sentiment Analysis",
+        category = "AI",
+        subCategory = "NLP",
+        description = "Analyze text sentiment",
+        icon = "smile",
+        color = "#10B981",
+        configSchema = "/schemas/sentiment-config.json",
+        inputSchema = "/schemas/text-input.json",
+        outputSchema = "/schemas/sentiment-output.json",
+        executorId = "ai.nlp.executor",
+        widgetId = "widget.ai.sentiment"
+    ),
+    @NodeDefinition(
+        type = "ai.classification",
+        label = "Text Classification",
+        category = "AI",
+        subCategory = "NLP",
+        description = "Classify text into categories",
+        icon = "tag",
+        color = "#3B82F6",
+        configSchema = "/schemas/classification-config.json",
+        inputSchema = "/schemas/text-input.json",
+        outputSchema = "/schemas/classification-output.json",
+        executorId = "ai.nlp.executor",
+        widgetId = "widget.ai.classification"
+    ),
+    @NodeDefinition(
+        type = "ai.ner",
+        label = "Named Entity Recognition",
+        category = "AI",
+        subCategory = "NLP",
+        description = "Extract named entities from text",
+        icon = "user-check",
+        color = "#8B5CF6",
+        configSchema = "/schemas/ner-config.json",
+        inputSchema = "/schemas/text-input.json",
+        outputSchema = "/schemas/ner-output.json",
+        executorId = "ai.nlp.executor",
+        widgetId = "widget.ai.ner"
+    ),
+    @NodeDefinition(
+        type = "ai.summarization",
+        label = "Text Summarization",
+        category = "AI",
+        subCategory = "NLP",
+        description = "Summarize long text",
+        icon = "file-text",
+        color = "#F59E0B",
+        configSchema = "/schemas/summarization-config.json",
+        inputSchema = "/schemas/text-input.json",
+        outputSchema = "/schemas/summarization-output.json",
+        executorId = "ai.nlp.executor",
+        widgetId = "widget.ai.summarization"
+    )
+})
+@ApplicationScoped
+public class AINLPPlugin {
+    
+    private static final Logger LOG = Logger.getLogger(AINLPPlugin.class);
+    
+    public void initialize() {
+        LOG.info("AI NLP Plugin initialized with 4 nodes");
+    }
+}
+
+/**
+ * Single executor handling all 4 nodes
+ */
+@MultiNodeExecutor(
+    executorId = "ai.nlp.executor",
+    nodeTypes = {
+        "ai.sentiment",
+        "ai.classification",
+        "ai.ner",
+        "ai.summarization"
+    },
+    mode = ExecutionMode.SYNC,
+    protocols = {"REST", "GRPC"}
+)
+@ApplicationScoped
+public class AINLPExecutor extends AbstractExecutor {
+    
+    private static final Logger LOG = Logger.getLogger(AINLPExecutor.class);
+    
+    @Inject
+    SentimentAnalyzer sentimentAnalyzer;
+    
+    @Inject
+    TextClassifier textClassifier;
+    
+    @Inject
+    NamedEntityRecognizer ner;
+    
+    @Inject
+    TextSummarizer summarizer;
+    
+    @Override
+    protected ExecutionResult doExecute(ExecutionRequest request) throws ExecutorException {
+        
+        String nodeType = request.node().type();
+        LOG.infof("Executing node type: %s", nodeType);
+        
+        // Route to appropriate handler based on node type
+        return switch (nodeType) {
+            case "ai.sentiment" -> executeSentiment(request);
+            case "ai.classification" -> executeClassification(request);
+            case "ai.ner" -> executeNER(request);
+            case "ai.summarization" -> executeSummarization(request);
+            default -> throw new ExecutorException("Unknown node type: " + nodeType);
+        };
+    }
+    
+    private ExecutionResult executeSentiment(ExecutionRequest request) {
+        String text = request.getInput("text", String.class);
+        String model = request.getConfig("model", "default");
+        
+        SentimentResult result = sentimentAnalyzer.analyze(text, model);
+        
+        return ExecutionResult.success(Map.of(
+            "sentiment", result.sentiment(),
+            "score", result.score(),
+            "confidence", result.confidence()
+        ));
+    }
+    
+    private ExecutionResult executeClassification(ExecutionRequest request) {
+        String text = request.getInput("text", String.class);
+        List<String> categories = request.getConfig("categories", List.of());
+        
+        ClassificationResult result = textClassifier.classify(text, categories);
+        
+        return ExecutionResult.success(Map.of(
+            "category", result.category(),
+            "confidence", result.confidence(),
+            "scores", result.scores()
+        ));
+    }
+    
+    private ExecutionResult executeNER(ExecutionRequest request) {
+        String text = request.getInput("text", String.class);
+        List<String> entityTypes = request.getConfig("entityTypes", List.of());
+        
+        List<Entity> entities = ner.extract(text, entityTypes);
+        
+        return ExecutionResult.success(Map.of(
+            "entities", entities,
+            "count", entities.size()
+        ));
+    }
+    
+    private ExecutionResult executeSummarization(ExecutionRequest request) {
+        String text = request.getInput("text", String.class);
+        int maxLength = request.getConfig("maxLength", 100);
+        
+        String summary = summarizer.summarize(text, maxLength);
+        
+        return ExecutionResult.success(Map.of(
+            "summary", summary,
+            "originalLength", text.length(),
+            "summaryLength", summary.length()
+        ));
+    }
+    
+    // Service classes
+    record SentimentResult(String sentiment, double score, double confidence) {}
+    record ClassificationResult(String category, double confidence, Map<String, Double> scores) {}
+    record Entity(String text, String type, int start, int end) {}
+    
+    @ApplicationScoped
+    static class SentimentAnalyzer {
+        SentimentResult analyze(String text, String model) {
+            return new SentimentResult("POSITIVE", 0.85, 0.92);
+        }
+    }
+    
+    @ApplicationScoped
+    static class TextClassifier {
+        ClassificationResult classify(String text, List<String> categories) {
+            return new ClassificationResult("Technology", 0.89, Map.of(
+                "Technology", 0.89,
+                "Business", 0.45,
+                "Science", 0.32
+            ));
+        }
+    }
+    
+    @ApplicationScoped
+    static class NamedEntityRecognizer {
+        List<Entity> extract(String text, List<String> types) {
+            return List.of(
+                new Entity("John Doe", "PERSON", 0, 8),
+                new Entity("New York", "LOCATION", 25, 33)
+            );
+        }
+    }
+    
+    @ApplicationScoped
+    static class TextSummarizer {
+        String summarize(String text, int maxLength) {
+            return text.substring(0, Math.min(maxLength, text.length()));
+        }
+    }
+}

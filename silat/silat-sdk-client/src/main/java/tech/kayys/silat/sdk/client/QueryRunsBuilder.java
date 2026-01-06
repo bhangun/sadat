@@ -1,5 +1,9 @@
 package tech.kayys.silat.sdk.client;
 
+import io.smallrye.mutiny.Uni;
+import tech.kayys.silat.model.RunResponse;
+import java.util.List;
+
 /**
  * Builder for querying runs
  */
@@ -35,7 +39,7 @@ public class QueryRunsBuilder {
         return this;
     }
 
-    public Uni<PagedResponse<RunResponse>> execute() {
+    public Uni<List<RunResponse>> execute() {
         return client.queryRuns(workflowId, status, page, size);
     }
 }

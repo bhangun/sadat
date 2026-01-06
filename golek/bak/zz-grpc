@@ -1,0 +1,499 @@
+// golek Workflow Engine - gRPC API Definitions
+// Package: tech.kayys.golek.v1
+
+syntax = "proto3";
+
+package golek.v1;
+
+option go_package = "tech.kayys.golek/pkg/api/v1;golekv1";
+option java_package = "tech.kayys.golek.api.v1";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/empty.proto";
+
+// ============================================================================
+// WORKFLOW SERVICE - Main workflow operations
+// ============================================================================
+
+service WorkflowService {
+  // Workflow Run Operations
+  rpc CreateRun(CreateRunRequest) returns (RunResponse);
+  rpc StartRun(StartRunRequest) returns (RunResponse);
+  rpc GetRun(GetRunRequest) returns (RunResponse);
+  rpc SuspendRun(SuspendRunRequest) returns (RunResponse);
+  rpc ResumeRun(ResumeRunRequest) returns (RunResponse);
+  rpc CancelRun(CancelRunRequest) returns (google.protobuf.Empty);
+  rpc SignalRun(SignalRequest) returns (google.protobuf.Empty);
+  
+  // Query Operations
+  rpc QueryRuns(QueryRunsRequest) returns (QueryRunsResponse);
+  rpc GetExecutionHistory(GetExecutionHistoryRequest) returns (ExecutionHistoryResponse);
+  rpc GetActiveRunsCount(GetActiveRunsCountRequest) returns (CountResponse);
+  
+  // Streaming Operations
+  rpc StreamRunStatus(StreamRunStatusRequest) returns (stream RunStatusUpdate);
+}
+
+// ============================================================================
+// EXECUTOR SERVICE - Executor registration and communication
+// ============================================================================
+
+service ExecutorService {
+  // Executor Registration
+  rpc RegisterExecutor(RegisterExecutorRequest) returns (ExecutorRegistration);
+  rpc UnregisterExecutor(UnregisterExecutorRequest) returns (google.protobuf.Empty);
+  rpc Heartbeat(HeartbeatRequest) returns (google.protobuf.Empty);
+  
+  // Task Communication
+  rpc StreamTasks(StreamTasksRequest) returns (stream ExecutionTask);
+  rpc ReportResult(TaskResult) returns (google.protobuf.Empty);
+  
+  // Bidirectional Streaming
+  rpc ExecuteStream(stream ExecutorMessage) returns (stream EngineMessage);
+}
+
+// ============================================================================
+// DEFINITION SERVICE - Workflow definition management
+// ============================================================================
+
+service DefinitionService {
+  rpc CreateDefinition(CreateDefinitionRequest) returns (DefinitionResponse);
+  rpc GetDefinition(GetDefinitionRequest) returns (DefinitionResponse);
+  rpc UpdateDefinition(UpdateDefinitionRequest) returns (DefinitionResponse);
+  rpc DeleteDefinition(DeleteDefinitionRequest) returns (google.protobuf.Empty);
+  rpc ListDefinitions(ListDefinitionsRequest) returns (ListDefinitionsResponse);
+}
+
+// ============================================================================
+// REQUEST/RESPONSE MESSAGES
+// ============================================================================
+
+// Create Workflow Run
+message CreateRunRequest {
+  string tenant_id = 1;
+  string definition_id = 2;
+  google.protobuf.Struct inputs = 3;
+  map<string, string> labels = 4;
+}
+
+// Start Workflow Run
+message StartRunRequest {
+  string tenant_id = 1;
+  string run_id = 2;
+}
+
+// Get Workflow Run
+message GetRunRequest {
+  string tenant_id = 1;
+  string run_id = 2;
+}
+
+// Suspend Workflow Run
+message SuspendRunRequest {
+  string tenant_id = 1;
+  string run_id = 2;
+  string reason = 3;
+  optional string waiting_on_node_id = 4;
+}
+
+// Resume Workflow Run
+message ResumeRunRequest {
+  string tenant_id = 1;
+  string run_id = 2;
+  google.protobuf.Struct resume_data = 3;
+}
+
+// Cancel Workflow Run
+message CancelRunRequest {
+  string tenant_id = 1;
+  string run_id = 2;
+  string reason = 3;
+}
+
+// Send Signal to Workflow
+message SignalRequest {
+  string run_id = 1;
+  string signal_name = 2;
+  string target_node_id = 3;
+  google.protobuf.Struct payload = 4;
+}
+
+// Query Workflow Runs
+message QueryRunsRequest {
+  string tenant_id = 1;
+  optional string definition_id = 2;
+  optional RunStatus status = 3;
+  map<string, string> labels = 4;
+  int32 page = 5;
+  int32 size = 6;
+}
+
+message QueryRunsResponse {
+  repeated RunResponse runs = 1;
+  int32 page = 2;
+  int32 size = 3;
+  int64 total_elements = 4;
+  bool has_more = 5;
+}
+
+// Get Execution History
+message GetExecutionHistoryRequest {
+  string tenant_id = 1;
+  string run_id = 2;
+}
+
+message ExecutionHistoryResponse {
+  string run_id = 1;
+  repeated ExecutionEvent events = 2;
+  int64 total_events = 3;
+}
+
+// Get Active Runs Count
+message GetActiveRunsCountRequest {
+  string tenant_id = 1;
+}
+
+message CountResponse {
+  int64 count = 1;
+}
+
+// Stream Run Status
+message StreamRunStatusRequest {
+  repeated string run_ids = 1;
+}
+
+message RunStatusUpdate {
+  string run_id = 1;
+  RunStatus status = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  optional string error_message = 4;
+}
+
+// ============================================================================
+// EXECUTOR MESSAGES
+// ============================================================================
+
+// Register Executor
+message RegisterExecutorRequest {
+  string executor_id = 1;
+  string executor_type = 2;
+  CommunicationType communication_type = 3;
+  string endpoint = 4;
+  map<string, string> metadata = 5;
+  repeated string capabilities = 6;
+  int32 max_concurrent = 7;
+}
+
+message ExecutorRegistration {
+  string executor_id = 1;
+  string status = 2;
+  google.protobuf.Timestamp registered_at = 3;
+}
+
+// Unregister Executor
+message UnregisterExecutorRequest {
+  string executor_id = 1;
+}
+
+// Heartbeat
+message HeartbeatRequest {
+  string executor_id = 1;
+  map<string, string> metrics = 2;
+}
+
+// Stream Tasks
+message StreamTasksRequest {
+  string executor_id = 1;
+  string executor_type = 2;
+}
+
+// Execution Task
+message ExecutionTask {
+  string task_id = 1;
+  string run_id = 2;
+  string node_id = 3;
+  int32 attempt = 4;
+  string execution_token = 5;
+  google.protobuf.Struct context = 6;
+  google.protobuf.Struct config = 7;
+  optional int64 timeout_seconds = 8;
+}
+
+// Task Result
+message TaskResult {
+  string task_id = 1;
+  string run_id = 2;
+  string node_id = 3;
+  int32 attempt = 4;
+  TaskStatus status = 5;
+  google.protobuf.Struct output = 6;
+  optional ErrorInfo error = 7;
+  string execution_token = 8;
+}
+
+// Bidirectional Streaming Messages
+message ExecutorMessage {
+  oneof message {
+    HeartbeatRequest heartbeat = 1;
+    TaskResult result = 2;
+    TaskAck ack = 3;
+  }
+}
+
+message EngineMessage {
+  oneof message {
+    ExecutionTask task = 1;
+    TaskCancellation cancellation = 2;
+    HealthCheck health_check = 3;
+  }
+}
+
+message TaskAck {
+  string task_id = 1;
+  google.protobuf.Timestamp received_at = 2;
+}
+
+message TaskCancellation {
+  string task_id = 1;
+  string reason = 2;
+}
+
+message HealthCheck {
+  google.protobuf.Timestamp timestamp = 1;
+}
+
+// ============================================================================
+// DEFINITION MESSAGES
+// ============================================================================
+
+message CreateDefinitionRequest {
+  string tenant_id = 1;
+  string name = 2;
+  string version = 3;
+  string description = 4;
+  repeated NodeDefinition nodes = 5;
+  map<string, InputDefinition> inputs = 6;
+  map<string, OutputDefinition> outputs = 7;
+  optional RetryPolicy retry_policy = 8;
+  optional CompensationPolicy compensation_policy = 9;
+  map<string, string> metadata = 10;
+}
+
+message GetDefinitionRequest {
+  string tenant_id = 1;
+  string definition_id = 2;
+}
+
+message UpdateDefinitionRequest {
+  string tenant_id = 1;
+  string definition_id = 2;
+  DefinitionResponse definition = 3;
+}
+
+message DeleteDefinitionRequest {
+  string tenant_id = 1;
+  string definition_id = 2;
+}
+
+message ListDefinitionsRequest {
+  string tenant_id = 1;
+  bool active_only = 2;
+}
+
+message ListDefinitionsResponse {
+  repeated DefinitionResponse definitions = 1;
+}
+
+// ============================================================================
+// DOMAIN MODELS
+// ============================================================================
+
+// Run Response
+message RunResponse {
+  string run_id = 1;
+  string tenant_id = 2;
+  string definition_id = 3;
+  RunStatus status = 4;
+  google.protobuf.Struct variables = 5;
+  map<string, NodeExecution> node_executions = 6;
+  repeated string execution_path = 7;
+  google.protobuf.Timestamp created_at = 8;
+  optional google.protobuf.Timestamp started_at = 9;
+  optional google.protobuf.Timestamp completed_at = 10;
+  optional int64 duration_ms = 11;
+  optional ErrorInfo error = 12;
+  map<string, string> labels = 13;
+}
+
+// Definition Response
+message DefinitionResponse {
+  string definition_id = 1;
+  string tenant_id = 2;
+  string name = 3;
+  string version = 4;
+  string description = 5;
+  repeated NodeDefinition nodes = 6;
+  map<string, InputDefinition> inputs = 7;
+  map<string, OutputDefinition> outputs = 8;
+  optional RetryPolicy retry_policy = 9;
+  optional CompensationPolicy compensation_policy = 10;
+  map<string, string> metadata = 11;
+  google.protobuf.Timestamp created_at = 12;
+  bool is_active = 13;
+}
+
+// Node Definition
+message NodeDefinition {
+  string id = 1;
+  string name = 2;
+  NodeType type = 3;
+  string executor_type = 4;
+  google.protobuf.Struct config = 5;
+  repeated string depends_on = 6;
+  repeated Transition transitions = 7;
+  optional RetryPolicy retry_policy = 8;
+  optional int64 timeout_seconds = 9;
+  bool critical = 10;
+}
+
+// Node Execution
+message NodeExecution {
+  string node_id = 1;
+  string node_name = 2;
+  NodeExecutionStatus status = 3;
+  int32 attempt = 4;
+  optional google.protobuf.Timestamp started_at = 5;
+  optional google.protobuf.Timestamp completed_at = 6;
+  google.protobuf.Struct output = 7;
+  optional ErrorInfo error = 8;
+}
+
+// Transition
+message Transition {
+  string target_node = 1;
+  optional string condition = 2;
+  TransitionType type = 3;
+}
+
+// Input Definition
+message InputDefinition {
+  string name = 1;
+  string type = 2;
+  bool required = 3;
+  optional google.protobuf.Value default_value = 4;
+  string description = 5;
+}
+
+// Output Definition
+message OutputDefinition {
+  string name = 1;
+  string type = 2;
+  string description = 3;
+}
+
+// Retry Policy
+message RetryPolicy {
+  int32 max_attempts = 1;
+  int64 initial_delay_ms = 2;
+  int64 max_delay_ms = 3;
+  double backoff_multiplier = 4;
+  repeated string retryable_exceptions = 5;
+}
+
+// Compensation Policy
+message CompensationPolicy {
+  CompensationStrategy strategy = 1;
+  int32 timeout_seconds = 2;
+  bool retry_on_failure = 3;
+}
+
+// Error Info
+message ErrorInfo {
+  string code = 1;
+  string message = 2;
+  string stack_trace = 3;
+  google.protobuf.Struct context = 4;
+}
+
+// Execution Event
+message ExecutionEvent {
+  string event_id = 1;
+  string event_type = 2;
+  google.protobuf.Timestamp occurred_at = 3;
+  string run_id = 4;
+  int64 sequence_number = 5;
+  google.protobuf.Struct payload = 6;
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum RunStatus {
+  RUN_STATUS_UNSPECIFIED = 0;
+  RUN_STATUS_CREATED = 1;
+  RUN_STATUS_PENDING = 2;
+  RUN_STATUS_RUNNING = 3;
+  RUN_STATUS_SUSPENDED = 4;
+  RUN_STATUS_COMPLETED = 5;
+  RUN_STATUS_FAILED = 6;
+  RUN_STATUS_CANCELLED = 7;
+  RUN_STATUS_COMPENSATING = 8;
+  RUN_STATUS_COMPENSATED = 9;
+}
+
+enum NodeExecutionStatus {
+  NODE_STATUS_UNSPECIFIED = 0;
+  NODE_STATUS_PENDING = 1;
+  NODE_STATUS_RUNNING = 2;
+  NODE_STATUS_COMPLETED = 3;
+  NODE_STATUS_FAILED = 4;
+  NODE_STATUS_RETRYING = 5;
+  NODE_STATUS_SKIPPED = 6;
+}
+
+enum NodeType {
+  NODE_TYPE_UNSPECIFIED = 0;
+  NODE_TYPE_TASK = 1;
+  NODE_TYPE_DECISION = 2;
+  NODE_TYPE_PARALLEL = 3;
+  NODE_TYPE_AGGREGATE = 4;
+  NODE_TYPE_HUMAN_TASK = 5;
+  NODE_TYPE_SUB_WORKFLOW = 6;
+  NODE_TYPE_EVENT_WAIT = 7;
+  NODE_TYPE_TIMER = 8;
+  NODE_TYPE_SCRIPT = 9;
+  NODE_TYPE_AI_AGENT = 10;
+}
+
+enum TransitionType {
+  TRANSITION_UNSPECIFIED = 0;
+  TRANSITION_SUCCESS = 1;
+  TRANSITION_FAILURE = 2;
+  TRANSITION_CONDITION = 3;
+  TRANSITION_DEFAULT = 4;
+}
+
+enum CommunicationType {
+  COMMUNICATION_UNSPECIFIED = 0;
+  COMMUNICATION_GRPC = 1;
+  COMMUNICATION_REST = 2;
+  COMMUNICATION_KAFKA = 3;
+  COMMUNICATION_NATS = 4;
+}
+
+enum TaskStatus {
+  TASK_STATUS_UNSPECIFIED = 0;
+  TASK_STATUS_PENDING = 1;
+  TASK_STATUS_RUNNING = 2;
+  TASK_STATUS_COMPLETED = 3;
+  TASK_STATUS_FAILED = 4;
+}
+
+enum CompensationStrategy {
+  COMPENSATION_UNSPECIFIED = 0;
+  COMPENSATION_SEQUENTIAL = 1;
+  COMPENSATION_PARALLEL = 2;
+}

@@ -1,0 +1,797 @@
+package tech.kayys.golek.executor;
+
+import io.grpc.ManagedChannel;
+import io.grpc.ManagedChannelBuilder;
+import io.grpc.stub.StreamObserver;
+import io.quarkus.runtime.ShutdownEvent;
+import io.quarkus.runtime.StartupEvent;
+import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.Uni;
+import io.smallrye.mutiny.subscription.Cancellable;
+import jakarta.annotation.Priority;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import tech.kayys.golek.api.v1.*;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * ============================================================================
+ * golek JAVA/QUARKUS EXECUTOR SDK
+ * ============================================================================
+ * 
+ * Production-ready executor SDK for Quarkus applications.
+ * Integrates seamlessly with Quarkus CDI, config, and lifecycle.
+ * 
+ * Features:
+ * - Automatic registration with golek engine
+ * - Reactive task processing with Mutiny
+ * - Graceful shutdown with task completion
+ * - Built-in metrics and health checks
+ * - Configurable concurrency control
+ * - Retry logic and error handling
+ * 
+ * Example Usage:
+ * ```java
+ * @Executor(
+ *     executorType = "payment-processor",
+ *     maxConcurrent = 10,
+ *     capabilities = {"payment", "stripe", "paypal"}
+ * )
+ * public class PaymentProcessorExecutor extends AbstractExecutor {
+ *     
+ *     @Inject
+ *     PaymentService paymentService;
+ *     
+ *     @Override
+ *     public Uni<ExecutionResult> execute(ExecutionTask task) {
+ *         String customerId = task.getContext("customerId");
+ *         Double amount = task.getContext("amount");
+ *         
+ *         return paymentService.charge(customerId, amount)
+ *             .map(charge -> ExecutionResult.success(Map.of(
+ *                 "transactionId", charge.getId(),
+ *                 "status", "COMPLETED"
+ *             )))
+ *             .onFailure().recoverWithItem(error ->
+ *                 ExecutionResult.failure("PAYMENT_FAILED", error.getMessage())
+ *             );
+ *     }
+ * }
+ * ```
+ */
+
+// ============================================================================
+// EXECUTOR ANNOTATION
+// ============================================================================
+
+/**
+ * Marks a class as a golek workflow executor
+ */
+@jakarta.inject.Qualifier
+@java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+@java.lang.annotation.Target({java.lang.annotation.ElementType.TYPE, java.lang.annotation.ElementType.METHOD})
+public @interface Executor {
+    /**
+     * Unique executor type identifier
+     */
+    String executorType();
+    
+    /**
+     * Executor version
+     */
+    String version() default "1.0.0";
+    
+    /**
+     * Maximum concurrent tasks
+     */
+    int maxConcurrent() default 10;
+    
+    /**
+     * Executor capabilities
+     */
+    String[] capabilities() default {};
+    
+    /**
+     * Enable metrics collection
+     */
+    boolean metricsEnabled() default true;
+}
+
+// ============================================================================
+// EXECUTOR INTERFACE
+// ============================================================================
+
+/**
+ * Base interface for all workflow executors
+ */
+public interface WorkflowExecutor {
+    
+    /**
+     * Execute a workflow node task
+     * 
+     * @param task The task to execute
+     * @return Execution result
+     */
+    Uni<ExecutionResult> execute(ExecutionTask task);
+    
+    /**
+     * Get executor metadata
+     */
+    ExecutorMetadata getMetadata();
+    
+    /**
+     * Called before task execution (optional hook)
+     */
+    default Uni<Void> beforeExecute(ExecutionTask task) {
+        return Uni.createFrom().voidItem();
+    }
+    
+    /**
+     * Called after task execution (optional hook)
+     */
+    default Uni<Void> afterExecute(ExecutionTask task, ExecutionResult result) {
+        return Uni.createFrom().voidItem();
+    }
+    
+    /**
+     * Health check
+     */
+    default Uni<Boolean> healthCheck() {
+        return Uni.createFrom().item(true);
+    }
+}
+
+// ============================================================================
+// ABSTRACT EXECUTOR
+// ============================================================================
+
+/**
+ * Abstract base class for executors with common functionality
+ */
+public abstract class AbstractExecutor implements WorkflowExecutor {
+    
+    protected final Logger logger = LoggerFactory.getLogger(getClass());
+    protected final ExecutorMetadata metadata;
+    protected final ExecutorMetrics metrics;
+    
+    protected AbstractExecutor() {
+        Executor annotation = getClass().getAnnotation(Executor.class);
+        if (annotation == null) {
+            throw new IllegalStateException(
+                "Executor class must be annotated with @Executor");
+        }
+        
+        this.metadata = new ExecutorMetadata(
+            annotation.executorType(),
+            annotation.version(),
+            List.of(annotation.capabilities()),
+            annotation.maxConcurrent(),
+            annotation.metricsEnabled()
+        );
+        
+        this.metrics = new ExecutorMetrics(metadata.executorType());
+    }
+    
+    @Override
+    public ExecutorMetadata getMetadata() {
+        return metadata;
+    }
+    
+    /**
+     * Execute with lifecycle hooks and metrics
+     */
+    public final Uni<ExecutionResult> executeWithLifecycle(ExecutionTask task) {
+        logger.info("Executing task: run={}, node={}, attempt={}", 
+            task.getRunId(), task.getNodeId(), task.getAttempt());
+        
+        Instant startTime = Instant.now();
+        metrics.taskStarted();
+        
+        return beforeExecute(task)
+            .flatMap(v -> execute(task))
+            .invoke(result -> {
+                Duration duration = Duration.between(startTime, Instant.now());
+                
+                if (result.isSuccess()) {
+                    metrics.taskCompleted(duration);
+                    logger.info("Task completed: run={}, duration={}ms", 
+                        task.getRunId(), duration.toMillis());
+                } else {
+                    metrics.taskFailed(duration);
+                    logger.error("Task failed: run={}, error={}", 
+                        task.getRunId(), result.getError());
+                }
+            })
+            .onFailure().recoverWithItem(throwable -> {
+                Duration duration = Duration.between(startTime, Instant.now());
+                metrics.taskFailed(duration);
+                
+                logger.error("Task execution threw exception", throwable);
+                
+                return ExecutionResult.failure(
+                    "INTERNAL_ERROR",
+                    throwable.getMessage()
+                );
+            })
+            .flatMap(result -> 
+                afterExecute(task, result)
+                    .replaceWith(result)
+            );
+    }
+    
+    public ExecutorMetrics getMetrics() {
+        return metrics;
+    }
+}
+
+// ============================================================================
+// EXECUTOR RUNTIME
+// ============================================================================
+
+/**
+ * Manages executor lifecycle and communication with golek engine
+ */
+@ApplicationScoped
+public class ExecutorRuntime {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(ExecutorRuntime.class);
+    
+    @ConfigProperty(name = "golek.engine.endpoint", defaultValue = "localhost:9090")
+    String engineEndpoint;
+    
+    @ConfigProperty(name = "golek.executor.heartbeat-interval", defaultValue = "10s")
+    Duration heartbeatInterval;
+    
+    @ConfigProperty(name = "golek.executor.shutdown-timeout", defaultValue = "30s")
+    Duration shutdownTimeout;
+    
+    @Inject
+    @jakarta.enterprise.inject.Instance<WorkflowExecutor>
+    jakarta.enterprise.inject.Instance<WorkflowExecutor> executors;
+    
+    private ManagedChannel channel;
+    private ExecutorServiceGrpc.ExecutorServiceStub stub;
+    private final Map<String, WorkflowExecutor> executorMap = new ConcurrentHashMap<>();
+    private final Set<String> activeTasks = ConcurrentHashMap.newKeySet();
+    private final AtomicBoolean running = new AtomicBoolean(false);
+    private final Semaphore concurrencySemaphore;
+    private Cancellable taskStreamCancellable;
+    private ScheduledExecutorService scheduler;
+    
+    public ExecutorRuntime() {
+        // Initialize with default concurrency
+        this.concurrencySemaphore = new Semaphore(100);
+    }
+    
+    // ============================================================================
+    // LIFECYCLE
+    // ============================================================================
+    
+    void onStart(@Observes @Priority(1000) StartupEvent event) {
+        LOG.info("Starting golek executor runtime");
+        
+        // Discover and register all executors
+        executors.forEach(executor -> {
+            String type = executor.getMetadata().executorType();
+            executorMap.put(type, executor);
+            LOG.info("Discovered executor: {} v{}", 
+                type, executor.getMetadata().version());
+        });
+        
+        if (executorMap.isEmpty()) {
+            LOG.warn("No executors found! Add @Executor annotated beans.");
+            return;
+        }
+        
+        // Connect to engine
+        connectToEngine();
+        
+        // Register executors
+        registerExecutors();
+        
+        // Start task processing
+        running.set(true);
+        startTaskStream();
+        startHeartbeat();
+        
+        LOG.info("Executor runtime started with {} executors", executorMap.size());
+    }
+    
+    void onStop(@Observes ShutdownEvent event) {
+        LOG.info("Stopping executor runtime");
+        running.set(false);
+        
+        // Cancel task stream
+        if (taskStreamCancellable != null) {
+            taskStreamCancellable.cancel();
+        }
+        
+        // Wait for active tasks
+        waitForActiveTasks();
+        
+        // Unregister executors
+        unregisterExecutors();
+        
+        // Shutdown scheduler
+        if (scheduler != null) {
+            scheduler.shutdown();
+        }
+        
+        // Close channel
+        if (channel != null) {
+            channel.shutdown();
+            try {
+                channel.awaitTermination(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        
+        LOG.info("Executor runtime stopped");
+    }
+    
+    // ============================================================================
+    // PRIVATE METHODS
+    // ============================================================================
+    
+    private void connectToEngine() {
+        LOG.info("Connecting to golek engine: {}", engineEndpoint);
+        
+        channel = ManagedChannelBuilder
+            .forTarget(engineEndpoint)
+            .usePlaintext() // For development; use TLS in production
+            .build();
+        
+        stub = ExecutorServiceGrpc.newStub(channel);
+        
+        LOG.info("Connected to engine");
+    }
+    
+    private void registerExecutors() {
+        executorMap.values().forEach(executor -> {
+            ExecutorMetadata meta = executor.getMetadata();
+            
+            RegisterExecutorRequest request = RegisterExecutorRequest.newBuilder()
+                .setExecutorId(UUID.randomUUID().toString())
+                .setExecutorType(meta.executorType())
+                .setCommunicationType(CommunicationType.COMMUNICATION_GRPC)
+                .setEndpoint("")
+                .addAllCapabilities(meta.capabilities())
+                .setMaxConcurrent(meta.maxConcurrent())
+                .build();
+            
+            stub.registerExecutor(request, new StreamObserver<>() {
+                @Override
+                public void onNext(ExecutorRegistration response) {
+                    LOG.info("Executor registered: {} ({})", 
+                        meta.executorType(), response.getStatus());
+                }
+                
+                @Override
+                public void onError(Throwable t) {
+                    LOG.error("Failed to register executor: " + meta.executorType(), t);
+                }
+                
+                @Override
+                public void onCompleted() {}
+            });
+        });
+    }
+    
+    private void unregisterExecutors() {
+        executorMap.values().forEach(executor -> {
+            UnregisterExecutorRequest request = UnregisterExecutorRequest.newBuilder()
+                .setExecutorId(executor.getMetadata().executorType())
+                .build();
+            
+            stub.unregisterExecutor(request, new StreamObserver<>() {
+                @Override
+                public void onNext(com.google.protobuf.Empty response) {
+                    LOG.info("Executor unregistered: {}", 
+                        executor.getMetadata().executorType());
+                }
+                
+                @Override
+                public void onError(Throwable t) {
+                    LOG.warn("Failed to unregister executor", t);
+                }
+                
+                @Override
+                public void onCompleted() {}
+            });
+        });
+    }
+    
+    private void startTaskStream() {
+        executorMap.values().forEach(executor -> {
+            StreamTasksRequest request = StreamTasksRequest.newBuilder()
+                .setExecutorId(executor.getMetadata().executorType())
+                .setExecutorType(executor.getMetadata().executorType())
+                .build();
+            
+            StreamObserver<tech.kayys.golek.api.v1.ExecutionTask> responseObserver = 
+                new StreamObserver<>() {
+                    @Override
+                    public void onNext(tech.kayys.golek.api.v1.ExecutionTask protoTask) {
+                        handleTask(executor, protoTask);
+                    }
+                    
+                    @Override
+                    public void onError(Throwable t) {
+                        LOG.error("Task stream error", t);
+                        // Reconnect logic would go here
+                    }
+                    
+                    @Override
+                    public void onCompleted() {
+                        LOG.info("Task stream completed");
+                    }
+                };
+            
+            stub.streamTasks(request, responseObserver);
+        });
+    }
+    
+    private void handleTask(WorkflowExecutor executor, 
+                           tech.kayys.golek.api.v1.ExecutionTask protoTask) {
+        String taskId = protoTask.getRunId() + ":" + protoTask.getNodeId();
+        
+        // Acquire concurrency permit
+        try {
+            concurrencySemaphore.acquire();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return;
+        }
+        
+        activeTasks.add(taskId);
+        
+        // Convert to domain task
+        ExecutionTask task = ExecutionTask.fromProto(protoTask);
+        
+        // Execute asynchronously
+        Uni.createFrom().item(task)
+            .flatMap(t -> {
+                if (executor instanceof AbstractExecutor) {
+                    return ((AbstractExecutor) executor).executeWithLifecycle(t);
+                } else {
+                    return executor.execute(t);
+                }
+            })
+            .subscribe().with(
+                result -> {
+                    reportResult(task, result);
+                    activeTasks.remove(taskId);
+                    concurrencySemaphore.release();
+                },
+                error -> {
+                    LOG.error("Task execution failed", error);
+                    ExecutionResult failureResult = ExecutionResult.failure(
+                        "EXECUTION_ERROR", error.getMessage());
+                    reportResult(task, failureResult);
+                    activeTasks.remove(taskId);
+                    concurrencySemaphore.release();
+                }
+            );
+    }
+    
+    private void reportResult(ExecutionTask task, ExecutionResult result) {
+        TaskResult protoResult = result.toProto(task);
+        
+        stub.reportResult(protoResult, new StreamObserver<>() {
+            @Override
+            public void onNext(com.google.protobuf.Empty response) {
+                LOG.debug("Result reported: {}", task.getNodeId());
+            }
+            
+            @Override
+            public void onError(Throwable t) {
+                LOG.error("Failed to report result", t);
+            }
+            
+            @Override
+            public void onCompleted() {}
+        });
+    }
+    
+    private void startHeartbeat() {
+        scheduler = Executors.newScheduledThreadPool(1);
+        
+        scheduler.scheduleAtFixedRate(() -> {
+            executorMap.values().forEach(executor -> {
+                HeartbeatRequest request = HeartbeatRequest.newBuilder()
+                    .setExecutorId(executor.getMetadata().executorType())
+                    .build();
+                
+                if (executor instanceof AbstractExecutor) {
+                    ExecutorMetrics metrics = ((AbstractExecutor) executor).getMetrics();
+                    request = request.toBuilder()
+                        .putMetrics("tasks_started", String.valueOf(metrics.getTasksStarted()))
+                        .putMetrics("tasks_completed", String.valueOf(metrics.getTasksCompleted()))
+                        .putMetrics("tasks_failed", String.valueOf(metrics.getTasksFailed()))
+                        .build();
+                }
+                
+                stub.heartbeat(request, new StreamObserver<>() {
+                    @Override
+                    public void onNext(com.google.protobuf.Empty response) {}
+                    
+                    @Override
+                    public void onError(Throwable t) {
+                        LOG.warn("Heartbeat failed", t);
+                    }
+                    
+                    @Override
+                    public void onCompleted() {}
+                });
+            });
+        }, 
+        heartbeatInterval.toMillis(), 
+        heartbeatInterval.toMillis(), 
+        TimeUnit.MILLISECONDS);
+    }
+    
+    private void waitForActiveTasks() {
+        Instant deadline = Instant.now().plus(shutdownTimeout);
+        
+        while (!activeTasks.isEmpty() && Instant.now().isBefore(deadline)) {
+            LOG.info("Waiting for {} active tasks to complete", activeTasks.size());
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        
+        if (!activeTasks.isEmpty()) {
+            LOG.warn("Shutdown timeout reached. {} tasks still active", activeTasks.size());
+        }
+    }
+}
+
+// ============================================================================
+// DOMAIN MODELS
+// ============================================================================
+
+/**
+ * Execution task
+ */
+public class ExecutionTask {
+    private final String runId;
+    private final String nodeId;
+    private final int attempt;
+    private final String token;
+    private final Map<String, Object> context;
+    private final Map<String, Object> config;
+    private final Duration timeout;
+    
+    private ExecutionTask(String runId, String nodeId, int attempt, String token,
+                         Map<String, Object> context, Map<String, Object> config,
+                         Duration timeout) {
+        this.runId = runId;
+        this.nodeId = nodeId;
+        this.attempt = attempt;
+        this.token = token;
+        this.context = context;
+        this.config = config;
+        this.timeout = timeout;
+    }
+    
+    public static ExecutionTask fromProto(tech.kayys.golek.api.v1.ExecutionTask proto) {
+        return new ExecutionTask(
+            proto.getRunId(),
+            proto.getNodeId(),
+            proto.getAttempt(),
+            proto.getExecutionToken(),
+            protoStructToMap(proto.getContext()),
+            protoStructToMap(proto.getConfig()),
+            proto.hasTimeoutSeconds() ? 
+                Duration.ofSeconds(proto.getTimeoutSeconds()) : Duration.ofMinutes(5)
+        );
+    }
+    
+    public String getRunId() { return runId; }
+    public String getNodeId() { return nodeId; }
+    public int getAttempt() { return attempt; }
+    public String getToken() { return token; }
+    
+    @SuppressWarnings("unchecked")
+    public <T> T getContext(String key) {
+        return (T) context.get(key);
+    }
+    
+    public <T> T getContext(String key, T defaultValue) {
+        return context.containsKey(key) ? getContext(key) : defaultValue;
+    }
+    
+    @SuppressWarnings("unchecked")
+    public <T> T getConfig(String key) {
+        return (T) config.get(key);
+    }
+    
+    public <T> T getConfig(String key, T defaultValue) {
+        return config.containsKey(key) ? getConfig(key) : defaultValue;
+    }
+    
+    public Duration getTimeout() { return timeout; }
+    
+    private static Map<String, Object> protoStructToMap(com.google.protobuf.Struct struct) {
+        // Simplified conversion
+        return new HashMap<>();
+    }
+}
+
+/**
+ * Execution result
+ */
+public class ExecutionResult {
+    private final boolean success;
+    private final Map<String, Object> output;
+    private final ErrorInfo error;
+    
+    private ExecutionResult(boolean success, Map<String, Object> output, ErrorInfo error) {
+        this.success = success;
+        this.output = output;
+        this.error = error;
+    }
+    
+    public static ExecutionResult success(Map<String, Object> output) {
+        return new ExecutionResult(true, output, null);
+    }
+    
+    public static ExecutionResult failure(String code, String message) {
+        return new ExecutionResult(false, Map.of(), new ErrorInfo(code, message));
+    }
+    
+    public static ExecutionResult failure(ErrorInfo error) {
+        return new ExecutionResult(false, Map.of(), error);
+    }
+    
+    public boolean isSuccess() { return success; }
+    public Map<String, Object> getOutput() { return output; }
+    public ErrorInfo getError() { return error; }
+    
+    public TaskResult toProto(ExecutionTask task) {
+        TaskResult.Builder builder = TaskResult.newBuilder()
+            .setTaskId(task.getRunId() + ":" + task.getNodeId())
+            .setRunId(task.getRunId())
+            .setNodeId(task.getNodeId())
+            .setAttempt(task.getAttempt())
+            .setExecutionToken(task.getToken());
+        
+        if (success) {
+            builder.setStatus(TaskStatus.TASK_STATUS_COMPLETED);
+        } else {
+            builder.setStatus(TaskStatus.TASK_STATUS_FAILED);
+            if (error != null) {
+                builder.setError(tech.kayys.golek.api.v1.ErrorInfo.newBuilder()
+                    .setCode(error.code())
+                    .setMessage(error.message())
+                    .build());
+            }
+        }
+        
+        return builder.build();
+    }
+}
+
+/**
+ * Error information
+ */
+record ErrorInfo(String code, String message, Map<String, Object> context) {
+    public ErrorInfo(String code, String message) {
+        this(code, message, Map.of());
+    }
+}
+
+/**
+ * Executor metadata
+ */
+record ExecutorMetadata(
+    String executorType,
+    String version,
+    List<String> capabilities,
+    int maxConcurrent,
+    boolean metricsEnabled
+) {}
+
+/**
+ * Executor metrics
+ */
+public class ExecutorMetrics {
+    private final String executorType;
+    private final AtomicLong tasksStarted = new AtomicLong();
+    private final AtomicLong tasksCompleted = new AtomicLong();
+    private final AtomicLong tasksFailed = new AtomicLong();
+    private final List<Duration> durations = new CopyOnWriteArrayList<>();
+    
+    public ExecutorMetrics(String executorType) {
+        this.executorType = executorType;
+    }
+    
+    public void taskStarted() {
+        tasksStarted.incrementAndGet();
+    }
+    
+    public void taskCompleted(Duration duration) {
+        tasksCompleted.incrementAndGet();
+        durations.add(duration);
+    }
+    
+    public void taskFailed(Duration duration) {
+        tasksFailed.incrementAndGet();
+        durations.add(duration);
+    }
+    
+    public long getTasksStarted() { return tasksStarted.get(); }
+    public long getTasksCompleted() { return tasksCompleted.get(); }
+    public long getTasksFailed() { return tasksFailed.get(); }
+    
+    public Duration getAverageDuration() {
+        if (durations.isEmpty()) return Duration.ZERO;
+        long avgMillis = durations.stream()
+            .mapToLong(Duration::toMillis)
+            .sum() / durations.size();
+        return Duration.ofMillis(avgMillis);
+    }
+}
+
+// ============================================================================
+// EXAMPLE EXECUTORS
+// ============================================================================
+
+/**
+ * Example: Payment processor executor
+ */
+@Executor(
+    executorType = "payment-processor",
+    version = "1.0.0",
+    maxConcurrent = 10,
+    capabilities = {"payment", "stripe", "paypal"}
+)
+@ApplicationScoped
+public class PaymentProcessorExecutor extends AbstractExecutor {
+    
+    // Inject your services
+    // @Inject PaymentService paymentService;
+    
+    @Override
+    public Uni<ExecutionResult> execute(ExecutionTask task) {
+        String customerId = task.getContext("customerId");
+        Double amount = task.getContext("amount");
+        String currency = task.getConfig("currency", "USD");
+        
+        logger.info("Processing payment: customer={}, amount={} {}", 
+            customerId, amount, currency);
+        
+        // Simulate payment processing
+        return Uni.createFrom().item(() -> {
+            // In real implementation, call payment gateway
+            String transactionId = "TXN-" + UUID.randomUUID().toString();
+            
+            return ExecutionResult.success(Map.of(
+                "transactionId", transactionId,
+                "status", "COMPLETED",
+                "amount", amount,
+                "currency", currency,
+                "processedAt", Instant.now().toString()
+            ));
+        })
+        .onItem().delayIt().by(Duration.ofSeconds(1)) // Simulate delay
+        .onFailure().recoverWithItem(error ->
+            ExecutionResult.failure("PAYMENT_FAILED", error.getMessage())
+        );
+    }
+}

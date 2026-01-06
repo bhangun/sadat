@@ -1,5 +1,9 @@
 package tech.kayys.silat.sdk.client;
 
+import io.smallrye.mutiny.Uni;
+import tech.kayys.silat.model.RunResponse;
+import tech.kayys.silat.execution.ExecutionHistory;
+
 /**
  * Fluent API for workflow run operations
  */
@@ -63,7 +67,7 @@ public class WorkflowRunOperations {
     /**
      * Get execution history
      */
-    public Uni<ExecutionHistoryResponse> getHistory(String runId) {
+    public Uni<ExecutionHistory> getHistory(String runId) {
         return client.getExecutionHistory(runId);
     }
 

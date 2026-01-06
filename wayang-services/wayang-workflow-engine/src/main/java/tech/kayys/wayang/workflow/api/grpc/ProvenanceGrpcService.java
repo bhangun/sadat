@@ -42,6 +42,7 @@ public class ProvenanceGrpcService implements tech.kayys.wayang.workflow.v1.Prov
 
     @Override
     public Uni<ProvenanceReport> getProvenanceReport(GetProvenanceReportRequest request) {
+        LOG.infof("Getting provenance report for run %s", request.getRunId());
         ReportType type = ReportType.SUMMARY;
         if (request.getReportType() != null && !request.getReportType().isEmpty()) {
             try {

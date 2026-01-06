@@ -2,8 +2,6 @@ package tech.kayys.silat.execution;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.Builder;
-import lombok.Data;
 import tech.kayys.silat.model.WorkflowId;
 import tech.kayys.silat.model.WorkflowRunId;
 import tech.kayys.silat.model.WorkflowRunSnapshot;
@@ -18,8 +16,6 @@ import java.util.*;
  * Contains all events, state changes, and execution records.
  * Used for debugging, auditing, and replay capabilities.
  */
-@Data
-@Builder(toBuilder = true)
 public class ExecutionHistory {
 
     private final WorkflowRunId runId;
@@ -29,20 +25,13 @@ public class ExecutionHistory {
     private final Instant created;
     private final Instant lastUpdated;
 
-    // Timeline of events
     private final List<ExecutionEventHistory> events;
-
-    // Node execution records
     private final List<NodeExecutionRecord> nodeExecutions;
-
-    // State transitions
     private final List<StateTransition> stateTransitions;
 
-    // Input/output snapshots
     private final Map<Instant, Map<String, Object>> inputSnapshots;
     private final Map<Instant, Map<String, Object>> outputSnapshots;
 
-    // Metadata and statistics
     private final ExecutionStatistics statistics;
     private final Map<String, Object> metadata;
 
@@ -77,13 +66,20 @@ public class ExecutionHistory {
         this.metadata = metadata != null ? Collections.unmodifiableMap(metadata) : Map.of();
     }
 
-    public List<ExecutionEventHistory> getEventsByType(String eventType) {
-        return events.stream()
-                .filter(e -> e.getEventType().name().equals(eventType))
-                .toList();
-    }
+    public WorkflowRunId getRunId() { return runId; }
+    public WorkflowId getWorkflowId() { return workflowId; }
+    public String getWorkflowVersion() { return workflowVersion; }
+    public String getTenantId() { return tenantId; }
+    public Instant getCreated() { return created; }
+    public Instant getLastUpdated() { return lastUpdated; }
+    public List<ExecutionEventHistory> getEvents() { return events; }
+    public List<NodeExecutionRecord> getNodeExecutions() { return nodeExecutions; }
+    public List<StateTransition> getStateTransitions() { return stateTransitions; }
+    public Map<Instant, Map<String, Object>> getInputSnapshots() { return inputSnapshots; }
+    public Map<Instant, Map<String, Object>> getOutputSnapshots() { return outputSnapshots; }
+    public ExecutionStatistics getStatistics() { return statistics; }
+    public Map<String, Object> getMetadata() { return metadata; }
 
-    // Factory methods
     public static ExecutionHistory empty(WorkflowRunId runId, WorkflowId workflowId, String tenantId) {
         return ExecutionHistory.builder()
                 .runId(runId)
@@ -101,16 +97,10 @@ public class ExecutionHistory {
                 .build();
     }
 
-    /**
-     * Create ExecutionHistory from a list of domain events
-     * Converts tech.kayys.silat.model.event.ExecutionEvent to
-     * ExecutionHistory.ExecutionEvent
-     */
     public static ExecutionHistory fromEvents(
             WorkflowRunId runId,
             List<tech.kayys.silat.model.event.ExecutionEvent> domainEvents) {
 
-        // Convert domain events to history events
         List<ExecutionEventHistory> historyEvents = domainEvents.stream()
                 .map(domainEvent -> ExecutionEventHistory.builder()
                         .eventId(domainEvent.eventId())
@@ -124,7 +114,7 @@ public class ExecutionHistory {
 
         return ExecutionHistory.builder()
                 .runId(runId)
-                .workflowId(WorkflowId.of("unknown")) // Will be enriched later
+                .workflowId(WorkflowId.of("unknown")) 
                 .workflowVersion("unknown")
                 .tenantId("unknown")
                 .created(historyEvents.isEmpty() ? Instant.now() : historyEvents.get(0).getTimestamp())
@@ -139,9 +129,6 @@ public class ExecutionHistory {
                 .build();
     }
 
-    /**
-     * Map domain event type string to ExecutionEventType enum
-     */
     private static ExecutionEventHistory.ExecutionEventType mapEventType(String eventType) {
         return switch (eventType) {
             case "WorkflowStartedEvent" -> ExecutionEventHistory.ExecutionEventType.RUN_STARTED;
@@ -172,17 +159,16 @@ public class ExecutionHistory {
                 .lastUpdated(Instant.now())
                 .events(events)
                 .nodeExecutions(nodeExecutions)
-                .stateTransitions(List.of()) // Simplified since some info is missing
+                .stateTransitions(List.of()) 
                 .inputSnapshots(Map.of(
                         snapshot.createdAt(),
                         snapshot.variables()))
                 .outputSnapshots(Map.of())
-                .statistics(ExecutionStatistics.builder().build()) // Simplified
+                .statistics(ExecutionStatistics.builder().build()) 
                 .metadata(Map.of("source", "snapshot"))
                 .build();
     }
 
-    // Utility methods
     public ExecutionHistory addEvent(ExecutionEventHistory event) {
         List<ExecutionEventHistory> newEvents = new ArrayList<>(this.events);
         newEvents.add(event);
@@ -199,61 +185,9 @@ public class ExecutionHistory {
 
         return this.toBuilder()
                 .nodeExecutions(newExecutions)
+                .statistics(statistics.merge(record))
                 .lastUpdated(Instant.now())
                 .build();
-    }
-
-    public ExecutionHistory addStateTransition(StateTransition transition) {
-        List<StateTransition> newTransitions = new ArrayList<>(this.stateTransitions);
-        newTransitions.add(transition);
-
-        return this.toBuilder()
-                .stateTransitions(newTransitions)
-                .lastUpdated(Instant.now())
-                .build();
-    }
-
-    public ExecutionHistory recordInputSnapshot(Map<String, Object> inputs) {
-        Map<Instant, Map<String, Object>> newSnapshots = new LinkedHashMap<>(this.inputSnapshots);
-        newSnapshots.put(Instant.now(), Map.copyOf(inputs));
-
-        return this.toBuilder()
-                .inputSnapshots(newSnapshots)
-                .lastUpdated(Instant.now())
-                .build();
-    }
-
-    public ExecutionHistory recordOutputSnapshot(Map<String, Object> outputs) {
-        Map<Instant, Map<String, Object>> newSnapshots = new LinkedHashMap<>(this.outputSnapshots);
-        newSnapshots.put(Instant.now(), Map.copyOf(outputs));
-
-        return this.toBuilder()
-                .outputSnapshots(newSnapshots)
-                .lastUpdated(Instant.now())
-                .build();
-    }
-
-    public Optional<ExecutionEventHistory> getFirstEvent() {
-        return events.stream().findFirst();
-    }
-
-    public Optional<ExecutionEventHistory> getLastEvent() {
-        if (events.isEmpty()) {
-            return Optional.empty();
-        }
-        return Optional.of(events.get(events.size() - 1));
-    }
-
-    public Optional<NodeExecutionRecord> getNodeExecution(String nodeId) {
-        return nodeExecutions.stream()
-                .filter(record -> record.getNodeId().equals(nodeId))
-                .findFirst();
-    }
-
-    public List<NodeExecutionRecord> getNodeExecutions(String nodeId) {
-        return nodeExecutions.stream()
-                .filter(record -> record.getNodeId().equals(nodeId))
-                .toList();
     }
 
     public Optional<StateTransition> getLastStateTransition() {
@@ -279,24 +213,6 @@ public class ExecutionHistory {
                                         event.getEventType() == ExecutionEventHistory.ExecutionEventType.NODE_FAILED);
     }
 
-    public List<ExecutionError> getAllErrors() {
-        List<ExecutionError> errors = new ArrayList<>();
-
-        // Errors from node executions
-        nodeExecutions.stream()
-                .filter(record -> record.getError() != null)
-                .map(NodeExecutionRecord::getError)
-                .forEach(errors::add);
-
-        // Errors from events
-        events.stream()
-                .filter(event -> event.getError() != null)
-                .map(ExecutionEventHistory::getError)
-                .forEach(errors::add);
-
-        return Collections.unmodifiableList(errors);
-    }
-
     public Duration getTotalDuration() {
         if (events.isEmpty()) {
             return Duration.ZERO;
@@ -314,45 +230,67 @@ public class ExecutionHistory {
                 .orElse(false);
     }
 
-    // Nested classes
-    @Data
-    @Builder
     public static class ExecutionEventHistory {
+        public enum ExecutionEventType {
+            RUN_STARTED, RUN_COMPLETED, RUN_FAILED, RUN_CANCELLED, RUN_WAITING, RUN_RESUMED,
+            NODE_STARTED, NODE_COMPLETED, NODE_FAILED, NODE_WAITING, STATE_UPDATED, SIGNAL_RECEIVED,
+            ERROR_OCCURRED, COMPENSATION_STARTED, COMPENSATION_COMPLETED, RETRY_SCHEDULED,
+            TIMER_EXPIRED, EXTERNAL_CALLBACK_RECEIVED, HUMAN_INTERVENTION_REQUIRED, HUMAN_INTERVENTION_COMPLETED
+        }
+
         private final String eventId;
         private final ExecutionEventType eventType;
         private final Instant timestamp;
         private final String source;
         private final Map<String, Object> payload;
-        private final ExecutionError error;
         private final Map<String, Object> metadata;
+        private final ExecutionError error;
 
-        public enum ExecutionEventType {
-            RUN_CREATED,
-            RUN_STARTED,
-            RUN_COMPLETED,
-            RUN_FAILED,
-            RUN_CANCELLED,
-            RUN_WAITING,
-            RUN_RESUMED,
-            NODE_STARTED,
-            NODE_COMPLETED,
-            NODE_FAILED,
-            NODE_WAITING,
-            STATE_UPDATED,
-            SIGNAL_RECEIVED,
-            ERROR_OCCURRED,
-            COMPENSATION_STARTED,
-            COMPENSATION_COMPLETED,
-            RETRY_SCHEDULED,
-            TIMER_EXPIRED,
-            EXTERNAL_CALLBACK_RECEIVED,
-            HUMAN_INTERVENTION_REQUIRED,
-            HUMAN_INTERVENTION_COMPLETED
+        public ExecutionEventHistory(String eventId, ExecutionEventType eventType, Instant timestamp,
+                                   String source, Map<String, Object> payload, Map<String, Object> metadata,
+                                   ExecutionError error) {
+            this.eventId = eventId;
+            this.eventType = eventType;
+            this.timestamp = timestamp;
+            this.source = source;
+            this.payload = payload != null ? Collections.unmodifiableMap(payload) : Map.of();
+            this.metadata = metadata != null ? Collections.unmodifiableMap(metadata) : Map.of();
+            this.error = error;
+        }
+
+        public String getEventId() { return eventId; }
+        public ExecutionEventType getEventType() { return eventType; }
+        public Instant getTimestamp() { return timestamp; }
+        public String getSource() { return source; }
+        public Map<String, Object> getPayload() { return payload; }
+        public Map<String, Object> getMetadata() { return metadata; }
+        public ExecutionError getError() { return error; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private String eventId;
+            private ExecutionEventType eventType;
+            private Instant timestamp;
+            private String source;
+            private Map<String, Object> payload;
+            private Map<String, Object> metadata;
+            private ExecutionError error;
+
+            public Builder eventId(String eventId) { this.eventId = eventId; return this; }
+            public Builder eventType(ExecutionEventType eventType) { this.eventType = eventType; return this; }
+            public Builder timestamp(Instant timestamp) { this.timestamp = timestamp; return this; }
+            public Builder source(String source) { this.source = source; return this; }
+            public Builder payload(Map<String, Object> payload) { this.payload = payload; return this; }
+            public Builder metadata(Map<String, Object> metadata) { this.metadata = metadata; return this; }
+            public Builder error(ExecutionError error) { this.error = error; return this; }
+
+            public ExecutionEventHistory build() {
+                return new ExecutionEventHistory(eventId, eventType, timestamp, source, payload, metadata, error);
+            }
         }
     }
 
-    @Data
-    @Builder
     public static class StateTransition {
         private final WorkflowRunState fromState;
         private final WorkflowRunState toState;
@@ -360,84 +298,132 @@ public class ExecutionHistory {
         private final String reason;
         private final String initiatedBy;
         private final Map<String, Object> metadata;
-    }
 
-    @Data
-    @Builder(toBuilder = true)
-    public static class ExecutionStatistics {
-        @Builder.Default
-        private final int totalEvents = 0;
-
-        @Builder.Default
-        private final int totalNodeExecutions = 0;
-
-        @Builder.Default
-        private final int completedNodes = 0;
-
-        @Builder.Default
-        private final int failedNodes = 0;
-
-        @Builder.Default
-        private final int waitingNodes = 0;
-
-        @Builder.Default
-        private final int retriedNodes = 0;
-
-        @Builder.Default
-        private final Duration totalExecutionTime = Duration.ZERO;
-
-        @Builder.Default
-        private final Duration averageNodeExecutionTime = Duration.ZERO;
-
-        @Builder.Default
-        private final Map<String, Integer> nodeTypeCounts = Map.of();
-
-        @Builder.Default
-        private final Map<String, Duration> nodeTypeDurations = Map.of();
-
-        @Builder.Default
-        private final Map<String, Object> metrics = Map.of();
-
-        public static ExecutionStatistics empty() {
-            return ExecutionStatistics.builder().build();
+        public StateTransition(WorkflowRunState fromState, WorkflowRunState toState, Instant timestamp,
+                              String reason, String initiatedBy, Map<String, Object> metadata) {
+            this.fromState = fromState;
+            this.toState = toState;
+            this.timestamp = timestamp;
+            this.reason = reason;
+            this.initiatedBy = initiatedBy;
+            this.metadata = metadata != null ? Collections.unmodifiableMap(metadata) : Map.of();
         }
 
-        public static ExecutionStatistics fromSnapshot(WorkflowRunSnapshot snapshot) {
-            // Updated to be compatible with new WorkflowRunSnapshot
-            return ExecutionStatistics.builder().build();
+        public WorkflowRunState getFromState() { return fromState; }
+        public WorkflowRunState getToState() { return toState; }
+        public Instant getTimestamp() { return timestamp; }
+        public String getReason() { return reason; }
+        public String getInitiatedBy() { return initiatedBy; }
+        public Map<String, Object> getMetadata() { return metadata; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public static class Builder {
+            private WorkflowRunState fromState;
+            private WorkflowRunState toState;
+            private Instant timestamp;
+            private String reason;
+            private String initiatedBy;
+            private Map<String, Object> metadata;
+
+            public Builder fromState(WorkflowRunState fromState) { this.fromState = fromState; return this; }
+            public Builder toState(WorkflowRunState toState) { this.toState = toState; return this; }
+            public Builder timestamp(Instant timestamp) { this.timestamp = timestamp; return this; }
+            public Builder reason(String reason) { this.reason = reason; return this; }
+            public Builder initiatedBy(String initiatedBy) { this.initiatedBy = initiatedBy; return this; }
+            public Builder metadata(Map<String, Object> metadata) { this.metadata = metadata; return this; }
+
+            public StateTransition build() {
+                return new StateTransition(fromState, toState, timestamp, reason, initiatedBy, metadata);
+            }
+        }
+    }
+
+    public static class ExecutionStatistics {
+        private final int totalEvents;
+        private final int totalNodeExecutions;
+        private final int completedNodes;
+        private final int failedNodes;
+        private final int waitingNodes;
+        private final int retriedNodes;
+        private final Duration totalExecutionTime;
+        private final Duration averageNodeExecutionTime;
+        private final Map<String, Integer> nodeTypeCounts;
+        private final Map<String, Duration> nodeTypeDurations;
+        private final Map<String, Object> metrics;
+
+        public ExecutionStatistics(int totalEvents, int totalNodeExecutions, int completedNodes,
+                                 int failedNodes, int waitingNodes, int retriedNodes,
+                                 Duration totalExecutionTime, Duration averageNodeExecutionTime,
+                                 Map<String, Integer> nodeTypeCounts, Map<String, Duration> nodeTypeDurations,
+                                 Map<String, Object> metrics) {
+            this.totalEvents = totalEvents;
+            this.totalNodeExecutions = totalNodeExecutions;
+            this.completedNodes = completedNodes;
+            this.failedNodes = failedNodes;
+            this.waitingNodes = waitingNodes;
+            this.retriedNodes = retriedNodes;
+            this.totalExecutionTime = totalExecutionTime != null ? totalExecutionTime : Duration.ZERO;
+            this.averageNodeExecutionTime = averageNodeExecutionTime != null ? averageNodeExecutionTime : Duration.ZERO;
+            this.nodeTypeCounts = nodeTypeCounts != null ? Collections.unmodifiableMap(nodeTypeCounts) : Map.of();
+            this.nodeTypeDurations = nodeTypeDurations != null ? Collections.unmodifiableMap(nodeTypeDurations) : Map.of();
+            this.metrics = metrics != null ? Collections.unmodifiableMap(metrics) : Map.of();
+        }
+
+        public int getTotalEvents() { return totalEvents; }
+        public int getTotalNodeExecutions() { return totalNodeExecutions; }
+        public int getCompletedNodes() { return completedNodes; }
+        public int getFailedNodes() { return failedNodes; }
+        public int getWaitingNodes() { return waitingNodes; }
+        public int getRetriedNodes() { return retriedNodes; }
+        public Duration getTotalExecutionTime() { return totalExecutionTime; }
+        public Duration getAverageNodeExecutionTime() { return averageNodeExecutionTime; }
+        public Map<String, Integer> getNodeTypeCounts() { return nodeTypeCounts; }
+        public Map<String, Duration> getNodeTypeDurations() { return nodeTypeDurations; }
+        public Map<String, Object> getMetrics() { return metrics; }
+
+        public static Builder builder() { return new Builder(); }
+
+        public Builder toBuilder() {
+            return builder()
+                    .totalEvents(totalEvents)
+                    .totalNodeExecutions(totalNodeExecutions)
+                    .completedNodes(completedNodes)
+                    .failedNodes(failedNodes)
+                    .waitingNodes(waitingNodes)
+                    .retriedNodes(retriedNodes)
+                    .totalExecutionTime(totalExecutionTime)
+                    .averageNodeExecutionTime(averageNodeExecutionTime)
+                    .nodeTypeCounts(nodeTypeCounts)
+                    .nodeTypeDurations(nodeTypeDurations)
+                    .metrics(metrics);
+        }
+
+        public static ExecutionStatistics empty() {
+            return builder().build();
         }
 
         public ExecutionStatistics merge(NodeExecutionRecord record) {
             Map<String, Integer> newNodeTypeCounts = new HashMap<>(nodeTypeCounts);
             Map<String, Duration> newNodeTypeDurations = new HashMap<>(nodeTypeDurations);
 
-            // Extract node type from metadata
             String nodeType = record.getMetadata() != null
                     ? (String) record.getMetadata().getOrDefault("nodeType", "unknown")
                     : "unknown";
 
-            // Update counts
             newNodeTypeCounts.put(nodeType, newNodeTypeCounts.getOrDefault(nodeType, 0) + 1);
 
-            // Update durations
             Duration currentDuration = newNodeTypeDurations.getOrDefault(nodeType, Duration.ZERO);
             Duration recordDuration = record.getDuration() != null ? record.getDuration() : Duration.ZERO;
             newNodeTypeDurations.put(nodeType, currentDuration.plus(recordDuration));
 
-            // Update statistics
             int newTotalNodeExecutions = totalNodeExecutions + 1;
-            int newCompletedNodes = completedNodes +
-                    (record.getStatus() == NodeExecutionStatus.COMPLETED ? 1 : 0);
-            int newFailedNodes = failedNodes +
-                    (record.getStatus() == NodeExecutionStatus.FAILED ? 1 : 0);
-            int newWaitingNodes = waitingNodes +
-                    (record.getStatus() == NodeExecutionStatus.WAITING ? 1 : 0);
-            int newRetriedNodes = retriedNodes +
-                    (record.getAttempt() > 1 ? 1 : 0);
+            int newCompletedNodes = completedNodes + (record.getStatus() == NodeExecutionStatus.COMPLETED ? 1 : 0);
+            int newFailedNodes = failedNodes + (record.getStatus() == NodeExecutionStatus.FAILED ? 1 : 0);
+            int newWaitingNodes = waitingNodes + (record.getStatus() == NodeExecutionStatus.WAITING ? 1 : 0);
+            int newRetriedNodes = retriedNodes + (record.getAttempt() > 1 ? 1 : 0);
 
-            Duration newTotalExecutionTime = totalExecutionTime.plus(
-                    record.getDuration() != null ? record.getDuration() : Duration.ZERO);
-
+            Duration newTotalExecutionTime = totalExecutionTime.plus(recordDuration);
             Duration newAverageNodeExecutionTime = newTotalNodeExecutions > 0
                     ? newTotalExecutionTime.dividedBy(newTotalNodeExecutions)
                     : Duration.ZERO;
@@ -450,92 +436,107 @@ public class ExecutionHistory {
                     .retriedNodes(newRetriedNodes)
                     .totalExecutionTime(newTotalExecutionTime)
                     .averageNodeExecutionTime(newAverageNodeExecutionTime)
-                    .nodeTypeCounts(Collections.unmodifiableMap(newNodeTypeCounts))
-                    .nodeTypeDurations(Collections.unmodifiableMap(newNodeTypeDurations))
+                    .nodeTypeCounts(newNodeTypeCounts)
+                    .nodeTypeDurations(newNodeTypeDurations)
                     .build();
         }
 
         public ExecutionStatistics merge(ExecutionEventHistory event) {
-            int newTotalEvents = totalEvents + 1;
-
-            Map<String, Object> newMetrics = new HashMap<>(metrics);
-            newMetrics.put("lastEventType", event.getEventType().name());
-            newMetrics.put("lastEventTime", event.getTimestamp().toString());
-
             return this.toBuilder()
-                    .totalEvents(newTotalEvents)
-                    .metrics(Collections.unmodifiableMap(newMetrics))
+                    .totalEvents(totalEvents + 1)
                     .build();
         }
 
         public double getSuccessRate() {
-            if (totalNodeExecutions == 0) {
-                return 1.0;
-            }
+            if (totalNodeExecutions == 0) return 1.0;
             return (double) completedNodes / totalNodeExecutions;
         }
 
-        public double getFailureRate() {
-            if (totalNodeExecutions == 0) {
-                return 0.0;
+        public static class Builder {
+            private int totalEvents = 0;
+            private int totalNodeExecutions = 0;
+            private int completedNodes = 0;
+            private int failedNodes = 0;
+            private int waitingNodes = 0;
+            private int retriedNodes = 0;
+            private Duration totalExecutionTime = Duration.ZERO;
+            private Duration averageNodeExecutionTime = Duration.ZERO;
+            private Map<String, Integer> nodeTypeCounts = Map.of();
+            private Map<String, Duration> nodeTypeDurations = Map.of();
+            private Map<String, Object> metrics = Map.of();
+
+            public Builder totalEvents(int totalEvents) { this.totalEvents = totalEvents; return this; }
+            public Builder totalNodeExecutions(int totalNodeExecutions) { this.totalNodeExecutions = totalNodeExecutions; return this; }
+            public Builder completedNodes(int completedNodes) { this.completedNodes = completedNodes; return this; }
+            public Builder failedNodes(int failedNodes) { this.failedNodes = failedNodes; return this; }
+            public Builder waitingNodes(int waitingNodes) { this.waitingNodes = waitingNodes; return this; }
+            public Builder retriedNodes(int retriedNodes) { this.retriedNodes = retriedNodes; return this; }
+            public Builder totalExecutionTime(Duration totalExecutionTime) { this.totalExecutionTime = totalExecutionTime; return this; }
+            public Builder averageNodeExecutionTime(Duration averageNodeExecutionTime) { this.averageNodeExecutionTime = averageNodeExecutionTime; return this; }
+            public Builder nodeTypeCounts(Map<String, Integer> nodeTypeCounts) { this.nodeTypeCounts = nodeTypeCounts; return this; }
+            public Builder nodeTypeDurations(Map<String, Duration> nodeTypeDurations) { this.nodeTypeDurations = nodeTypeDurations; return this; }
+            public Builder metrics(Map<String, Object> metrics) { this.metrics = metrics; return this; }
+
+            public ExecutionStatistics build() {
+                return new ExecutionStatistics(totalEvents, totalNodeExecutions, completedNodes, failedNodes,
+                                             waitingNodes, retriedNodes, totalExecutionTime, averageNodeExecutionTime,
+                                             nodeTypeCounts, nodeTypeDurations, metrics);
             }
-            return (double) failedNodes / totalNodeExecutions;
-        }
-
-        public double getRetryRate() {
-            if (totalNodeExecutions == 0) {
-                return 0.0;
-            }
-            return (double) retriedNodes / totalNodeExecutions;
         }
     }
 
-    // Convenience methods for common queries
-    public List<ExecutionEventHistory> getEventsByType(ExecutionEventHistory.ExecutionEventType type) {
-        return events.stream()
-                .filter(event -> event.getEventType() == type)
-                .toList();
+    public static Builder builder() { return new Builder(); }
+
+    public Builder toBuilder() {
+        return builder()
+                .runId(runId)
+                .workflowId(workflowId)
+                .workflowVersion(workflowVersion)
+                .tenantId(tenantId)
+                .created(created)
+                .lastUpdated(lastUpdated)
+                .events(events)
+                .nodeExecutions(nodeExecutions)
+                .stateTransitions(stateTransitions)
+                .inputSnapshots(inputSnapshots)
+                .outputSnapshots(outputSnapshots)
+                .statistics(statistics)
+                .metadata(metadata);
     }
 
-    public List<NodeExecutionRecord> getExecutionsByStatus(NodeExecutionStatus status) {
-        return nodeExecutions.stream()
-                .filter(record -> record.getStatus() == status)
-                .toList();
-    }
+    public static class Builder {
+        private WorkflowRunId runId;
+        private WorkflowId workflowId;
+        private String workflowVersion;
+        private String tenantId;
+        private Instant created;
+        private Instant lastUpdated;
+        private List<ExecutionEventHistory> events;
+        private List<NodeExecutionRecord> nodeExecutions;
+        private List<StateTransition> stateTransitions;
+        private Map<Instant, Map<String, Object>> inputSnapshots;
+        private Map<Instant, Map<String, Object>> outputSnapshots;
+        private ExecutionStatistics statistics;
+        private Map<String, Object> metadata;
 
-    public Optional<Instant> getStartTime() {
-        return events.stream()
-                .filter(event -> event.getEventType() == ExecutionEventHistory.ExecutionEventType.RUN_STARTED)
-                .map(ExecutionEventHistory::getTimestamp)
-                .findFirst();
-    }
+        public Builder runId(WorkflowRunId runId) { this.runId = runId; return this; }
+        public Builder workflowId(WorkflowId workflowId) { this.workflowId = workflowId; return this; }
+        public Builder workflowVersion(String workflowVersion) { this.workflowVersion = workflowVersion; return this; }
+        public Builder tenantId(String tenantId) { this.tenantId = tenantId; return this; }
+        public Builder created(Instant created) { this.created = created; return this; }
+        public Builder lastUpdated(Instant lastUpdated) { this.lastUpdated = lastUpdated; return this; }
+        public Builder events(List<ExecutionEventHistory> events) { this.events = events; return this; }
+        public Builder nodeExecutions(List<NodeExecutionRecord> nodeExecutions) { this.nodeExecutions = nodeExecutions; return this; }
+        public Builder stateTransitions(List<StateTransition> stateTransitions) { this.stateTransitions = stateTransitions; return this; }
+        public Builder inputSnapshots(Map<Instant, Map<String, Object>> inputSnapshots) { this.inputSnapshots = inputSnapshots; return this; }
+        public Builder outputSnapshots(Map<Instant, Map<String, Object>> outputSnapshots) { this.outputSnapshots = outputSnapshots; return this; }
+        public Builder statistics(ExecutionStatistics statistics) { this.statistics = statistics; return this; }
+        public Builder metadata(Map<String, Object> metadata) { this.metadata = metadata; return this; }
 
-    public Optional<Instant> getEndTime() {
-        return events.stream()
-                .filter(event -> event.getEventType() == ExecutionEventHistory.ExecutionEventType.RUN_COMPLETED ||
-                        event.getEventType() == ExecutionEventHistory.ExecutionEventType.RUN_FAILED ||
-                        event.getEventType() == ExecutionEventHistory.ExecutionEventType.RUN_CANCELLED)
-                .map(ExecutionEventHistory::getTimestamp)
-                .findFirst();
-    }
-
-    public Map<String, Object> toSummary() {
-        Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("runId", runId.value());
-        summary.put("workflowId", workflowId.getId());
-        summary.put("workflowVersion", workflowVersion);
-        summary.put("tenantId", tenantId);
-        summary.put("status", getCurrentState().map(Enum::name).orElse("UNKNOWN"));
-        summary.put("totalEvents", events.size());
-        summary.put("totalNodeExecutions", nodeExecutions.size());
-        summary.put("completedNodes", statistics.getCompletedNodes());
-        summary.put("failedNodes", statistics.getFailedNodes());
-        summary.put("successRate", String.format("%.2f%%", statistics.getSuccessRate() * 100));
-        summary.put("totalDuration", getTotalDuration().toString());
-        summary.put("startTime", getStartTime().map(Instant::toString).orElse("N/A"));
-        summary.put("endTime", getEndTime().map(Instant::toString).orElse("N/A"));
-        summary.put("hasErrors", hasErrors());
-        summary.put("isComplete", isComplete());
-        return Collections.unmodifiableMap(summary);
+        public ExecutionHistory build() {
+            return new ExecutionHistory(runId, workflowId, workflowVersion, tenantId, created, lastUpdated,
+                                      events, nodeExecutions, stateTransitions, inputSnapshots, outputSnapshots,
+                                      statistics, metadata);
+        }
     }
 }

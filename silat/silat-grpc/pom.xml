@@ -8,11 +8,25 @@
         <artifactId>silat-parent</artifactId>
         <version>1.0.0-SNAPSHOT</version>
     </parent>
-    <artifactId>silat-api</artifactId>
+    <artifactId>silat-grpc</artifactId>
 
     <properties>
         <lombok.version>1.18.30</lombok.version>
+        <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
+        <quarkus.platform.group-id>io.quarkus</quarkus.platform.group-id>
+        <quarkus.platform.version>3.8.3</quarkus.platform.version>
     </properties>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>${quarkus.platform.group-id}</groupId>
+                <artifactId>${quarkus.platform.artifact-id}</artifactId>
+                <version>${quarkus.platform.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
     <dependencies>
         <dependency>
             <groupId>tech.kayys.silat</groupId>
@@ -20,14 +34,68 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>io.smallrye.reactive</groupId>
-            <artifactId>mutiny</artifactId>
-            <version>2.1.0</version>
+            <groupId>tech.kayys.silat</groupId>
+            <artifactId>silat-registry</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-grpc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-arc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <version>${lombok.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java-util</artifactId>
+        </dependency>
     </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>21</release>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>io.smallrye</groupId>
+                <artifactId>jandex-maven-plugin</artifactId>
+                <version>3.1.2</version>
+                <executions>
+                    <execution>
+                        <id>make-index</id>
+                        <goals>
+                            <goal>jandex</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>io.quarkus</groupId>
+                <artifactId>quarkus-maven-plugin</artifactId>
+                <version>3.8.3</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>generate-code</goal>
+                            <goal>generate-code-tests</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

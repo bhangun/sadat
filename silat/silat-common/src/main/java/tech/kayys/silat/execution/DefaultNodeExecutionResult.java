@@ -25,49 +25,50 @@ public record DefaultNodeExecutionResult(
 
         @Override
         public NodeExecutionStatus getStatus() {
-                // TODO Auto-generated method stub
-                throw new UnsupportedOperationException("Unimplemented method 'getStatus'");
+                return status;
         }
 
         @Override
         public String getNodeId() {
-                // TODO Auto-generated method stub
-                throw new UnsupportedOperationException("Unimplemented method 'getNodeId'");
+                return nodeId.value();
         }
 
         @Override
         public Instant getExecutedAt() {
-                // TODO Auto-generated method stub
-                throw new UnsupportedOperationException("Unimplemented method 'getExecutedAt'");
+                return Instant.now();
         }
 
         @Override
         public Duration getDuration() {
-                // TODO Auto-generated method stub
-                throw new UnsupportedOperationException("Unimplemented method 'getDuration'");
+                return Duration.ZERO;
         }
 
         @Override
         public ExecutionContext getUpdatedContext() {
-                // TODO Auto-generated method stub
-                throw new UnsupportedOperationException("Unimplemented method 'getUpdatedContext'");
+                return ExecutionContext.builder().variables(output).build();
         }
 
         @Override
         public ExecutionError getError() {
-                // TODO Auto-generated method stub
-                throw new UnsupportedOperationException("Unimplemented method 'getError'");
+                if (error == null) return null;
+                // Simple mapping
+                return new ExecutionError() {
+                    @Override public String getCode() { return error.code(); }
+                    @Override public String getMessage() { return error.message(); }
+                    @Override public Category getCategory() { return Category.SYSTEM; }
+                    @Override public boolean isRetriable() { return false; }
+                    @Override public String getCompensationHint() { return null; }
+                    @Override public Map<String, Object> getDetails() { return error.context(); }
+                };
         }
 
         @Override
         public WaitInfo getWaitInfo() {
-                // TODO Auto-generated method stub
-                throw new UnsupportedOperationException("Unimplemented method 'getWaitInfo'");
+                return null;
         }
 
         @Override
         public Map<String, Object> getMetadata() {
-                // TODO Auto-generated method stub
-                throw new UnsupportedOperationException("Unimplemented method 'getMetadata'");
+                return Map.of();
         }
 }

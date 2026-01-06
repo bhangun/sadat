@@ -32,4 +32,60 @@ public class BackupMetadata {
         private long size;
         private String checksum;
     }
+
+    public Instant getTimestamp() {
+        return timestamp;
+    }
+
+    public long getTotalSize() {
+        return totalSize;
+    }
+
+    public String getBackupId() {
+        return backupId;
+    }
+
+    public BackupType getBackupType() {
+        return backupType;
+    }
+
+    public long getItemCount() {
+        return itemCount;
+    }
+
+    public String getChecksum() {
+        return checksum;
+    }
+
+    public BackupStatus getStatus() {
+        return status;
+    }
+
+    public String getStorageLocation() {
+        return storageLocation;
+    }
+
+    public boolean isEncrypted() {
+        return encrypted;
+    }
+
+    public boolean isCompressed() {
+        return compressed;
+    }
+
+    public String getBaseBackupId() {
+        return baseBackupId;
+    }
+
+    public Instant getCompletedAt() {
+        return completedAt;
+    }
+
+    public String getErrorMessage() {
+        return errorMessage;
+    }
+
+    public List<BackupFile> getBackupFiles() {
+        return backupFiles;
+    }
 }

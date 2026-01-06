@@ -9,7 +9,7 @@ import jakarta.ws.rs.core.*;
 import tech.kayys.wayang.workflow.domain.Checkpoint;
 import tech.kayys.wayang.workflow.domain.WorkflowRun;
 import tech.kayys.wayang.workflow.service.RunCheckpointService;
-import tech.kayys.wayang.workflow.engine.WorkflowRunManager;
+import tech.kayys.wayang.workflow.kernel.WorkflowRunManager;
 import tech.kayys.wayang.workflow.api.dto.*;
 import tech.kayys.wayang.workflow.api.model.RunStatus;
 import org.eclipse.microprofile.openapi.annotations.Operation;
@@ -213,11 +213,11 @@ public class WorkflowRunResource {
         @Operation(summary = "Fail run", description = "Fail workflow execution with error")
         public Uni<Response> failRun(
                         @PathParam("runId") String runId,
-                        @Valid FailRunRequest request) {
+                        @Valid ErrorResponse request) {
                 LOG.infof("Failing run: %s", runId);
                 String tenantId = getTenantId();
 
-                return runManager.failRun(runId, tenantId, request.getError())
+                return runManager.failRun(runId, tenantId, request)
                                 .map(run -> Response.ok(toResponse(run)).build())
                                 .onFailure()
                                 .recoverWithItem(th -> mapError(th, Response.Status.BAD_REQUEST, "FAIL_FAILED"));

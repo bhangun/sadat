@@ -14,6 +14,7 @@
 
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
+        <lombok.version>1.18.36</lombok.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <quarkus.platform.version>3.15.1</quarkus.platform.version>
         <grpc.version>1.60.0</grpc.version>
@@ -25,12 +26,12 @@
         <module>silat-engine</module>
         <module>silat-common</module>
         <module>silat-api</module>
-
         <module>silat-sdk-client</module>
         <module>silat-sdk-executor</module>
-        <!--<module>silat-grpc</module>
-        <module>silat-kafka</module> 
-         <module>silat-registry</module> -->
+        <module>silat-registry</module>
+        <module>silat-grpc</module>
+        <module>silat-kafka</module>
+
     </modules>
 
     <dependencyManagement>
@@ -56,14 +57,5 @@
     </dependencyManagement>
 
     <build>
-        <pluginManagement>
-            <plugins>
-                <plugin>
-                    <groupId>io.quarkus</groupId>
-                    <artifactId>quarkus-maven-plugin</artifactId>
-                    <version>${quarkus.platform.version}</version>
-                </plugin>
-            </plugins>
-        </pluginManagement>
     </build>
 </project>

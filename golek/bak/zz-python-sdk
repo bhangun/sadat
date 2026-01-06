@@ -1,0 +1,693 @@
+"""
+============================================================================
+golek PYTHON EXECUTOR SDK
+============================================================================
+
+Production-ready Python SDK for building golek workflow executors.
+Supports async/await patterns, type hints, and modern Python features.
+
+Features:
+- Type-safe executor implementation
+- Async/await support
+- gRPC communication
+- Automatic registration and heartbeats
+- Graceful shutdown
+- Built-in metrics
+
+Example Usage:
+```python
+from golek.executor import Executor, Task, Result, executor, success, failure
+
+@executor(
+    executor_type="data-processor",
+    max_concurrent=10,
+    capabilities=["data", "transform"]
+)
+class DataProcessorExecutor(Executor):
+    
+    async def execute(self, task: Task) -> Result:
+        # Extract data from task context
+        data = task.context.get("data")
+        transform_type = task.config.get("type", "json")
+        
+        # Process data
+        transformed = await self.transform_data(data, transform_type)
+        
+        # Return success
+        return success({
+            "transformed": transformed,
+            "type": transform_type
+        })
+    
+    async def transform_data(self, data, transform_type):
+        # Implementation here
+        return data
+
+# Run the executor
+if __name__ == "__main__":
+    executor = DataProcessorExecutor()
+    executor.run()
+```
+"""
+
+import asyncio
+import logging
+import signal
+import sys
+import uuid
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, Set
+from functools import wraps
+
+import grpc
+from grpc import aio
+
+# Import generated protobuf files
+from golek.api.v1 import executor_pb2, executor_pb2_grpc, workflow_pb2
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# CORE TYPES
+# ============================================================================
+
+class NodeExecutionStatus(Enum):
+    """Node execution status"""
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    RETRYING = "RETRYING"
+
+
+@dataclass
+class Task:
+    """Represents a workflow node execution task"""
+    run_id: str
+    node_id: str
+    attempt: int
+    token: str
+    context: Dict[str, Any]
+    config: Dict[str, Any] = field(default_factory=dict)
+    timeout_seconds: Optional[int] = None
+    
+    @classmethod
+    def from_proto(cls, proto_task: executor_pb2.ExecutionTask) -> 'Task':
+        """Convert protobuf ExecutionTask to Task"""
+        return cls(
+            run_id=proto_task.run_id,
+            node_id=proto_task.node_id,
+            attempt=proto_task.attempt,
+            token=proto_task.execution_token,
+            context=dict(proto_task.context) if proto_task.HasField('context') else {},
+            config=dict(proto_task.config) if proto_task.HasField('config') else {},
+            timeout_seconds=proto_task.timeout_seconds if proto_task.HasField('timeout_seconds') else None
+        )
+
+
+@dataclass
+class ErrorInfo:
+    """Error information"""
+    code: str
+    message: str
+    stack_trace: str = ""
+    context: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_proto(self) -> executor_pb2.ErrorInfo:
+        """Convert to protobuf ErrorInfo"""
+        return executor_pb2.ErrorInfo(
+            code=self.code,
+            message=self.message,
+            stack_trace=self.stack_trace
+        )
+
+
+@dataclass
+class Result:
+    """Represents the result of task execution"""
+    status: NodeExecutionStatus
+    output: Dict[str, Any] = field(default_factory=dict)
+    error: Optional[ErrorInfo] = None
+    
+    def to_proto(self, task: Task) -> executor_pb2.TaskResult:
+        """Convert to protobuf TaskResult"""
+        result = executor_pb2.TaskResult(
+            task_id=f"{task.run_id}:{task.node_id}",
+            run_id=task.run_id,
+            node_id=task.node_id,
+            attempt=task.attempt,
+            execution_token=task.token
+        )
+        
+        if self.status == NodeExecutionStatus.COMPLETED:
+            result.status = executor_pb2.TASK_STATUS_COMPLETED
+        elif self.status == NodeExecutionStatus.FAILED:
+            result.status = executor_pb2.TASK_STATUS_FAILED
+        
+        if self.error:
+            result.error.CopyFrom(self.error.to_proto())
+        
+        return result
+
+
+@dataclass
+class ExecutorMetadata:
+    """Executor metadata"""
+    executor_type: str
+    version: str = "1.0.0"
+    capabilities: List[str] = field(default_factory=list)
+    max_concurrent: int = 10
+
+
+# Helper functions for creating results
+def success(output: Dict[str, Any]) -> Result:
+    """Create a successful result"""
+    return Result(status=NodeExecutionStatus.COMPLETED, output=output)
+
+
+def failure(code: str, message: str, context: Optional[Dict[str, Any]] = None) -> Result:
+    """Create a failed result"""
+    error = ErrorInfo(code=code, message=message, context=context or {})
+    return Result(status=NodeExecutionStatus.FAILED, error=error)
+
+
+def failure_from_exception(exc: Exception) -> Result:
+    """Create a failed result from an exception"""
+    import traceback
+    error = ErrorInfo(
+        code=exc.__class__.__name__,
+        message=str(exc),
+        stack_trace=traceback.format_exc()
+    )
+    return Result(status=NodeExecutionStatus.FAILED, error=error)
+
+
+# ============================================================================
+# EXECUTOR BASE CLASS
+# ============================================================================
+
+class Executor(ABC):
+    """
+    Base class for all workflow executors.
+    
+    Subclasses must implement the execute() method to process tasks.
+    """
+    
+    def __init__(self, metadata: Optional[ExecutorMetadata] = None):
+        self.metadata = metadata or self._default_metadata()
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self._executor_id: Optional[str] = None
+        self._running = False
+        self._tasks_started = 0
+        self._tasks_completed = 0
+        self._tasks_failed = 0
+        self._semaphore: Optional[asyncio.Semaphore] = None
+    
+    @abstractmethod
+    async def execute(self, task: Task) -> Result:
+        """
+        Execute a workflow node task.
+        
+        Args:
+            task: The task to execute
+            
+        Returns:
+            Result: The execution result
+        """
+        pass
+    
+    def _default_metadata(self) -> ExecutorMetadata:
+        """Get default metadata from class name"""
+        return ExecutorMetadata(
+            executor_type=self.__class__.__name__.lower().replace("executor", ""),
+            version="1.0.0",
+            capabilities=[],
+            max_concurrent=10
+        )
+    
+    async def before_execute(self, task: Task) -> None:
+        """Hook called before task execution"""
+        pass
+    
+    async def after_execute(self, task: Task, result: Result) -> None:
+        """Hook called after task execution"""
+        pass
+    
+    async def health_check(self) -> bool:
+        """Perform health check. Return True if healthy."""
+        return True
+    
+    # Lifecycle methods
+    async def on_start(self) -> None:
+        """Called when executor starts"""
+        pass
+    
+    async def on_stop(self) -> None:
+        """Called when executor stops"""
+        pass
+
+
+# ============================================================================
+# EXECUTOR DECORATOR
+# ============================================================================
+
+def executor(
+    executor_type: str,
+    version: str = "1.0.0",
+    max_concurrent: int = 10,
+    capabilities: Optional[List[str]] = None
+):
+    """
+    Decorator to configure an executor class.
+    
+    Example:
+        @executor(executor_type="data-processor", max_concurrent=5)
+        class MyExecutor(Executor):
+            async def execute(self, task: Task) -> Result:
+                ...
+    """
+    def decorator(cls):
+        original_init = cls.__init__
+        
+        @wraps(original_init)
+        def new_init(self, *args, **kwargs):
+            metadata = ExecutorMetadata(
+                executor_type=executor_type,
+                version=version,
+                capabilities=capabilities or [],
+                max_concurrent=max_concurrent
+            )
+            original_init(self, metadata=metadata, *args, **kwargs)
+        
+        cls.__init__ = new_init
+        return cls
+    
+    return decorator
+
+
+# ============================================================================
+# EXECUTOR RUNTIME
+# ============================================================================
+
+class ExecutorRuntime:
+    """
+    Manages executor lifecycle and communication with the golek engine.
+    """
+    
+    def __init__(
+        self,
+        executor: Executor,
+        engine_endpoint: str = "localhost:9090",
+        heartbeat_interval: int = 10
+    ):
+        self.executor = executor
+        self.engine_endpoint = engine_endpoint
+        self.heartbeat_interval = heartbeat_interval
+        self.executor_id = str(uuid.uuid4())
+        
+        self.logger = logging.getLogger(f"Runtime[{executor.metadata.executor_type}]")
+        self._running = False
+        self._channel: Optional[aio.Channel] = None
+        self._stub: Optional[executor_pb2_grpc.ExecutorServiceStub] = None
+        self._semaphore: Optional[asyncio.Semaphore] = None
+        self._active_tasks: Set[str] = set()
+    
+    async def start(self):
+        """Start the executor runtime"""
+        self.logger.info(f"Starting executor runtime: {self.executor.metadata.executor_type}")
+        
+        # Initialize semaphore for concurrency control
+        self._semaphore = asyncio.Semaphore(self.executor.metadata.max_concurrent)
+        
+        # Connect to engine
+        await self._connect()
+        
+        # Register with engine
+        await self._register()
+        
+        # Start lifecycle
+        self._running = True
+        await self.executor.on_start()
+        
+        # Start background tasks
+        asyncio.create_task(self._heartbeat_loop())
+        asyncio.create_task(self._receive_tasks())
+        
+        self.logger.info("Executor runtime started")
+    
+    async def stop(self):
+        """Stop the executor runtime"""
+        self.logger.info("Stopping executor runtime")
+        self._running = False
+        
+        # Wait for active tasks to complete
+        while self._active_tasks:
+            self.logger.info(f"Waiting for {len(self._active_tasks)} active tasks to complete")
+            await asyncio.sleep(1)
+        
+        # Unregister from engine
+        try:
+            await self._unregister()
+        except Exception as e:
+            self.logger.error(f"Failed to unregister: {e}")
+        
+        # Stop executor
+        await self.executor.on_stop()
+        
+        # Close channel
+        if self._channel:
+            await self._channel.close()
+        
+        self.logger.info("Executor runtime stopped")
+    
+    async def run_forever(self):
+        """Run the executor until interrupted"""
+        try:
+            await self.start()
+            
+            # Wait for interrupt signal
+            while self._running:
+                await asyncio.sleep(1)
+        except KeyboardInterrupt:
+            self.logger.info("Received interrupt signal")
+        finally:
+            await self.stop()
+    
+    # Private methods
+    
+    async def _connect(self):
+        """Connect to the golek engine"""
+        self.logger.info(f"Connecting to engine: {self.engine_endpoint}")
+        
+        self._channel = aio.insecure_channel(self.engine_endpoint)
+        self._stub = executor_pb2_grpc.ExecutorServiceStub(self._channel)
+        
+        self.logger.info("Connected to engine")
+    
+    async def _register(self):
+        """Register executor with the engine"""
+        request = executor_pb2.RegisterExecutorRequest(
+            executor_id=self.executor_id,
+            executor_type=self.executor.metadata.executor_type,
+            communication_type=executor_pb2.COMMUNICATION_GRPC,
+            endpoint="",  # gRPC streaming, no endpoint needed
+            capabilities=self.executor.metadata.capabilities,
+            max_concurrent=self.executor.metadata.max_concurrent
+        )
+        
+        request.metadata["version"] = self.executor.metadata.version
+        
+        response = await self._stub.RegisterExecutor(request)
+        
+        self.logger.info(f"Registered with engine: status={response.status}")
+    
+    async def _unregister(self):
+        """Unregister executor from the engine"""
+        request = executor_pb2.UnregisterExecutorRequest(
+            executor_id=self.executor_id
+        )
+        
+        await self._stub.UnregisterExecutor(request)
+        self.logger.info("Unregistered from engine")
+    
+    async def _heartbeat_loop(self):
+        """Send periodic heartbeats to the engine"""
+        while self._running:
+            try:
+                await asyncio.sleep(self.heartbeat_interval)
+                
+                request = executor_pb2.HeartbeatRequest(
+                    executor_id=self.executor_id
+                )
+                
+                request.metrics["tasks_started"] = str(self.executor._tasks_started)
+                request.metrics["tasks_completed"] = str(self.executor._tasks_completed)
+                request.metrics["tasks_failed"] = str(self.executor._tasks_failed)
+                request.metrics["active_tasks"] = str(len(self._active_tasks))
+                
+                await self._stub.Heartbeat(request)
+                
+                self.logger.debug("Heartbeat sent")
+                
+            except Exception as e:
+                self.logger.error(f"Heartbeat failed: {e}")
+    
+    async def _receive_tasks(self):
+        """Receive tasks from the engine"""
+        while self._running:
+            try:
+                request = executor_pb2.StreamTasksRequest(
+                    executor_id=self.executor_id,
+                    executor_type=self.executor.metadata.executor_type
+                )
+                
+                stream = self._stub.StreamTasks(request)
+                
+                self.logger.info("Task stream opened")
+                
+                async for proto_task in stream:
+                    task = Task.from_proto(proto_task)
+                    
+                    self.logger.debug(f"Received task: {task.node_id}")
+                    
+                    # Handle task asynchronously
+                    asyncio.create_task(self._handle_task(task))
+                
+            except Exception as e:
+                self.logger.error(f"Task stream error: {e}")
+                await asyncio.sleep(5)  # Reconnect delay
+    
+    async def _handle_task(self, task: Task):
+        """Handle a single task execution"""
+        task_id = f"{task.run_id}:{task.node_id}"
+        
+        # Acquire semaphore
+        async with self._semaphore:
+            self._active_tasks.add(task_id)
+            self.executor._tasks_started += 1
+            
+            start_time = datetime.now()
+            
+            try:
+                # Before hook
+                await self.executor.before_execute(task)
+                
+                # Execute task with timeout
+                if task.timeout_seconds:
+                    result = await asyncio.wait_for(
+                        self.executor.execute(task),
+                        timeout=task.timeout_seconds
+                    )
+                else:
+                    result = await self.executor.execute(task)
+                
+                # After hook
+                await self.executor.after_execute(task, result)
+                
+                # Update metrics
+                if result.status == NodeExecutionStatus.COMPLETED:
+                    self.executor._tasks_completed += 1
+                else:
+                    self.executor._tasks_failed += 1
+                
+                duration = (datetime.now() - start_time).total_seconds()
+                self.logger.info(
+                    f"Task completed: {task.node_id} "
+                    f"status={result.status.value} duration={duration:.2f}s"
+                )
+                
+            except asyncio.TimeoutError:
+                self.logger.error(f"Task timeout: {task.node_id}")
+                result = failure("TIMEOUT", f"Task exceeded timeout of {task.timeout_seconds}s")
+                self.executor._tasks_failed += 1
+                
+            except Exception as e:
+                self.logger.error(f"Task execution failed: {task.node_id}", exc_info=True)
+                result = failure_from_exception(e)
+                self.executor._tasks_failed += 1
+            
+            finally:
+                self._active_tasks.discard(task_id)
+            
+            # Report result
+            await self._report_result(task, result)
+    
+    async def _report_result(self, task: Task, result: Result):
+        """Report task result to the engine"""
+        try:
+            proto_result = result.to_proto(task)
+            await self._stub.ReportResult(proto_result)
+            self.logger.debug(f"Result reported: {task.node_id}")
+        except Exception as e:
+            self.logger.error(f"Failed to report result: {e}")
+
+
+# ============================================================================
+# CONVENIENCE FUNCTIONS
+# ============================================================================
+
+def run_executor(executor: Executor, engine_endpoint: str = "localhost:9090"):
+    """
+    Convenience function to run an executor.
+    
+    Args:
+        executor: The executor to run
+        engine_endpoint: The golek engine gRPC endpoint
+    """
+    runtime = ExecutorRuntime(executor, engine_endpoint)
+    
+    # Setup signal handlers
+    loop = asyncio.get_event_loop()
+    
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(
+            sig,
+            lambda: asyncio.create_task(runtime.stop())
+        )
+    
+    # Run
+    try:
+        loop.run_until_complete(runtime.run_forever())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        loop.close()
+
+
+# ============================================================================
+# EXAMPLE EXECUTORS
+# ============================================================================
+
+@executor(
+    executor_type="order-validator",
+    max_concurrent=20,
+    capabilities=["validation", "orders"]
+)
+class OrderValidatorExecutor(Executor):
+    """Example: Order validation executor"""
+    
+    async def execute(self, task: Task) -> Result:
+        self.logger.info(f"Validating order: {task.run_id}")
+        
+        # Extract order data
+        order_id = task.context.get("orderId")
+        items = task.context.get("items", [])
+        
+        # Validate
+        if not order_id or not order_id.startswith("ORDER-"):
+            return failure("INVALID_ORDER_ID", "Order ID must start with ORDER-")
+        
+        if not items:
+            return failure("NO_ITEMS", "Order has no items")
+        
+        # Success
+        return success({
+            "valid": True,
+            "validatedAt": datetime.now().isoformat(),
+            "itemCount": len(items)
+        })
+
+
+@executor(
+    executor_type="ai-agent",
+    max_concurrent=5,
+    capabilities=["ai", "llm", "openai"]
+)
+class AIAgentExecutor(Executor):
+    """Example: AI agent executor"""
+    
+    async def execute(self, task: Task) -> Result:
+        instruction = task.context.get("instruction")
+        model = task.config.get("model", "gpt-4")
+        
+        if not instruction:
+            return failure("NO_INSTRUCTION", "Instruction is required")
+        
+        self.logger.info(f"Executing AI task with model: {model}")
+        
+        # Simulate AI processing
+        await asyncio.sleep(2)
+        
+        response = f"AI Response: Processed '{instruction}' using {model}"
+        
+        return success({
+            "response": response,
+            "model": model,
+            "tokensUsed": 150,
+            "completedAt": datetime.now().isoformat()
+        })
+
+
+@executor(
+    executor_type="data-transformer",
+    max_concurrent=15,
+    capabilities=["transform", "json", "csv", "xml"]
+)
+class DataTransformerExecutor(Executor):
+    """Example: Data transformation executor"""
+    
+    async def execute(self, task: Task) -> Result:
+        import json
+        
+        data = task.context.get("data")
+        transform_type = task.config.get("type", "json")
+        
+        if data is None:
+            return failure("NO_DATA", "Input data is required")
+        
+        try:
+            if transform_type == "json":
+                transformed = json.dumps(data, indent=2)
+            elif transform_type == "csv":
+                # Simplified CSV transformation
+                transformed = str(data)
+            else:
+                return failure("UNKNOWN_TYPE", f"Unknown transform type: {transform_type}")
+            
+            return success({
+                "transformed": transformed,
+                "type": transform_type,
+                "transformedAt": datetime.now().isoformat()
+            })
+            
+        except Exception as e:
+            return failure_from_exception(e)
+
+
+# ============================================================================
+# MAIN
+# ============================================================================
+
+if __name__ == "__main__":
+    import os
+    
+    # Get configuration from environment
+    engine_endpoint = os.getenv("golek_ENGINE_ENDPOINT", "localhost:9090")
+    executor_type = os.getenv("EXECUTOR_TYPE", "order-validator")
+    
+    # Create executor based on type
+    executors = {
+        "order-validator": OrderValidatorExecutor,
+        "ai-agent": AIAgentExecutor,
+        "data-transformer": DataTransformerExecutor,
+    }
+    
+    ExecutorClass = executors.get(executor_type)
+    
+    if not ExecutorClass:
+        print(f"Unknown executor type: {executor_type}")
+        print(f"Available types: {', '.join(executors.keys())}")
+        sys.exit(1)
+    
+    # Run executor
+    executor = ExecutorClass()
+    run_executor(executor, engine_endpoint)

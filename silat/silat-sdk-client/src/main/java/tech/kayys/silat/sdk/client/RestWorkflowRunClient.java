@@ -1,5 +1,12 @@
 package tech.kayys.silat.sdk.client;
 
+import io.smallrye.mutiny.Uni;
+import tech.kayys.silat.model.RunResponse;
+import tech.kayys.silat.model.CreateRunRequest;
+import tech.kayys.silat.execution.ExecutionHistory;
+import java.util.Map;
+import java.util.List;
+
 /**
  * REST-based workflow run client
  */
@@ -63,17 +70,27 @@ public class RestWorkflowRunClient implements WorkflowRunClient {
     }
 
     @Override
-    public Uni<ExecutionHistoryResponse> getExecutionHistory(String runId) {
+    public Uni<ExecutionHistory> getExecutionHistory(String runId) {
         return null;
     }
 
     @Override
-    public Uni<PagedResponse<RunResponse>> queryRuns(String workflowId, String status, int page, int size) {
+    public Uni<List<RunResponse>> queryRuns(String workflowId, String status, int page, int size) {
         return null;
     }
 
     @Override
     public Uni<Long> getActiveRunsCount() {
         return null;
+    }
+
+    @Override
+    public void close() {
+        if (webClient != null) {
+            webClient.close();
+        }
+        if (vertx != null) {
+            vertx.close();
+        }
     }
 }

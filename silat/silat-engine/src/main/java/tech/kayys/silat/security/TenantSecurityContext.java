@@ -19,6 +19,9 @@ public class TenantSecurityContext {
 
     private static final ThreadLocal<TenantId> CURRENT_TENANT = new ThreadLocal<>();
 
+    @jakarta.inject.Inject
+    org.eclipse.microprofile.jwt.JsonWebToken jwt;
+
     /**
      * Set current tenant for the thread
      */
@@ -33,9 +36,28 @@ public class TenantSecurityContext {
     public TenantId getCurrentTenant() {
         TenantId tenantId = CURRENT_TENANT.get();
         if (tenantId == null) {
+            // Fallback to JWT if available but filter didn't catch it (e.g. internal calls)
+            if (jwt != null && jwt.getName() != null) {
+                java.util.Optional<String> tid = jwt.claim("tenant_id");
+                if (tid.isPresent()) {
+                    tenantId = new TenantId(tid.get());
+                    setCurrentTenant(tenantId);
+                    return tenantId;
+                }
+            }
             throw new SecurityException("No tenant context set");
         }
         return tenantId;
+    }
+
+    /**
+     * Get current user
+     */
+    public String getCurrentUser() {
+        if (jwt != null && jwt.getName() != null) {
+            return jwt.getName();
+        }
+        return "system";
     }
 
     /**
@@ -52,11 +74,13 @@ public class TenantSecurityContext {
         return Uni.createFrom().item(() -> {
             Objects.requireNonNull(tenantId, "Tenant ID cannot be null");
 
-            // In real implementation, validate:
-            // - Tenant exists
-            // - Tenant is active
-            // - User has access to tenant
-            // - Tenant has not exceeded quotas
+            // Validate against JWT if present
+            if (jwt != null && jwt.getName() != null) {
+                java.util.Optional<String> jwtTenant = jwt.claim("tenant_id");
+                if (jwtTenant.isPresent() && !jwtTenant.get().equals(tenantId.value())) {
+                    throw new SecurityException("Unauthorized tenant access");
+                }
+            }
 
             LOG.trace("Validated access for tenant: {}", tenantId.value());
             return null;

@@ -1,0 +1,508 @@
+// Package saga provides SAGA pattern implementation for distributed transactions
+package saga
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"go.uber.org/zap"
+
+	"tech.kayys.golek/pkg/core"
+)
+
+// ============================================================================
+// SAGA COORDINATOR
+// ============================================================================
+
+// SAGACoordinator manages SAGA execution and compensation
+type SAGACoordinator struct {
+	engine core.WorkflowEngine
+	logger *zap.Logger
+}
+
+// NewSAGACoordinator creates a new SAGA coordinator
+func NewSAGACoordinator(engine core.WorkflowEngine, logger *zap.Logger) *SAGACoordinator {
+	return &SAGACoordinator{
+		engine: engine,
+		logger: logger,
+	}
+}
+
+// ExecuteSAGA executes a SAGA with automatic compensation on failure
+func (c *SAGACoordinator) ExecuteSAGA(ctx context.Context, saga *SAGADefinition) (*SAGAExecution, error) {
+	c.logger.Info("Starting SAGA execution",
+		zap.String("saga_id", saga.ID),
+		zap.Int("steps", len(saga.Steps)),
+	)
+
+	execution := &SAGAExecution{
+		ID:               core.NewWorkflowRunID(),
+		SAGADefinitionID: saga.ID,
+		Status:           SAGAStatusExecuting,
+		Steps:            make([]*SAGAStepExecution, 0, len(saga.Steps)),
+		StartedAt:        time.Now(),
+	}
+
+	// Execute steps sequentially
+	for i, step := range saga.Steps {
+		stepExec := &SAGAStepExecution{
+			StepID:    step.ID,
+			StepName:  step.Name,
+			Index:     i,
+			Status:    SAGAStepStatusPending,
+			StartedAt: time.Now(),
+		}
+
+		execution.Steps = append(execution.Steps, stepExec)
+
+		c.logger.Info("Executing SAGA step",
+			zap.String("step_id", step.ID),
+			zap.String("step_name", step.Name),
+			zap.Int("index", i),
+		)
+
+		// Execute forward action
+		result, err := c.executeStep(ctx, step, execution.Context)
+
+		if err != nil || (result != nil && result.Status == core.NodeStatusFailed) {
+			// Step failed - initiate compensation
+			c.logger.Warn("SAGA step failed, initiating compensation",
+				zap.String("step_id", step.ID),
+				zap.Error(err),
+			)
+
+			stepExec.Status = SAGAStepStatusFailed
+			stepExec.CompletedAt = time.Now()
+			stepExec.Error = result.Error
+
+			execution.Status = SAGAStatusCompensating
+
+			// Compensate all completed steps in reverse order
+			if err := c.compensate(ctx, execution, i-1); err != nil {
+				c.logger.Error("Compensation failed", zap.Error(err))
+				execution.Status = SAGAStatusCompensationFailed
+				return execution, err
+			}
+
+			execution.Status = SAGAStatusCompensated
+			execution.CompletedAt = time.Now()
+
+			return execution, fmt.Errorf("SAGA failed at step %s", step.Name)
+		}
+
+		// Step succeeded
+		stepExec.Status = SAGAStepStatusCompleted
+		stepExec.CompletedAt = time.Now()
+		stepExec.Output = result.Output
+
+		// Merge step output into SAGA context
+		if execution.Context == nil {
+			execution.Context = make(map[string]any)
+		}
+		for k, v := range result.Output {
+			execution.Context[fmt.Sprintf("%s.%s", step.ID, k)] = v
+		}
+	}
+
+	// All steps completed successfully
+	execution.Status = SAGAStatusCompleted
+	execution.CompletedAt = time.Now()
+
+	c.logger.Info("SAGA completed successfully",
+		zap.String("saga_id", saga.ID),
+		zap.Duration("duration", time.Since(execution.StartedAt)),
+	)
+
+	return execution, nil
+}
+
+// executeStep executes a single SAGA step
+func (c *SAGACoordinator) executeStep(ctx context.Context, step *SAGAStep, sagaContext map[string]any) (*core.NodeExecutionResult, error) {
+	// Build step context
+	stepContext := make(map[string]any)
+	for k, v := range sagaContext {
+		stepContext[k] = v
+	}
+	for k, v := range step.Input {
+		stepContext[k] = v
+	}
+
+	// Create a mini-workflow for this step
+	req := &core.CreateRunRequest{
+		DefinitionID: core.WorkflowDefinitionID(step.ActionWorkflowID),
+		TenantID:     step.TenantID,
+		Inputs:       stepContext,
+	}
+
+	// Execute synchronously (simplified - in production would be async)
+	run, err := c.engine.CreateRun(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	run, err = c.engine.StartRun(ctx, run.ID, step.TenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Wait for completion (polling - in production use event subscription)
+	for i := 0; i < step.TimeoutSeconds; i++ {
+		time.Sleep(time.Second)
+
+		run, err = c.engine.GetRun(ctx, run.ID, step.TenantID)
+		if err != nil {
+			return nil, err
+		}
+
+		if run.Status.IsTerminal() {
+			break
+		}
+	}
+
+	// Check result
+	if run.Status == core.RunStatusCompleted {
+		return &core.NodeExecutionResult{
+			Status: core.NodeStatusCompleted,
+			Output: run.Variables,
+		}, nil
+	}
+
+	return &core.NodeExecutionResult{
+		Status: core.NodeStatusFailed,
+		Error:  run.Error,
+	}, nil
+}
+
+// compensate executes compensation for completed steps
+func (c *SAGACoordinator) compensate(ctx context.Context, execution *SAGAExecution, fromIndex int) error {
+	c.logger.Info("Starting compensation",
+		zap.String("saga_id", execution.SAGADefinitionID),
+		zap.Int("from_index", fromIndex),
+	)
+
+	// Compensate in reverse order
+	for i := fromIndex; i >= 0; i-- {
+		stepExec := execution.Steps[i]
+
+		// Skip if step didn't complete
+		if stepExec.Status != SAGAStepStatusCompleted {
+			continue
+		}
+
+		c.logger.Info("Compensating step",
+			zap.String("step_id", stepExec.StepID),
+			zap.Int("index", i),
+		)
+
+		// Execute compensation
+		if err := c.executeCompensation(ctx, execution, i); err != nil {
+			c.logger.Error("Compensation failed for step",
+				zap.String("step_id", stepExec.StepID),
+				zap.Error(err),
+			)
+			return err
+		}
+
+		stepExec.Status = SAGAStepStatusCompensated
+		stepExec.CompensatedAt = time.Now()
+	}
+
+	c.logger.Info("Compensation completed successfully")
+
+	return nil
+}
+
+// executeCompensation executes compensation for a single step
+func (c *SAGACoordinator) executeCompensation(ctx context.Context, execution *SAGAExecution, stepIndex int) error {
+	stepExec := execution.Steps[stepIndex]
+
+	// Build compensation context (including original output)
+	compensationContext := make(map[string]any)
+	for k, v := range execution.Context {
+		compensationContext[k] = v
+	}
+	for k, v := range stepExec.Output {
+		compensationContext[k] = v
+	}
+
+	// Find compensation workflow ID (simplified - would be in step definition)
+	compensationWorkflowID := fmt.Sprintf("%s-compensation", stepExec.StepID)
+
+	req := &core.CreateRunRequest{
+		DefinitionID: core.WorkflowDefinitionID(compensationWorkflowID),
+		TenantID:     execution.TenantID,
+		Inputs:       compensationContext,
+	}
+
+	run, err := c.engine.CreateRun(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.engine.StartRun(ctx, run.ID, execution.TenantID)
+	if err != nil {
+		return err
+	}
+
+	// Wait for compensation to complete
+	for i := 0; i < 60; i++ {
+		time.Sleep(time.Second)
+
+		run, err = c.engine.GetRun(ctx, run.ID, execution.TenantID)
+		if err != nil {
+			return err
+		}
+
+		if run.Status.IsTerminal() {
+			break
+		}
+	}
+
+	if run.Status != core.RunStatusCompleted {
+		return fmt.Errorf("compensation failed: %v", run.Error)
+	}
+
+	return nil
+}
+
+// ============================================================================
+// SAGA DEFINITION
+// ============================================================================
+
+// SAGADefinition defines a SAGA transaction
+type SAGADefinition struct {
+	ID          string
+	Name        string
+	Description string
+	Steps       []*SAGAStep
+	TenantID    core.TenantID
+}
+
+// SAGAStep represents a single step in the SAGA
+type SAGAStep struct {
+	ID                     string
+	Name                   string
+	ActionWorkflowID       string // Workflow to execute for forward action
+	CompensationWorkflowID string // Workflow to execute for compensation
+	Input                  map[string]any
+	TimeoutSeconds         int
+	TenantID               core.TenantID
+}
+
+// ============================================================================
+// SAGA EXECUTION STATE
+// ============================================================================
+
+// SAGAExecution tracks the execution of a SAGA
+type SAGAExecution struct {
+	ID               core.WorkflowRunID
+	SAGADefinitionID string
+	TenantID         core.TenantID
+	Status           SAGAStatus
+	Steps            []*SAGAStepExecution
+	Context          map[string]any
+	StartedAt        time.Time
+	CompletedAt      time.Time
+}
+
+// SAGAStepExecution tracks the execution of a single step
+type SAGAStepExecution struct {
+	StepID        string
+	StepName      string
+	Index         int
+	Status        SAGAStepStatus
+	StartedAt     time.Time
+	CompletedAt   time.Time
+	CompensatedAt time.Time
+	Output        map[string]any
+	Error         *core.ErrorInfo
+}
+
+// SAGAStatus represents the status of a SAGA execution
+type SAGAStatus string
+
+const (
+	SAGAStatusExecuting          SAGAStatus = "EXECUTING"
+	SAGAStatusCompleted          SAGAStatus = "COMPLETED"
+	SAGAStatusCompensating       SAGAStatus = "COMPENSATING"
+	SAGAStatusCompensated        SAGAStatus = "COMPENSATED"
+	SAGAStatusCompensationFailed SAGAStatus = "COMPENSATION_FAILED"
+)
+
+// SAGAStepStatus represents the status of a SAGA step
+type SAGAStepStatus string
+
+const (
+	SAGAStepStatusPending     SAGAStepStatus = "PENDING"
+	SAGAStepStatusExecuting   SAGAStepStatus = "EXECUTING"
+	SAGAStepStatusCompleted   SAGAStepStatus = "COMPLETED"
+	SAGAStepStatusFailed      SAGAStepStatus = "FAILED"
+	SAGAStepStatusCompensated SAGAStepStatus = "COMPENSATED"
+)
+
+// ============================================================================
+// SAGA BUILDER
+// ============================================================================
+
+// SAGABuilder provides a fluent API for building SAGAs
+type SAGABuilder struct {
+	saga *SAGADefinition
+}
+
+// NewSAGA creates a new SAGA builder
+func NewSAGA(id, name string, tenantID core.TenantID) *SAGABuilder {
+	return &SAGABuilder{
+		saga: &SAGADefinition{
+			ID:       id,
+			Name:     name,
+			Steps:    []*SAGAStep{},
+			TenantID: tenantID,
+		},
+	}
+}
+
+// AddStep adds a step to the SAGA
+func (b *SAGABuilder) AddStep(stepID, stepName, actionWorkflowID, compensationWorkflowID string) *SAGABuilder {
+	step := &SAGAStep{
+		ID:                     stepID,
+		Name:                   stepName,
+		ActionWorkflowID:       actionWorkflowID,
+		CompensationWorkflowID: compensationWorkflowID,
+		Input:                  make(map[string]any),
+		TimeoutSeconds:         300,
+		TenantID:               b.saga.TenantID,
+	}
+
+	b.saga.Steps = append(b.saga.Steps, step)
+
+	return b
+}
+
+// WithInput sets input for the last added step
+func (b *SAGABuilder) WithInput(key string, value any) *SAGABuilder {
+	if len(b.saga.Steps) > 0 {
+		lastStep := b.saga.Steps[len(b.saga.Steps)-1]
+		lastStep.Input[key] = value
+	}
+	return b
+}
+
+// WithTimeout sets timeout for the last added step
+func (b *SAGABuilder) WithTimeout(seconds int) *SAGABuilder {
+	if len(b.saga.Steps) > 0 {
+		lastStep := b.saga.Steps[len(b.saga.Steps)-1]
+		lastStep.TimeoutSeconds = seconds
+	}
+	return b
+}
+
+// Build returns the built SAGA definition
+func (b *SAGABuilder) Build() *SAGADefinition {
+	return b.saga
+}
+
+// ============================================================================
+// EXAMPLE USAGE
+// ============================================================================
+
+/*
+// Create a SAGA for order processing
+saga := NewSAGA("order-saga", "Order Processing SAGA", tenantID).
+	AddStep("reserve-inventory", "Reserve Inventory",
+		"reserve-inventory-wf", "release-inventory-wf").
+	WithInput("orderId", orderID).
+	WithTimeout(60).
+
+	AddStep("charge-payment", "Charge Payment",
+		"charge-payment-wf", "refund-payment-wf").
+	WithInput("amount", totalAmount).
+	WithTimeout(120).
+
+	AddStep("create-shipment", "Create Shipment",
+		"create-shipment-wf", "cancel-shipment-wf").
+	WithTimeout(180).
+
+	Build()
+
+// Execute the SAGA
+coordinator := NewSAGACoordinator(engine, logger)
+execution, err := coordinator.ExecuteSAGA(ctx, saga)
+
+if err != nil {
+	// SAGA failed and was compensated
+	log.Printf("SAGA failed: %v", err)
+	log.Printf("Status: %s", execution.Status)
+} else {
+	// SAGA completed successfully
+	log.Printf("SAGA completed: %s", execution.ID)
+}
+*/
+
+// ============================================================================
+// SAGA WORKFLOW PATTERN HELPER
+// ============================================================================
+
+// CreateSAGAWorkflow creates a workflow definition that follows SAGA pattern
+func CreateSAGAWorkflow(saga *SAGADefinition) *core.WorkflowDefinition {
+	nodes := make([]core.NodeDefinition, 0)
+
+	// Create nodes for each SAGA step
+	for i, step := range saga.Steps {
+		// Forward action node
+		forwardNode := core.NodeDefinition{
+			ID:           core.NodeID(step.ID),
+			Name:         step.Name,
+			Type:         core.NodeTypeTask,
+			ExecutorType: "saga-step-executor",
+			Config: map[string]any{
+				"action_workflow_id": step.ActionWorkflowID,
+				"step_input":         step.Input,
+			},
+			Critical: true, // All SAGA steps are critical
+		}
+
+		// Add dependency on previous step
+		if i > 0 {
+			forwardNode.DependsOn = []core.NodeID{saga.Steps[i-1].ID}
+		}
+
+		nodes = append(nodes, forwardNode)
+
+		// Compensation node (executed on failure)
+		compensationNode := core.NodeDefinition{
+			ID:           core.NodeID(step.ID + "-compensation"),
+			Name:         step.Name + " Compensation",
+			Type:         core.NodeTypeTask,
+			ExecutorType: "saga-compensation-executor",
+			Config: map[string]any{
+				"compensation_workflow_id": step.CompensationWorkflowID,
+			},
+		}
+
+		nodes = append(nodes, compensationNode)
+	}
+
+	// Create workflow definition
+	definition := &core.WorkflowDefinition{
+		ID:          core.WorkflowDefinitionID(saga.ID),
+		TenantID:    saga.TenantID,
+		Name:        saga.Name,
+		Version:     "1.0.0",
+		Description: saga.Description,
+		Nodes:       nodes,
+		Inputs:      make(map[string]core.InputDef),
+		Outputs:     make(map[string]core.OutputDef),
+		Metadata:    map[string]string{"pattern": "SAGA"},
+		Compensation: &core.CompensationPolicy{
+			Strategy:       core.CompensationSequential,
+			TimeoutSeconds: 600,
+			RetryOnFailure: true,
+		},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		IsActive:  true,
+	}
+
+	return definition
+}
