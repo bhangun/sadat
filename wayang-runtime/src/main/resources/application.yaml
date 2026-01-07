@@ -390,9 +390,9 @@ silat:
     grpc:
       server:
         ssl:
-          certificate: ""
-          key: ""
-          trust-store: ""
+          certificate: "src/main/resources/certs/server.crt"
+          key: "src/main/resources/certs/server.key"
+          trust-store: "src/main/resources/certs/server.crt"
 
 # ==================== Production Profile ====================
 "%prod":
