@@ -1,9 +1,10 @@
 package tech.kayys.silat.engine;
 
-import io.quarkus.test.InjectMock;
-import io.quarkus.test.junit.QuarkusTest;
-import io.smallrye.mutiny.Uni;
-import jakarta.inject.Inject;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import java.time.Clock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -22,35 +23,34 @@ import java.util.function.Function;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import io.smallrye.mutiny.Uni;
 
-import java.time.Clock;
-import jakarta.enterprise.inject.Produces;
-
-@QuarkusTest
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public class DefaultWorkflowRunManagerTest {
 
-        @Produces
-        Clock clock() {
-                return Clock.systemUTC();
-        }
-
-        @Inject
+        @InjectMocks
         DefaultWorkflowRunManager runManager;
 
-        @InjectMock
+        @Mock
         WorkflowRunRepository repository;
 
-        @InjectMock
+        @Mock
         ExecutionHistoryRepository historyRepository;
 
-        @InjectMock
+        @Mock
         WorkflowScheduler scheduler;
 
-        @InjectMock
+        @Mock
         WorkflowDefinitionRegistry definitionRegistry;
 
-        @InjectMock
+        @Mock
         TenantSecurityContext tenantContext;
+
+        @Mock
+        Clock clock;
 
         private WorkflowRun mockRun;
         private WorkflowRunId runId;

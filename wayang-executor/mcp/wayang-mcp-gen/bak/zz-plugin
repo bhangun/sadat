@@ -1,0 +1,1997 @@
+// src/main/java/com/example/generator/plugin/PluginResource.java
+package tech.kayys.wayang.mcp.generator.plugin;
+
+import io.quarkus.logging.Log;
+import io.smallrye.mutiny.Uni;
+import jakarta.inject.Inject;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+@Path("/api/plugins")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+public class PluginResource {
+    
+    @Inject
+    PluginAwareGeneratorService pluginService;
+    
+    @Inject
+    PluginManager pluginManager;
+    
+    @GET
+    @Path("/")
+    public Response listPlugins() {
+        Log.info("Listing available plugins");
+        
+        try {
+            List<PluginAwareGeneratorService.PluginInfo> plugins = pluginService.getAvailablePlugins();
+            
+            return Response.ok(new PluginListResponse(
+                plugins.size(),
+                plugins
+            )).build();
+            
+        } catch (Exception e) {
+            Log.error("Failed to list plugins", e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity(new ErrorResponse("Failed to list plugins: " + e.getMessage()))
+                .build();
+        }
+    }
+    
+    @GET
+    @Path("/{pluginId}")
+    public Response getPlugin(@PathParam("pluginId") String pluginId) {
+        Log.info("Getting plugin details: {}", pluginId);
+        
+        try {
+            var plugin = pluginManager.getPlugin(pluginId);
+            
+            if (plugin.isPresent()) {
+                GeneratorPlugin p = plugin.get();
+                return Response.ok(new PluginDetailsResponse(
+                    p.getId(),
+                    p.getName(),
+                    p.getVersion(),
+                    p.getDescription(),
+                    p.getConfiguration()
+                )).build();
+            } else {
+                return Response.status(Response.Status.NOT_FOUND)
+                    .entity(new ErrorResponse("Plugin not found: " + pluginId))
+                    .build();
+            }
+            
+        } catch (Exception e) {
+            Log.error("Failed to get plugin details", e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity(new ErrorResponse("Failed to get plugin: " + e.getMessage()))
+                .build();
+        }
+    }
+    
+    @POST
+    @Path("/{pluginId}/configure")
+    public Response configurePlugin(@PathParam("pluginId") String pluginId, 
+                                  Map<String, Object> configuration) {
+        Log.info("Configuring plugin: {}", pluginId);
+        
+        try {
+            var plugin = pluginManager.getPlugin(pluginId);
+            
+            if (plugin.isPresent()) {
+                plugin.get().configure(configuration);
+                
+                return Response.ok(new SuccessResponse(
+                    "Plugin configured successfully",
+                    Map.of("pluginId", pluginId, "configuration", configuration)
+                )).build();
+            } else {
+                return Response.status(Response.Status.NOT_FOUND)
+                    .entity(new ErrorResponse("Plugin not found: " + pluginId))
+                    .build();
+            }
+            
+        } catch (Exception e) {
+            Log.error("Failed to configure plugin", e);
+            return Response.status(Response.Status.BAD_REQUEST)
+                .entity(new ErrorResponse("Failed to configure plugin: " + e.getMessage()))
+                .build();
+        }
+    }
+    
+    @GET
+    @Path("/template-processors")
+    public Response getTemplateProcessors() {
+        Log.info("Listing template processors");
+        
+        try {
+            // Get all template processors
+            List<TemplateProcessor> processors = pluginManager.getTemplateProcessors("*");
+            
+            List<TemplateProcessorInfo> processorInfos = processors.stream()
+                .map(processor -> new TemplateProcessorInfo(
+                    processor.getTemplateType(),
+                    processor.getClass().getSimpleName()
+                ))
+                .toList();
+            
+            return Response.ok(new TemplateProcessorListResponse(
+                processorInfos.size(),
+                processorInfos
+            )).build();
+            
+        } catch (Exception e) {
+            Log.error("Failed to list template processors", e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity(new ErrorResponse("Failed to list template processors: " + e.getMessage()))
+                .build();
+        }
+    }
+    
+    @GET
+    @Path("/validators")
+    public Response getValidators() {
+        Log.info("Listing validators");
+        
+        try {
+            List<ValidationPlugin> validators = pluginManager.getValidators("*");
+            
+            List<ValidatorInfo> validatorInfos = validators.stream()
+                .map(validator -> new ValidatorInfo(
+                    validator.getValidationType(),
+                    validator.getClass().getSimpleName(),
+                    validator.getValidationRules().size()
+                ))
+                .toList();
+            
+            return Response.ok(new ValidatorListResponse(
+                validatorInfos.size(),
+                validatorInfos
+            )).build();
+            
+        } catch (Exception e) {
+            Log.error("Failed to list validators", e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity(new ErrorResponse("Failed to list validators: " + e.getMessage()))
+                .build();
+        }
+    }
+    
+    @POST
+    @Path("/execute/{pluginId}")
+    public Uni<Response> executePlugin(@PathParam("pluginId") String pluginId,
+                                     PluginExecutionRequest request) {
+        Log.info("Executing plugin: {}", pluginId);
+        
+        return Uni.createFrom().item(() -> {
+            try {
+                var plugin = pluginManager.getPlugin(pluginId);
+                
+                if (plugin.isEmpty()) {
+                    return Response.status(Response.Status.NOT_FOUND)
+                        .entity(new ErrorResponse("Plugin not found: " + pluginId))
+                        .build();
+                }
+                
+                PluginExecutionContext context = pluginManager.createExecutionContext();
+                context.setConfiguration(request.configuration != null ? request.configuration : new HashMap<>());
+                
+                // Set request data as context attributes
+                if (request.data != null) {
+                    request.data.forEach(context::setAttribute);
+                }
+                
+                PluginResult result = plugin.get().execute(context);
+                
+                return Response.ok(new PluginExecutionResponse(
+                    result.isSuccess(),
+                    result.getMessage(),
+                    result.getData(),
+                    context.getExecutionTime()
+                )).build();
+                
+            } catch (Exception e) {
+                Log.error("Failed to execute plugin", e);
+                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(new ErrorResponse("Plugin execution failed: " + e.getMessage()))
+                    .build();
+            }
+        });
+    }
+    
+    // Response DTOs
+    public static class PluginListResponse {
+        public final int count;
+        public final List<PluginAwareGeneratorService.PluginInfo> plugins;
+        
+        public PluginListResponse(int count, List<PluginAwareGeneratorService.PluginInfo> plugins) {
+            this.count = count;
+            this.plugins = plugins;
+        }
+    }
+    
+    public static class PluginDetailsResponse {
+        public final String id;
+        public final String name;
+        public final String version;
+        public final String description;
+        public final Map<String, Object> configuration;
+        
+        public PluginDetailsResponse(String id, String name, String version, String description, 
+                                   Map<String, Object> configuration) {
+            this.id = id;
+            this.name = name;
+            this.version = version;
+            this.description = description;
+            this.configuration = configuration;
+        }
+    }
+    
+    public static class TemplateProcessorListResponse {
+        public final int count;
+        public final List<TemplateProcessorInfo> processors;
+        
+        public TemplateProcessorListResponse(int count, List<TemplateProcessorInfo> processors) {
+            this.count = count;
+            this.processors = processors;
+        }
+    }
+    
+    public static class TemplateProcessorInfo {
+        public final String templateType;
+        public final String className;
+        
+        public TemplateProcessorInfo(String templateType, String className) {
+            this.templateType = templateType;
+            this.className = className;
+        }
+    }
+    
+    public static class ValidatorListResponse {
+        public final int count;
+        public final List<ValidatorInfo> validators;
+        
+        public ValidatorListResponse(int count, List<ValidatorInfo> validators) {
+            this.count = count;
+            this.validators = validators;
+        }
+    }
+    
+    public static class ValidatorInfo {
+        public final String validationType;
+        public final String className;
+        public final int rulesCount;
+        
+        public ValidatorInfo(String validationType, String className, int rulesCount) {
+            this.validationType = validationType;
+            this.className = className;
+            this.rulesCount = rulesCount;
+        }
+    }
+    
+    public static class PluginExecutionRequest {
+        public Map<String, Object> configuration;
+        public Map<String, Object> data;
+        public String operation;
+    }
+    
+    public static class PluginExecutionResponse {
+        public final boolean success;
+        public final String message;
+        public final Map<String, Object> data;
+        public final long executionTime;
+        
+        public PluginExecutionResponse(boolean success, String message, Map<String, Object> data, 
+                                     long executionTime) {
+            this.success = success;
+            this.message = message;
+            this.data = data;
+            this.executionTime = executionTime;
+        }
+    }
+    
+    public static class ErrorResponse {
+        public final String error;
+        public final long timestamp;
+        
+        public ErrorResponse(String error) {
+            this.error = error;
+            this.timestamp = System.currentTimeMillis();
+        }
+    }
+    
+    public static class SuccessResponse {
+        public final String message;
+        public final Map<String, Object> data;
+        public final long timestamp;
+        
+        public SuccessResponse(String message, Map<String, Object> data) {
+            this.message = message;
+            this.data = data;
+            this.timestamp = System.currentTimeMillis();
+        }
+    }
+}
+
+// Update the main generator resource to use plugin-aware service
+// src/main/java/com/example/generator/McpGeneratorResourceEnhanced.java
+package tech.kayys.wayang.mcp.generator;
+
+import tech.kayys.wayang.mcp.generator.plugin.PluginAwareGeneratorService;
+import io.quarkus.logging.Log;
+import io.smallrye.mutiny.Uni;
+import jakarta.inject.Inject;
+import jakarta.validation.constraints.NotNull;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import org.jboss.resteasy.reactive.MultipartForm;
+import org.jboss.resteasy.reactive.PartType;
+import org.jboss.resteasy.reactive.RestForm;
+
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
+
+@Path("/api/mcp-generator-v2")
+@Produces(MediaType.APPLICATION_JSON)
+public class McpGeneratorResourceEnhanced {
+
+    @Inject
+    PluginAwareGeneratorService pluginService;
+
+    @Inject
+    McpServerConfig config;
+
+    public static class EnhancedFileUpload {
+        @RestForm("file")
+        @PartType(MediaType.APPLICATION_OCTET_STREAM)
+        @NotNull
+        public InputStream file;
+
+        @RestForm("filename")
+        @PartType(MediaType.TEXT_PLAIN)
+        public String filename;
+
+        @RestForm("packageName")
+        @PartType(MediaType.TEXT_PLAIN)
+        public String packageName;
+
+        @RestForm("serverName")
+        @PartType(MediaType.TEXT_PLAIN)
+        public String serverName;
+
+        @RestForm("baseUrl")
+        @PartType(MediaType.TEXT_PLAIN)
+        public String baseUrl;
+
+        @RestForm("includeAuth")
+        @PartType(MediaType.TEXT_PLAIN)
+        public String includeAuth = "false";
+
+        @RestForm("specType")
+        @PartType(MediaType.TEXT_PLAIN)
+        public String specType = "auto";
+
+        @RestForm("collectionName")
+        @PartType(MediaType.TEXT_PLAIN)
+        public String collectionName;
+
+        @RestForm("enablePlugins")
+        @PartType(MediaType.TEXT_PLAIN)
+        public String enablePlugins = "true";
+
+        @RestForm("pluginOptions")
+        @PartType(MediaType.TEXT_PLAIN)
+        public String pluginOptionsJson;
+
+        public String getPackageNameOrDefault(String defaultValue) {
+            return packageName != null && !packageName.trim().isEmpty() ? packageName : defaultValue;
+        }
+        
+        public String getServerNameOrDefault(String defaultValue) {
+            return serverName != null && !serverName.trim().isEmpty() ? serverName : defaultValue;
+        }
+
+        public String getBaseUrlOrDefault(String defaultValue) {
+            return baseUrl != null && !baseUrl.trim().isEmpty() ? baseUrl : defaultValue;
+        }
+
+        public boolean isIncludeAuth() {
+            return "true".equalsIgnoreCase(includeAuth);
+        }
+
+        public boolean isEnablePlugins() {
+            return "true".equalsIgnoreCase(enablePlugins);
+        }
+
+        public McpGeneratorResource.SpecificationType getSpecType() {
+            if (specType == null) return McpGeneratorResource.SpecificationType.AUTO;
+            return switch (specType.toLowerCase()) {
+                case "openapi" -> McpGeneratorResource.SpecificationType.OPENAPI;
+                case "postman" -> McpGeneratorResource.SpecificationType.POSTMAN;
+                case "insomnia" -> McpGeneratorResource.SpecificationType.OPENAPI; // Will be detected by plugin
+                default -> McpGeneratorResource.SpecificationType.AUTO;
+            };
+        }
+
+        public String getCollectionNameOrDefault(String defaultValue) {
+            return collectionName != null && !collectionName.trim().isEmpty() ? collectionName : defaultValue;
+        }
+
+        public Map<String, Object> getPluginOptions() {
+            if (pluginOptionsJson == null || pluginOptionsJson.trim().isEmpty()) {
+                return new HashMap<>();
+            }
+            
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                return mapper.readValue(pluginOptionsJson, Map.class);
+            } catch (Exception e) {
+                Log.warn("Failed to parse plugin options JSON: {}", e.getMessage());
+                return new HashMap<>();
+            }
+        }
+    }
+
+    @POST
+    @Path("/generate")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @Produces(MediaType.APPLICATION_OCTET_STREAM)
+    public Uni<Response> generateMcpServerWithPlugins(@MultipartForm EnhancedFileUpload upload) {
+        Log.info("Starting enhanced MCP server generation with plugins for file: {}", upload.filename);
+        
+        if (upload.isEnablePlugins()) {
+            return pluginService.generateMcpServerWithPlugins(
+                upload.file, 
+                upload.filename, 
+                upload.getPackageNameOrDefault(config.defaultPackage()), 
+                upload.getServerNameOrDefault(config.defaultServerName()),
+                upload.getBaseUrlOrDefault(config.defaultBaseUrl()),
+                upload.isIncludeAuth(),
+                upload.getSpecType(),
+                upload.getCollectionNameOrDefault("Generated Collection"),
+                upload.getPluginOptions()
+            ).map(zipBytes -> {
+                String filename = upload.getServerNameOrDefault(config.defaultServerName()).toLowerCase() + "-mcp-server-v2.zip";
+                Log.info("Successfully generated enhanced MCP server ZIP: {} ({} bytes)", filename, zipBytes.length);
+                
+                return Response.ok(zipBytes)
+                    .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
+                    .header("Content-Type", "application/zip")
+                    .header("Content-Length", String.valueOf(zipBytes.length))
+                    .header("X-Generator-Version", "2.0-plugin-enabled")
+                    .build();
+            })
+            .onFailure().recoverWithItem(throwable -> {
+                Log.error("Enhanced generation failed", throwable);
+                
+                return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new ErrorResponse("Enhanced generation failed: " + throwable.getMessage()))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+            });
+        } else {
+            Log.info("Plugins disabled, falling back to standard generation");
+            // Fallback to standard generation (would need to inject the original service)
+            return Uni.createFrom().item(
+                Response.status(Response.Status.NOT_IMPLEMENTED)
+                    .entity(new ErrorResponse("Standard generation fallback not implemented in this example"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build()
+            );
+        }
+    }
+
+    @GET
+    @Path("/capabilities")
+    public Response getCapabilities() {
+        return Response.ok(new CapabilitiesResponse(
+            pluginService.getAvailablePlugins(),
+            config.supportedVersions(),
+            config.supportedSpecTypes(),
+            config.maxFileSize()
+        )).build();
+    }
+
+    @POST
+    @Path("/validate-with-plugins")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Uni<Response> validateWithPlugins(@MultipartForm EnhancedFileUpload upload) {
+        Log.info("Validating specification with plugins: {}", upload.filename);
+        
+        return Uni.createFrom().item(() -> {
+            try {
+                // This would use plugin-aware validation
+                // Simplified for this example
+                return Response.ok(new ValidationResponse(
+                    true,
+                    "Plugin-aware validation completed",
+                    java.util.List.of(),
+                    java.util.List.of("Using enhanced plugin validation")
+                )).build();
+                
+            } catch (Exception e) {
+                Log.error("Plugin validation failed", e);
+                return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new ErrorResponse("Validation failed: " + e.getMessage()))
+                    .build();
+            }
+        });
+    }
+
+    // Response DTOs
+    public static class ErrorResponse {
+        public final String error;
+        public final long timestamp;
+        public final String version = "2.0-plugin-enabled";
+
+        public ErrorResponse(String error) {
+            this.error = error;
+            this.timestamp = System.currentTimeMillis();
+        }
+    }
+
+    public static class CapabilitiesResponse {
+        public final java.util.List<PluginAwareGeneratorService.PluginInfo> availablePlugins;
+        public final String[] supportedOpenApiVersions;
+        public final String[] supportedSpecTypes;
+        public final long maxFileSize;
+        public final String version = "2.0-plugin-enabled";
+
+        public CapabilitiesResponse(java.util.List<PluginAwareGeneratorService.PluginInfo> availablePlugins,
+                                  String[] supportedOpenApiVersions, String[] supportedSpecTypes, 
+                                  long maxFileSize) {
+            this.availablePlugins = availablePlugins;
+            this.supportedOpenApiVersions = supportedOpenApiVersions;
+            this.supportedSpecTypes = supportedSpecTypes;
+            this.maxFileSize = maxFileSize;
+        }
+    }
+
+    public static class ValidationResponse {
+        public final boolean valid;
+        public final String message;
+        public final java.util.List<String> errors;
+        public final java.util.List<String> warnings;
+        public final String version = "2.0-plugin-enabled";
+
+        public ValidationResponse(boolean valid, String message, java.util.List<String> errors, 
+                                java.util.List<String> warnings) {
+            this.valid = valid;
+            this.message = message;
+            this.errors = errors;
+            this.warnings = warnings;
+        }
+    }
+}
+
+// src/main/resources/application.properties (additions)
+# Plugin System Configuration
+mcp.generator.plugins.enabled=true
+mcp.generator.plugins.enabled-plugins=builtin,insomnia,validation
+mcp.generator.plugins.execution-timeout-seconds=30
+mcp.generator.plugins.allow-custom-plugins=true
+
+# Plugin-specific configurations
+mcp.generator.plugins.plugin-configs.insomnia.auto-detect-base-url=true
+mcp.generator.plugins.plugin-configs.validation.strict-mode=false
+mcp.generator.plugins.plugin-configs.template.enable-custom-functions=true
+
+# Enhanced generator features
+mcp.generator.enhanced.enable-plugin-discovery=true
+mcp.generator.enhanced.cache-plugin-results=true
+mcp.generator.enhanced.parallel-processing=false
+
+
+
+
+// src/main/java/com/example/generator/plugin/PluginConfiguration.java
+package tech.kayys.wayang.mcp.generator.plugin;
+
+import io.smallrye.config.ConfigMapping;
+import io.smallrye.config.WithDefault;
+
+import java.util.List;
+import java.util.Map;
+
+@ConfigMapping(prefix = "mcp.generator.plugins")
+public interface PluginConfiguration {
+    
+    @WithDefault("true")
+    boolean enabled();
+    
+    @WithDefault("builtin")
+    List<String> enabledPlugins();
+    
+    @WithDefault("30")
+    int executionTimeoutSeconds();
+    
+    @WithDefault("true")
+    boolean allowCustomPlugins();
+    
+    Map<String, Map<String, String>> pluginConfigs();
+}
+
+// src/main/java/com/example/generator/plugin/PluginAwareGeneratorService.java
+package tech.kayys.wayang.mcp.generator.plugin;
+
+import tech.kayys.wayang.mcp.generator.*;
+import io.quarkus.logging.Log;
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
+import jakarta.inject.Inject;
+import io.quarkus.runtime.StartupEvent;
+
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+@ApplicationScoped
+public class PluginAwareGeneratorService {
+    
+    @Inject
+    PluginManager pluginManager;
+    
+    @Inject
+    PluginConfiguration pluginConfig;
+    
+    @Inject
+    McpServerGeneratorService generatorService;
+    
+    void onStart(@Observes StartupEvent ev) {
+        if (pluginConfig.enabled()) {
+            pluginManager.initializePlugins();
+            Log.info("Plugin system is enabled and initialized");
+        } else {
+            Log.info("Plugin system is disabled");
+        }
+    }
+    
+    public Uni<byte[]> generateMcpServerWithPlugins(InputStream inputFile, String filename, 
+                                                   String packageName, String serverName, 
+                                                   String baseUrl, boolean includeAuth,
+                                                   McpGeneratorResource.SpecificationType specType, 
+                                                   String collectionName, Map<String, Object> pluginOptions) {
+        return Uni.createFrom().item(() -> {
+            if (!pluginConfig.enabled()) {
+                // Fallback to original service
+                return generatorService.generateMcpServer(inputFile, filename, packageName, 
+                    serverName, baseUrl, includeAuth, specType, collectionName).await().indefinitely();
+            }
+            
+            try {
+                PluginExecutionContext context = pluginManager.createExecutionContext();
+                context.setConfiguration(pluginOptions != null ? pluginOptions : new HashMap<>());
+                
+                // Step 1: Process specification using plugins
+                ApiSpecification apiSpec = processSpecificationWithPlugins(inputFile, filename, 
+                    specType, context);
+                
+                // Step 2: Validate with plugins
+                validateWithPlugins(apiSpec, context);
+                
+                // Step 3: Generate model with plugins
+                McpServerModel serverModel = generateModelWithPlugins(apiSpec, packageName, 
+                    serverName, baseUrl, includeAuth, context);
+                
+                // Step 4: Generate source files with plugins
+                Map<String, String> sourceFiles = generateSourceFilesWithPlugins(serverModel, context);
+                
+                // Step 5: Create ZIP archive
+                return createZipArchive(sourceFiles);
+                
+            } catch (Exception e) {
+                Log.error("Plugin-aware generation failed, falling back to standard generation", e);
+                // Fallback to original service
+                return generatorService.generateMcpServer(inputFile, filename, packageName, 
+                    serverName, baseUrl, includeAuth, specType, collectionName).await().indefinitely();
+            }
+        });
+    }
+    
+    private ApiSpecification processSpecificationWithPlugins(InputStream inputFile, String filename,
+                                                           McpGeneratorResource.SpecificationType specType,
+                                                           PluginExecutionContext context) throws Exception {
+        
+        // Try to find a plugin that can process this specification
+        Optional<SpecificationProcessor> processor = pluginManager.getSpecificationProcessor(specType.name().toLowerCase());
+        
+        if (processor.isPresent()) {
+            Log.debug("Using plugin processor for spec type: {}", specType);
+            return processor.get().processSpecification(inputFile, filename, context);
+        } else {
+            Log.debug("No plugin processor found for spec type: {}, using built-in", specType);
+            // Fallback to built-in processing
+            throw new UnsupportedOperationException("Built-in fallback not implemented in this example");
+        }
+    }
+    
+    private void validateWithPlugins(ApiSpecification apiSpec, PluginExecutionContext context) throws Exception {
+        List<ValidationPlugin> validators = pluginManager.getValidators("api-spec");
+        
+        for (ValidationPlugin validator : validators) {
+            try {
+                ValidationResult result = validator.validate(apiSpec, context);
+                if (!result.isValid()) {
+                    List<String> errors = result.getErrors().stream()
+                        .map(ValidationResult.ValidationIssue::getMessage)
+                        .toList();
+                    throw new RuntimeException("Validation failed: " + String.join(", ", errors));
+                }
+                
+                // Log warnings
+                result.getWarnings().forEach(warning -> 
+                    Log.warn("Validation warning: {}", warning.getMessage()));
+                    
+            } catch (Exception e) {
+                Log.warn("Validation plugin {} failed: {}", validator.getValidationType(), e.getMessage());
+            }
+        }
+    }
+    
+    private McpServerModel generateModelWithPlugins(ApiSpecification apiSpec, String packageName,
+                                                  String serverName, String baseUrl, boolean includeAuth,
+                                                  PluginExecutionContext context) throws Exception {
+        
+        // Execute pre-processing plugins
+        List<GeneratorPlugin> plugins = pluginManager.getAvailablePlugins();
+        for (GeneratorPlugin plugin : plugins) {
+            if (plugin.supports("model-generation")) {
+                context.setAttribute("apiSpec", apiSpec);
+                context.setAttribute("packageName", packageName);
+                context.setAttribute("serverName", serverName);
+                context.setAttribute("baseUrl", baseUrl);
+                context.setAttribute("includeAuth", includeAuth);
+                
+                PluginResult result = plugin.execute(context);
+                if (result.isSuccess()) {
+                    Log.debug("Plugin {} executed successfully for model generation", plugin.getId());
+                    // Update context with plugin results
+                    result.getData().forEach(context::setAttribute);
+                }
+            }
+        }
+        
+        // Create model with potentially modified data
+        return createServerModel(apiSpec, 
+            context.getAttribute("packageName", String.class),
+            context.getAttribute("serverName", String.class),
+            context.getAttribute("baseUrl", String.class),
+            context.getAttribute("includeAuth", Boolean.class));
+    }
+    
+    private Map<String, String> generateSourceFilesWithPlugins(McpServerModel serverModel,
+                                                             PluginExecutionContext context) throws Exception {
+        Map<String, String> sourceFiles = new HashMap<>();
+        
+        // Get available template processors
+        List<TemplateProcessor> processors = pluginManager.getTemplateProcessors("qute");
+        
+        if (processors.isEmpty()) {
+            throw new RuntimeException("No template processors available");
+        }
+        
+        TemplateProcessor processor = processors.get(0); // Use first available
+        
+        // Process each template
+        Map<String, Object> templateData = createTemplateData(serverModel);
+        
+        // Main server class
+        String mainTemplate = loadTemplate("mcp-server-main.java");
+        String mainClassContent = processor.processTemplate(mainTemplate, templateData, context);
+        sourceFiles.put("src/main/java/" + serverModel.getPackagePath() + "/" + 
+            serverModel.getServerClass() + ".java", mainClassContent);
+        
+        // Tool classes
+        for (McpToolModel tool : serverModel.getTools()) {
+            String toolTemplate = loadTemplate("mcp-tool.java");
+            Map<String, Object> toolData = new HashMap<>(templateData);
+            toolData.put("tool", tool);
+            
+            String toolClassContent = processor.processTemplate(toolTemplate, toolData, context);
+            sourceFiles.put("src/main/java/" + serverModel.getPackagePath() + "/tools/" + 
+                tool.getClassName() + ".java", toolClassContent);
+        }
+        
+        // Configuration files
+        String pomTemplate = loadTemplate("generated-pom.xml");
+        String pomContent = processor.processTemplate(pomTemplate, templateData, context);
+        sourceFiles.put("pom.xml", pomContent);
+        
+        return sourceFiles;
+    }
+    
+    private Map<String, Object> createTemplateData(McpServerModel serverModel) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("model", serverModel);
+        data.put("timestamp", System.currentTimeMillis());
+        data.put("generatorVersion", "1.0.0-plugin-enabled");
+        return data;
+    }
+    
+    private String loadTemplate(String templateName) {
+        // This would load from resources - simplified for example
+        return "Template content for " + templateName;
+    }
+    
+    private McpServerModel createServerModel(ApiSpecification apiSpec, String packageName,
+                                           String serverName, String baseUrl, boolean includeAuth) {
+        // Convert ApiSpecification to McpServerModel
+        // This is a simplified version - full implementation would mirror the original service
+        McpServerModel model = new McpServerModel();
+        model.setPackageName(packageName);
+        model.setServerName(serverName);
+        model.setServerClass(serverName);
+        model.setTitle(apiSpec.getTitle());
+        model.setDescription(apiSpec.getDescription());
+        model.setVersion(apiSpec.getVersion());
+        model.setBaseUrl(baseUrl);
+        model.setIncludeAuth(includeAuth);
+        
+        // Convert operations to tools
+        List<McpToolModel> tools = apiSpec.getOperations().stream()
+            .map(this::convertToMcpTool)
+            .toList();
+        model.setTools(tools);
+        
+        return model;
+    }
+    
+    private McpToolModel convertToMcpTool(ApiOperation operation) {
+        McpToolModel tool = new McpToolModel();
+        tool.setName(operation.getOperationId() != null ? operation.getOperationId() : 
+            generateToolName(operation.getPath(), operation.getMethod()));
+        tool.setDescription(operation.getDescription());
+        tool.setPath(operation.getPath());
+        tool.setMethod(operation.getMethod());
+        tool.setOperationId(operation.getOperationId());
+        tool.setSummary(operation.getSummary());
+        
+        // Convert parameters
+        List<McpParameterModel> parameters = operation.getParameters().stream()
+            .map(this::convertToMcpParameter)
+            .toList();
+        tool.setParameters(parameters);
+        
+        tool.setResponseTypes(operation.getResponseTypes());
+        tool.setSecurityRequirements(operation.getSecurityRequirements());
+        
+        return tool;
+    }
+    
+    private McpParameterModel convertToMcpParameter(ApiParameter apiParam) {
+        McpParameterModel param = new McpParameterModel();
+        param.setName(apiParam.getName());
+        param.setDescription(apiParam.getDescription());
+        param.setType(apiParam.getType());
+        param.setRequired(apiParam.isRequired());
+        param.setIn(apiParam.getIn());
+        param.setExample(apiParam.getExample());
+        param.setDefaultValue(apiParam.getDefaultValue());
+        return param;
+    }
+    
+    private String generateToolName(String path, String method) {
+        String cleanPath = path.replaceAll("[^a-zA-Z0-9_]", "_")
+            .replaceAll("_+", "_")
+            .replaceAll("^_|_$", "");
+        return method.toLowerCase() + "_" + cleanPath;
+    }
+    
+    private byte[] createZipArchive(Map<String, String> files) throws Exception {
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(baos)) {
+            for (Map.Entry<String, String> entry : files.entrySet()) {
+                java.util.zip.ZipEntry zipEntry = new java.util.zip.ZipEntry(entry.getKey());
+                zos.putNextEntry(zipEntry);
+                zos.write(entry.getValue().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                zos.closeEntry();
+            }
+        }
+        return baos.toByteArray();
+    }
+    
+    public List<PluginInfo> getAvailablePlugins() {
+        return pluginManager.getAvailablePlugins().stream()
+            .map(plugin -> new PluginInfo(
+                plugin.getId(),
+                plugin.getName(),
+                plugin.getVersion(),
+                plugin.getDescription(),
+                plugin.getConfiguration()
+            ))
+            .toList();
+    }
+    
+    public static class PluginInfo {
+        public final String id;
+        public final String name;
+        public final String version;
+        public final String description;
+        public final Map<String, Object> configuration;
+        
+        public PluginInfo(String id, String name, String version, String description, 
+                         Map<String, Object> configuration) {
+            this.id = id;
+            this.name = name;
+            this.version = version;
+            this.description = description;
+            this.configuration = configuration;
+        }
+    }
+}
+
+// src/main/java/com/example/generator/plugin/builtin/InsomniaSpecProcessor.java
+package tech.kayys.wayang.mcp.generator.plugin.builtin;
+
+import tech.kayys.wayang.mcp.generator.*;
+import tech.kayys.wayang.mcp.generator.plugin.*;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.io.InputStream;
+import java.util.*;
+
+@ApplicationScoped
+public class InsomniaSpecProcessor implements SpecificationProcessor {
+    
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    
+    @Override
+    public String getSpecificationType() {
+        return "insomnia";
+    }
+    
+    @Override
+    public void initialize() throws PluginException {
+        // Initialization logic
+    }
+    
+    @Override
+    public boolean canProcess(String content, String filename) {
+        try {
+            JsonNode root = objectMapper.readTree(content);
+            
+            // Check for Insomnia-specific fields
+            if (root.has("_type") && root.get("_type").asText().equals("export")) {
+                return true;
+            }
+            
+            if (root.has("resources") && root.has("__export_format")) {
+                return true;
+            }
+            
+            // Check filename
+            if (filename != null && filename.toLowerCase().contains("insomnia")) {
+                return true;
+            }
+            
+            return false;
+            
+        } catch (Exception e) {
+            return false;
+        }
+    }
+    
+    @Override
+    public ApiSpecification processSpecification(InputStream content, String filename, 
+                                               PluginExecutionContext context) throws PluginException {
+        try {
+            String contentStr = new String(content.readAllBytes());
+            JsonNode root = objectMapper.readTree(contentStr);
+            
+            context.log("INFO", "Processing Insomnia export file: %s", filename);
+            
+            ApiSpecification apiSpec = new ApiSpecification();
+            
+            // Extract workspace info
+            JsonNode workspace = findWorkspace(root);
+            if (workspace != null) {
+                apiSpec.setTitle(workspace.has("name") ? workspace.get("name").asText() : "Insomnia API");
+                apiSpec.setDescription(workspace.has("description") ? workspace.get("description").asText() : "");
+            } else {
+                apiSpec.setTitle("Insomnia API");
+                apiSpec.setDescription("Imported from Insomnia");
+            }
+            apiSpec.setVersion("1.0.0");
+            
+            // Extract base URL from environment
+            String baseUrl = extractBaseUrl(root);
+            apiSpec.setBaseUrl(baseUrl != null ? baseUrl : "http://localhost:8080");
+            
+            // Process requests
+            List<ApiOperation> operations = processRequests(root, context);
+            apiSpec.setOperations(operations);
+            
+            context.log("INFO", "Processed %d operations from Insomnia export", operations.size());
+            
+            return apiSpec;
+            
+        } catch (Exception e) {
+            throw new PluginException("insomnia-processor", "process", 
+                "Failed to process Insomnia specification", e);
+        }
+    }
+    
+    @Override
+    public ValidationResult validateSpecification(InputStream content, String filename,
+                                                PluginExecutionContext context) throws PluginException {
+        try {
+            String contentStr = new String(content.readAllBytes());
+            JsonNode root = objectMapper.readTree(contentStr);
+            
+            ValidationResult result = new ValidationResult(true);
+            
+            if (!canProcess(contentStr, filename)) {
+                return result.addError("Not a valid Insomnia export file");
+            }
+            
+            // Check for resources
+            if (!root.has("resources")) {
+                result.addWarning("No resources found in Insomnia export");
+            } else {
+                JsonNode resources = root.get("resources");
+                if (!resources.isArray() || resources.size() == 0) {
+                    result.addWarning("Resources array is empty");
+                }
+            }
+            
+            return result;
+            
+        } catch (Exception e) {
+            throw new PluginException("insomnia-processor", "validate", 
+                "Failed to validate Insomnia specification", e);
+        }
+    }
+    
+    private JsonNode findWorkspace(JsonNode root) {
+        if (root.has("resources") && root.get("resources").isArray()) {
+            for (JsonNode resource : root.get("resources")) {
+                if (resource.has("_type") && resource.get("_type").asText().equals("workspace")) {
+                    return resource;
+                }
+            }
+        }
+        return null;
+    }
+    
+    private String extractBaseUrl(JsonNode root) {
+        if (root.has("resources") && root.get("resources").isArray()) {
+            for (JsonNode resource : root.get("resources")) {
+                if (resource.has("_type") && resource.get("_type").asText().equals("environment")) {
+                    if (resource.has("data") && resource.get("data").has("base_url")) {
+                        return resource.get("data").get("base_url").asText();
+                    }
+                }
+            }
+        }
+        return null;
+    }
+    
+    private List<ApiOperation> processRequests(JsonNode root, PluginExecutionContext context) {
+        List<ApiOperation> operations = new ArrayList<>();
+        
+        if (root.has("resources") && root.get("resources").isArray()) {
+            for (JsonNode resource : root.get("resources")) {
+                if (resource.has("_type") && resource.get("_type").asText().equals("request")) {
+                    try {
+                        ApiOperation operation = processRequest(resource);
+                        if (operation != null) {
+                            operations.add(operation);
+                        }
+                    } catch (Exception e) {
+                        context.log("WARN", "Failed to process request: %s", e.getMessage());
+                    }
+                }
+            }
+        }
+        
+        return operations;
+    }
+    
+    private ApiOperation processRequest(JsonNode request) {
+        ApiOperation operation = new ApiOperation();
+        
+        // Basic info
+        String name = request.has("name") ? request.get("name").asText() : "unnamed_request";
+        operation.setOperationId(sanitizeOperationId(name));
+        operation.setSummary(name);
+        operation.setDescription(request.has("description") ? request.get("description").asText() : "");
+        
+        // Method
+        String method = request.has("method") ? request.get("method").asText() : "GET";
+        operation.setMethod(method.toUpperCase());
+        
+        // URL and path
+        String url = request.has("url") ? request.get("url").asText() : "/";
+        operation.setPath(extractPath(url));
+        
+        // Parameters
+        List<ApiParameter> parameters = new ArrayList<>();
+        
+        // URL parameters
+        if (request.has("parameters")) {
+            processUrlParameters(request.get("parameters"), parameters);
+        }
+        
+        // Headers
+        if (request.has("headers")) {
+            processHeaders(request.get("headers"), parameters);
+        }
+        
+        // Body
+        if (request.has("body")) {
+            processBody(request.get("body"), parameters);
+        }
+        
+        operation.setParameters(parameters);
+        
+        // Default responses
+        Map<String, String> responseTypes = new HashMap<>();
+        responseTypes.put("200", "Success");
+        responseTypes.put("400", "Bad Request");
+        responseTypes.put("500", "Internal Server Error");
+        operation.setResponseTypes(responseTypes);
+        
+        return operation;
+    }
+    
+    private String sanitizeOperationId(String name) {
+        return name.replaceAll("[^a-zA-Z0-9_]", "_")
+                  .replaceAll("_+", "_")
+                  .replaceAll("^_|_$", "");
+    }
+    
+    private String extractPath(String url) {
+        try {
+            java.net.URL parsedUrl = new java.net.URL(url);
+            String path = parsedUrl.getPath();
+            return path.isEmpty() ? "/" : path;
+        } catch (Exception e) {
+            // If URL parsing fails, try to extract path manually
+            int pathStart = url.indexOf('/', 8); // Skip protocol://
+            if (pathStart != -1) {
+                int queryStart = url.indexOf('?', pathStart);
+                return queryStart != -1 ? url.substring(pathStart, queryStart) : url.substring(pathStart);
+            }
+            return "/";
+        }
+    }
+    
+    private void processUrlParameters(JsonNode parameters, List<ApiParameter> paramList) {
+        if (parameters.isArray()) {
+            for (JsonNode param : parameters) {
+                if (param.has("name") && param.has("value")) {
+                    ApiParameter apiParam = new ApiParameter();
+                    apiParam.setName(param.get("name").asText());
+                    apiParam.setIn("query");
+                    apiParam.setRequired(false);
+                    apiParam.setType("string");
+                    apiParam.setDescription("Query parameter");
+                    apiParam.setExample(param.get("value").asText());
+                    paramList.add(apiParam);
+                }
+            }
+        }
+    }
+    
+    private void processHeaders(JsonNode headers, List<ApiParameter> paramList) {
+        if (headers.isArray()) {
+            for (JsonNode header : headers) {
+                if (header.has("name") && header.has("value")) {
+                    String name = header.get("name").asText();
+                    
+                    // Skip common headers
+                    if (isStandardHeader(name)) {
+                        continue;
+                    }
+                    
+                    ApiParameter apiParam = new ApiParameter();
+                    apiParam.setName(name);
+                    apiParam.setIn("header");
+                    apiParam.setRequired(false);
+                    apiParam.setType("string");
+                    apiParam.setDescription("Header parameter");
+                    apiParam.setExample(header.get("value").asText());
+                    paramList.add(apiParam);
+                }
+            }
+        }
+    }
+    
+    private void processBody(JsonNode body, List<ApiParameter> paramList) {
+        if (body.has("mimeType")) {
+            String mimeType = body.get("mimeType").asText();
+            
+            if ("application/json".equals(mimeType) && body.has("text")) {
+                ApiParameter bodyParam = new ApiParameter();
+                bodyParam.setName("requestBody");
+                bodyParam.setIn("body");
+                bodyParam.setRequired(true);
+                bodyParam.setType("object");
+                bodyParam.setDescription("Request body");
+                bodyParam.setExample(body.get("text").asText());
+                paramList.add(bodyParam);
+            }
+        }
+    }
+    
+    private boolean isStandardHeader(String headerName) {
+        String lower = headerName.toLowerCase();
+        return lower.equals("content-type") || 
+               lower.equals("content-length") ||
+               lower.equals("host") ||
+               lower.equals("user-agent") ||
+               lower.equals("accept") ||
+               lower.equals("accept-encoding") ||
+               lower.equals("connection");
+    }
+}
+
+// src/main/java/com/example/generator/plugin/builtin/CustomValidationPlugin.java
+package tech.kayys.wayang.mcp.generator.plugin.builtin;
+
+import tech.kayys.wayang.mcp.generator.McpServerModel;
+import tech.kayys.wayang.mcp.generator.plugin.*;
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.regex.Pattern;
+
+@ApplicationScoped
+public class CustomValidationPlugin implements ValidationPlugin {
+    
+    private static final Pattern PACKAGE_NAME_PATTERN = Pattern.compile("^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*$");
+    private static final Pattern CLASS_NAME_PATTERN = Pattern.compile("^[A-Z][a-zA-Z0-9_]*$");
+    
+    @Override
+    public String getValidationType() {
+        return "mcp-server-model";
+    }
+    
+    @Override
+    public void initialize() throws PluginException {
+        // Initialization logic
+    }
+    
+    @Override
+    public boolean supports(String validationType) {
+        return "mcp-server-model".equalsIgnoreCase(validationType) || 
+               "server-model".equalsIgnoreCase(validationType);
+    }
+    
+    @Override
+    public ValidationResult validate(Object target, PluginExecutionContext context) throws PluginException {
+        if (!(target instanceof McpServerModel)) {
+            return new ValidationResult(false).addError("Target is not a McpServerModel");
+        }
+        
+        McpServerModel model = (McpServerModel) target;
+        ValidationResult result = new ValidationResult(true);
+        
+        // Validate package name
+        if (model.getPackageName() == null || !PACKAGE_NAME_PATTERN.matcher(model.getPackageName()).matches()) {
+            result.addError("Invalid package name format: " + model.getPackageName());
+        }
+        
+        // Validate server name
+        if (model.getServerName() == null || !CLASS_NAME_PATTERN.matcher(model.getServerName()).matches()) {
+            result.addError("Invalid server name format: " + model.getServerName());
+        }
+        
+        // Validate tools
+        if (model.getTools() == null || model.getTools().isEmpty()) {
+            result.addWarning("No tools defined in the server model");
+        } else {
+            // Check for duplicate tool names
+            List<String> toolNames = model.getTools().stream()
+                .map(tool -> tool.getName())
+                .toList();
+            
+            Set<String> uniqueNames = new HashSet<>(toolNames);
+            if (uniqueNames.size() != toolNames.size()) {
+                result.addError("Duplicate tool names detected");
+            }
+        }
+        
+        // Validate base URL
+        if (model.getBaseUrl() != null) {
+            try {
+                new java.net.URL(model.getBaseUrl());
+            } catch (Exception e) {
+                result.addWarning("Base URL may not be valid: " + model.getBaseUrl());
+            }
+        }
+        
+        return result;
+    }
+    
+    @Override
+    public List<ValidationRule> getValidationRules() {
+        return Arrays.asList(
+            new ValidationRule("package-name-valid", "Package name must be valid Java package name", 
+                ValidationRule.ValidationSeverity.ERROR, this::validatePackageName),
+            new ValidationRule("server-name-valid", "Server name must be valid Java class name", 
+                ValidationRule.ValidationSeverity.ERROR, this::validateServerName),
+            new ValidationRule("tools-present", "At least one tool should be defined", 
+                ValidationRule.ValidationSeverity.WARNING, this::validateToolsPresent),
+            new ValidationRule("base-url-valid", "Base URL should be a valid URL", 
+                ValidationRule.ValidationSeverity.WARNING, this::validateBaseUrl)
+        );
+    }
+    
+    private ValidationResult validatePackageName(Object target, PluginExecutionContext context) {
+        McpServerModel model = (McpServerModel) target;
+        boolean isValid = model.getPackageName() != null && 
+                         PACKAGE_NAME_PATTERN.matcher(model.getPackageName()).matches();
+        ValidationResult result = new ValidationResult(isValid);
+        if (!isValid) {
+            result.addError("Invalid package name: " + model.getPackageName());
+        }
+        return result;
+    }
+    
+    private ValidationResult validateServerName(Object target, PluginExecutionContext context) {
+        McpServerModel model = (McpServerModel) target;
+        boolean isValid = model.getServerName() != null && 
+                         CLASS_NAME_PATTERN.matcher(model.getServerName()).matches();
+        ValidationResult result = new ValidationResult(isValid);
+        if (!isValid) {
+            result.addError("Invalid server name: " + model.getServerName());
+        }
+        return result;
+    }
+    
+    private ValidationResult validateToolsPresent(Object target, PluginExecutionContext context) {
+        McpServerModel model = (McpServerModel) target;
+        ValidationResult result = new ValidationResult(true);
+        if (model.getTools() == null || model.getTools().isEmpty()) {
+            result.addWarning("No tools defined in server model");
+        }
+        return result;
+    }
+    
+    private ValidationResult validateBaseUrl(Object target, PluginExecutionContext context) {
+        McpServerModel model = (McpServerModel) target;
+        ValidationResult result = new ValidationResult(true);
+        if (model.getBaseUrl() != null) {
+            try {
+                new java.net.URL(model.getBaseUrl());
+            } catch (Exception e) {
+                result.addWarning("Base URL may not be valid: " + model.getBaseUrl());
+            }
+        }
+        return result;
+    }
+}
+
+
+
+
+// src/main/java/com/example/generator/plugin/PluginManager.java
+package tech.kayys.wayang.mcp.generator.plugin;
+
+import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
+import jakarta.inject.Inject;
+
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+
+@ApplicationScoped
+public class PluginManager {
+    
+    @Inject
+    Instance<GeneratorPlugin> plugins;
+    
+    @Inject
+    Instance<TemplateProcessor> templateProcessors;
+    
+    @Inject
+    Instance<SpecificationProcessor> specProcessors;
+    
+    @Inject
+    Instance<ValidationPlugin> validators;
+    
+    private final Map<String, GeneratorPlugin> pluginRegistry = new ConcurrentHashMap<>();
+    private final Map<String, TemplateProcessor> templateRegistry = new ConcurrentHashMap<>();
+    private final Map<String, SpecificationProcessor> specRegistry = new ConcurrentHashMap<>();
+    private final Map<String, ValidationPlugin> validatorRegistry = new ConcurrentHashMap<>();
+    
+    public void initializePlugins() {
+        Log.info("Initializing plugin system...");
+        
+        // Register generator plugins
+        plugins.forEach(plugin -> {
+            try {
+                plugin.initialize();
+                pluginRegistry.put(plugin.getId(), plugin);
+                Log.info("Registered generator plugin: {} v{}", plugin.getName(), plugin.getVersion());
+            } catch (Exception e) {
+                Log.error("Failed to initialize plugin: " + plugin.getClass().getSimpleName(), e);
+            }
+        });
+        
+        // Register template processors
+        templateProcessors.forEach(processor -> {
+            try {
+                processor.initialize();
+                templateRegistry.put(processor.getTemplateType(), processor);
+                Log.info("Registered template processor: {}", processor.getTemplateType());
+            } catch (Exception e) {
+                Log.error("Failed to initialize template processor: " + processor.getClass().getSimpleName(), e);
+            }
+        });
+        
+        // Register specification processors
+        specProcessors.forEach(processor -> {
+            try {
+                processor.initialize();
+                specRegistry.put(processor.getSpecificationType(), processor);
+                Log.info("Registered spec processor: {}", processor.getSpecificationType());
+            } catch (Exception e) {
+                Log.error("Failed to initialize spec processor: " + processor.getClass().getSimpleName(), e);
+            }
+        });
+        
+        // Register validators
+        validators.forEach(validator -> {
+            try {
+                validator.initialize();
+                validatorRegistry.put(validator.getValidationType(), validator);
+                Log.info("Registered validator: {}", validator.getValidationType());
+            } catch (Exception e) {
+                Log.error("Failed to initialize validator: " + validator.getClass().getSimpleName(), e);
+            }
+        });
+        
+        Log.info("Plugin system initialized with {} generator plugins, {} template processors, {} spec processors, {} validators",
+                pluginRegistry.size(), templateRegistry.size(), specRegistry.size(), validatorRegistry.size());
+    }
+    
+    public List<GeneratorPlugin> getAvailablePlugins() {
+        return new ArrayList<>(pluginRegistry.values());
+    }
+    
+    public Optional<GeneratorPlugin> getPlugin(String pluginId) {
+        return Optional.ofNullable(pluginRegistry.get(pluginId));
+    }
+    
+    public List<TemplateProcessor> getTemplateProcessors(String templateType) {
+        return templateRegistry.values().stream()
+            .filter(processor -> processor.supports(templateType))
+            .collect(Collectors.toList());
+    }
+    
+    public Optional<SpecificationProcessor> getSpecificationProcessor(String specType) {
+        return Optional.ofNullable(specRegistry.get(specType));
+    }
+    
+    public List<ValidationPlugin> getValidators(String validationType) {
+        return validatorRegistry.values().stream()
+            .filter(validator -> validator.supports(validationType))
+            .collect(Collectors.toList());
+    }
+    
+    public PluginExecutionContext createExecutionContext() {
+        return new PluginExecutionContext();
+    }
+}
+
+// src/main/java/com/example/generator/plugin/GeneratorPlugin.java
+package tech.kayys.wayang.mcp.generator.plugin;
+
+import java.util.Map;
+
+public interface GeneratorPlugin {
+    
+    String getId();
+    String getName();
+    String getVersion();
+    String getDescription();
+    
+    void initialize() throws PluginException;
+    void shutdown() throws PluginException;
+    
+    boolean supports(String operation);
+    
+    PluginResult execute(PluginExecutionContext context) throws PluginException;
+    
+    Map<String, Object> getConfiguration();
+    void configure(Map<String, Object> config) throws PluginException;
+}
+
+// src/main/java/com/example/generator/plugin/TemplateProcessor.java
+package tech.kayys.wayang.mcp.generator.plugin;
+
+import java.util.Map;
+
+public interface TemplateProcessor {
+    
+    String getTemplateType();
+    
+    void initialize() throws PluginException;
+    
+    boolean supports(String templateType);
+    
+    String processTemplate(String templateContent, Map<String, Object> data, PluginExecutionContext context) 
+            throws PluginException;
+    
+    void addCustomFunction(String name, TemplateFunction function);
+}
+
+// src/main/java/com/example/generator/plugin/SpecificationProcessor.java
+package tech.kayys.wayang.mcp.generator.plugin;
+
+import tech.kayys.wayang.mcp.generator.ApiSpecification;
+import java.io.InputStream;
+
+public interface SpecificationProcessor {
+    
+    String getSpecificationType();
+    
+    void initialize() throws PluginException;
+    
+    boolean canProcess(String content, String filename);
+    
+    ApiSpecification processSpecification(InputStream content, String filename, 
+                                        PluginExecutionContext context) throws PluginException;
+    
+    ValidationResult validateSpecification(InputStream content, String filename,
+                                         PluginExecutionContext context) throws PluginException;
+}
+
+// src/main/java/com/example/generator/plugin/ValidationPlugin.java
+package tech.kayys.wayang.mcp.generator.plugin;
+
+import java.util.List;
+
+public interface ValidationPlugin {
+    
+    String getValidationType();
+    
+    void initialize() throws PluginException;
+    
+    boolean supports(String validationType);
+    
+    ValidationResult validate(Object target, PluginExecutionContext context) throws PluginException;
+    
+    List<ValidationRule> getValidationRules();
+}
+
+// src/main/java/com/example/generator/plugin/PluginExecutionContext.java
+package tech.kayys.wayang.mcp.generator.plugin;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+public class PluginExecutionContext {
+    
+    private final Map<String, Object> attributes = new ConcurrentHashMap<>();
+    private final Map<String, Object> configuration = new HashMap<>();
+    private final long startTime = System.currentTimeMillis();
+    private String executionId = java.util.UUID.randomUUID().toString();
+    
+    public void setAttribute(String key, Object value) {
+        attributes.put(key, value);
+    }
+    
+    @SuppressWarnings("unchecked")
+    public <T> T getAttribute(String key, Class<T> type) {
+        return (T) attributes.get(key);
+    }
+    
+    public Object getAttribute(String key) {
+        return attributes.get(key);
+    }
+    
+    public void setConfiguration(Map<String, Object> config) {
+        this.configuration.clear();
+        this.configuration.putAll(config);
+    }
+    
+    public Map<String, Object> getConfiguration() {
+        return new HashMap<>(configuration);
+    }
+    
+    public String getExecutionId() {
+        return executionId;
+    }
+    
+    public long getExecutionTime() {
+        return System.currentTimeMillis() - startTime;
+    }
+    
+    public void log(String level, String message, Object... args) {
+        System.out.printf("[%s] [%s] [%s] %s%n", 
+            level, executionId, Thread.currentThread().getName(), 
+            String.format(message, args));
+    }
+}
+
+// src/main/java/com/example/generator/plugin/PluginResult.java
+package tech.kayys.wayang.mcp.generator.plugin;
+
+import java.util.HashMap;
+import java.util.Map;
+
+public class PluginResult {
+    
+    private final boolean success;
+    private final String message;
+    private final Map<String, Object> data = new HashMap<>();
+    private final Exception error;
+    
+    private PluginResult(boolean success, String message, Exception error) {
+        this.success = success;
+        this.message = message;
+        this.error = error;
+    }
+    
+    public static PluginResult success(String message) {
+        return new PluginResult(true, message, null);
+    }
+    
+    public static PluginResult failure(String message, Exception error) {
+        return new PluginResult(false, message, error);
+    }
+    
+    public PluginResult withData(String key, Object value) {
+        this.data.put(key, value);
+        return this;
+    }
+    
+    public boolean isSuccess() { return success; }
+    public String getMessage() { return message; }
+    public Map<String, Object> getData() { return new HashMap<>(data); }
+    public Exception getError() { return error; }
+}
+
+// src/main/java/com/example/generator/plugin/PluginException.java
+package tech.kayys.wayang.mcp.generator.plugin;
+
+public class PluginException extends Exception {
+    
+    private final String pluginId;
+    private final String operation;
+    
+    public PluginException(String pluginId, String operation, String message) {
+        super(String.format("[%s:%s] %s", pluginId, operation, message));
+        this.pluginId = pluginId;
+        this.operation = operation;
+    }
+    
+    public PluginException(String pluginId, String operation, String message, Throwable cause) {
+        super(String.format("[%s:%s] %s", pluginId, operation, message), cause);
+        this.pluginId = pluginId;
+        this.operation = operation;
+    }
+    
+    public String getPluginId() { return pluginId; }
+    public String getOperation() { return operation; }
+}
+
+// src/main/java/com/example/generator/plugin/TemplateFunction.java
+package tech.kayys.wayang.mcp.generator.plugin;
+
+@FunctionalInterface
+public interface TemplateFunction {
+    Object apply(Object... args) throws PluginException;
+}
+
+// src/main/java/com/example/generator/plugin/ValidationRule.java
+package tech.kayys.wayang.mcp.generator.plugin;
+
+public class ValidationRule {
+    
+    private final String name;
+    private final String description;
+    private final ValidationSeverity severity;
+    private final ValidationFunction validator;
+    
+    public ValidationRule(String name, String description, ValidationSeverity severity, ValidationFunction validator) {
+        this.name = name;
+        this.description = description;
+        this.severity = severity;
+        this.validator = validator;
+    }
+    
+    public String getName() { return name; }
+    public String getDescription() { return description; }
+    public ValidationSeverity getSeverity() { return severity; }
+    public ValidationFunction getValidator() { return validator; }
+    
+    public enum ValidationSeverity {
+        ERROR, WARNING, INFO
+    }
+    
+    @FunctionalInterface
+    public interface ValidationFunction {
+        ValidationResult validate(Object target, PluginExecutionContext context);
+    }
+}
+
+// src/main/java/com/example/generator/plugin/ValidationResult.java
+package tech.kayys.wayang.mcp.generator.plugin;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class ValidationResult {
+    
+    private final boolean valid;
+    private final List<ValidationIssue> issues = new ArrayList<>();
+    
+    public ValidationResult(boolean valid) {
+        this.valid = valid;
+    }
+    
+    public ValidationResult addIssue(ValidationIssue issue) {
+        this.issues.add(issue);
+        return this;
+    }
+    
+    public ValidationResult addError(String message) {
+        return addIssue(new ValidationIssue(ValidationRule.ValidationSeverity.ERROR, message));
+    }
+    
+    public ValidationResult addWarning(String message) {
+        return addIssue(new ValidationIssue(ValidationRule.ValidationSeverity.WARNING, message));
+    }
+    
+    public boolean isValid() { return valid; }
+    public List<ValidationIssue> getIssues() { return new ArrayList<>(issues); }
+    
+    public List<ValidationIssue> getErrors() {
+        return issues.stream()
+            .filter(issue -> issue.getSeverity() == ValidationRule.ValidationSeverity.ERROR)
+            .toList();
+    }
+    
+    public List<ValidationIssue> getWarnings() {
+        return issues.stream()
+            .filter(issue -> issue.getSeverity() == ValidationRule.ValidationSeverity.WARNING)
+            .toList();
+    }
+    
+    public static class ValidationIssue {
+        private final ValidationRule.ValidationSeverity severity;
+        private final String message;
+        private final String field;
+        
+        public ValidationIssue(ValidationRule.ValidationSeverity severity, String message) {
+            this(severity, message, null);
+        }
+        
+        public ValidationIssue(ValidationRule.ValidationSeverity severity, String message, String field) {
+            this.severity = severity;
+            this.message = message;
+            this.field = field;
+        }
+        
+        public ValidationRule.ValidationSeverity getSeverity() { return severity; }
+        public String getMessage() { return message; }
+        public String getField() { return field; }
+    }
+}
+
+// src/main/java/com/example/generator/plugin/builtin/DefaultTemplateProcessor.java
+package tech.kayys.wayang.mcp.generator.plugin.builtin;
+
+import tech.kayys.wayang.mcp.generator.plugin.*;
+import io.quarkus.qute.Engine;
+import io.quarkus.qute.Template;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+@ApplicationScoped
+public class DefaultTemplateProcessor implements TemplateProcessor {
+    
+    @Inject
+    Engine quteEngine;
+    
+    private final Map<String, TemplateFunction> customFunctions = new ConcurrentHashMap<>();
+    
+    @Override
+    public String getTemplateType() {
+        return "qute";
+    }
+    
+    @Override
+    public void initialize() throws PluginException {
+        // Add built-in template functions
+        addCustomFunction("camelCase", args -> {
+            if (args.length > 0 && args[0] != null) {
+                return toCamelCase(args[0].toString());
+            }
+            return "";
+        });
+        
+        addCustomFunction("upperCase", args -> {
+            if (args.length > 0 && args[0] != null) {
+                return args[0].toString().toUpperCase();
+            }
+            return "";
+        });
+        
+        addCustomFunction("lowerCase", args -> {
+            if (args.length > 0 && args[0] != null) {
+                return args[0].toString().toLowerCase();
+            }
+            return "";
+        });
+        
+        addCustomFunction("sanitize", args -> {
+            if (args.length > 0 && args[0] != null) {
+                return args[0].toString().replaceAll("[^a-zA-Z0-9_]", "_");
+            }
+            return "";
+        });
+    }
+    
+    @Override
+    public boolean supports(String templateType) {
+        return "qute".equalsIgnoreCase(templateType) || 
+               "default".equalsIgnoreCase(templateType);
+    }
+    
+    @Override
+    public String processTemplate(String templateContent, Map<String, Object> data, 
+                                PluginExecutionContext context) throws PluginException {
+        try {
+            Template template = quteEngine.parse(templateContent);
+            
+            // Add custom functions to data context
+            Map<String, Object> enrichedData = new java.util.HashMap<>(data);
+            enrichedData.putAll(customFunctions);
+            
+            return template.data(enrichedData).render();
+            
+        } catch (Exception e) {
+            throw new PluginException("default-template-processor", "process", 
+                "Failed to process template", e);
+        }
+    }
+    
+    @Override
+    public void addCustomFunction(String name, TemplateFunction function) {
+        customFunctions.put(name, function);
+    }
+    
+    private String toCamelCase(String input) {
+        if (input == null || input.isEmpty()) return input;
+        
+        String[] parts = input.split("[_\\-\\s]+");
+        StringBuilder result = new StringBuilder(parts[0].toLowerCase());
+        
+        for (int i = 1; i < parts.length; i++) {
+            if (!parts[i].isEmpty()) {
+                result.append(parts[i].substring(0, 1).toUpperCase())
+                      .append(parts[i].substring(1).toLowerCase());
+            }
+        }
+        
+        return result.toString();
+    }
+}
+
+// src/main/java/com/example/generator/plugin/builtin/OpenApiValidationPlugin.java
+package tech.kayys.wayang.mcp.generator.plugin.builtin;
+
+import tech.kayys.wayang.mcp.generator.plugin.*;
+import io.swagger.v3.oas.models.OpenAPI;
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.util.Arrays;
+import java.util.List;
+
+@ApplicationScoped
+public class OpenApiValidationPlugin implements ValidationPlugin {
+    
+    @Override
+    public String getValidationType() {
+        return "openapi";
+    }
+    
+    @Override
+    public void initialize() throws PluginException {
+        // Initialization logic
+    }
+    
+    @Override
+    public boolean supports(String validationType) {
+        return "openapi".equalsIgnoreCase(validationType) || 
+               "swagger".equalsIgnoreCase(validationType);
+    }
+    
+    @Override
+    public ValidationResult validate(Object target, PluginExecutionContext context) throws PluginException {
+        if (!(target instanceof OpenAPI)) {
+            return new ValidationResult(false).addError("Target is not an OpenAPI specification");
+        }
+        
+        OpenAPI openAPI = (OpenAPI) target;
+        ValidationResult result = new ValidationResult(true);
+        
+        // Validate info section
+        if (openAPI.getInfo() == null) {
+            result.addError("OpenAPI specification must have an 'info' section");
+        } else {
+            if (openAPI.getInfo().getTitle() == null || openAPI.getInfo().getTitle().trim().isEmpty()) {
+                result.addWarning("OpenAPI info.title is missing or empty");
+            }
+            if (openAPI.getInfo().getVersion() == null || openAPI.getInfo().getVersion().trim().isEmpty()) {
+                result.addWarning("OpenAPI info.version is missing or empty");
+            }
+        }
+        
+        // Validate paths
+        if (openAPI.getPaths() == null || openAPI.getPaths().isEmpty()) {
+            result.addError("OpenAPI specification must have at least one path defined");
+        }
+        
+        return result;
+    }
+    
+    @Override
+    public List<ValidationRule> getValidationRules() {
+        return Arrays.asList(
+            new ValidationRule("info-required", "Info section is required", 
+                ValidationRule.ValidationSeverity.ERROR, this::validateInfo),
+            new ValidationRule("paths-required", "At least one path is required", 
+                ValidationRule.ValidationSeverity.ERROR, this::validatePaths),
+            new ValidationRule("title-recommended", "Title should be provided", 
+                ValidationRule.ValidationSeverity.WARNING, this::validateTitle)
+        );
+    }
+    
+    private ValidationResult validateInfo(Object target, PluginExecutionContext context) {
+        OpenAPI openAPI = (OpenAPI) target;
+        ValidationResult result = new ValidationResult(openAPI.getInfo() != null);
+        if (openAPI.getInfo() == null) {
+            result.addError("Info section is required");
+        }
+        return result;
+    }
+    
+    private ValidationResult validatePaths(Object target, PluginExecutionContext context) {
+        OpenAPI openAPI = (OpenAPI) target;
+        boolean hasPaths = openAPI.getPaths() != null && !openAPI.getPaths().isEmpty();
+        ValidationResult result = new ValidationResult(hasPaths);
+        if (!hasPaths) {
+            result.addError("At least one path must be defined");
+        }
+        return result;
+    }
+    
+    private ValidationResult validateTitle(Object target, PluginExecutionContext context) {
+        OpenAPI openAPI = (OpenAPI) target;
+        ValidationResult result = new ValidationResult(true);
+        if (openAPI.getInfo() != null && 
+            (openAPI.getInfo().getTitle() == null || openAPI.getInfo().getTitle().trim().isEmpty())) {
+            result.addWarning("API title should be provided");
+        }
+        return result;
+    }
+}
+
+

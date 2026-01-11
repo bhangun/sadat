@@ -1,0 +1,2452 @@
+}
+
+// src/main/java/com/example/generator/SpecificationDetector.java
+package tech.kayys.wayang.mcp.generator;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.enterprise.context.ApplicationScoped;
+import io.quarkus.logging.Log;
+
+@ApplicationScoped
+public class SpecificationDetector {
+    
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public McpGeneratorResource.SpecificationType detectSpecificationType(String content, String filename) {
+        try {
+            JsonNode root = objectMapper.readTree(content);
+            
+            // Check for Postman collection indicators
+            if (root.has("info") && root.has("item")) {
+                JsonNode info = root.get("info");
+                if (info.has("name") || info.has("_postman_id") || info.has("schema")) {
+                    Log.debug("Detected Postman collection (info + item structure)");
+                    return McpGeneratorResource.SpecificationType.POSTMAN;
+                }
+            }
+            
+            // Check for Postman v2.1.0 schema
+            if (root.has("info") && root.get("info").has("schema")) {
+                String schema = root.get("info").get("schema").asText();
+                if (schema.contains("postman")) {
+                    Log.debug("Detected Postman collection (schema field contains 'postman')");
+                    return McpGeneratorResource.SpecificationType.POSTMAN;
+                }
+            }
+            
+            // Check filename patterns
+            if (filename != null) {
+                String lowerFilename = filename.toLowerCase();
+                if (lowerFilename.contains("postman") || lowerFilename.endsWith(".postman_collection.json")) {
+                    Log.debug("Detected Postman collection based on filename pattern");
+                    return McpGeneratorResource.SpecificationType.POSTMAN;
+                }
+                
+                if (lowerFilename.contains("openapi") || lowerFilename.contains("swagger") || 
+                    lowerFilename.endsWith(".openapi.json") || lowerFilename.endsWith(".swagger.json")) {
+                    Log.debug("Detected OpenAPI specification based on filename pattern");
+                    return McpGeneratorResource.SpecificationType.OPENAPI;
+                }
+            }
+            
+            // Default fallback - try OpenAPI first
+            if (root.has("paths") || root.has("components")) {
+                Log.debug("Fallback detection: OpenAPI (has paths or components)");
+                return McpGeneratorResource.SpecificationType.OPENAPI;
+            }
+            
+            Log.warn("Unable to detect specification type, defaulting to OpenAPI");
+            return McpGeneratorResource.SpecificationType.OPENAPI;
+            
+        } catch (Exception e) {
+            Log.error("Error detecting specification type", e);
+            return McpGeneratorResource.SpecificationType.OPENAPI;
+        }
+    }
+}
+
+// src/main/java/com/example/generator/PostmanParser.java
+package tech.kayys.wayang.mcp.generator;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.quarkus.logging.Log;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.net.URL;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+@ApplicationScoped
+public class PostmanParser {
+    
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private static final Pattern VARIABLE_PATTERN = Pattern.compile("\\{\\{([^}]+)\\}\\}");
+
+    public ApiSpecification parsePostmanCollection(String content, String collectionName) {
+        try {
+            JsonNode root = objectMapper.readTree(content);
+            
+            ApiSpecification apiSpec = new ApiSpecification();
+            
+            // Parse collection info
+            parseCollectionInfo(root, apiSpec, collectionName);
+            
+            // Parse variables for base URL detection
+            Map<String, String> variables = parseVariables(root);
+            
+            // Parse items (requests)
+            List<ApiOperation> operations = new ArrayList<>();
+            if (root.has("item")) {
+                parseItems(root.get("item"), operations, variables, "");
+            }
+            
+            apiSpec.setOperations(operations);
+            
+            // Extract base URL from first operation if not set
+            if (apiSpec.getBaseUrl() == null && !operations.isEmpty()) {
+                String baseUrl = extractBaseUrlFromOperations(operations);
+                apiSpec.setBaseUrl(baseUrl);
+            }
+            
+            Log.info("Parsed Postman collection: {} operations", operations.size());
+            return apiSpec;
+            
+        } catch (Exception e) {
+            Log.error("Failed to parse Postman collection", e);
+            throw new RuntimeException("Failed to parse Postman collection: " + e.getMessage(), e);
+        }
+    }
+
+    private void parseCollectionInfo(JsonNode root, ApiSpecification apiSpec, String fallbackName) {
+        if (root.has("info")) {
+            JsonNode info = root.get("info");
+            
+            String name = info.has("name") ? info.get("name").asText() : fallbackName;
+            apiSpec.setTitle(name);
+            
+            if (info.has("description")) {
+                JsonNode desc = info.get("description");
+                String description = desc.isTextual() ? desc.asText() : 
+                    desc.has("content") ? desc.get("content").asText() : "";
+                apiSpec.setDescription(description);
+            }
+            
+            if (info.has("version")) {
+                apiSpec.setVersion(info.get("version").asText());
+            } else {
+                apiSpec.setVersion("1.0.0");
+            }
+        } else {
+            apiSpec.setTitle(fallbackName);
+            apiSpec.setDescription("Imported from Postman collection");
+            apiSpec.setVersion("1.0.0");
+        }
+    }
+
+    private Map<String, String> parseVariables(JsonNode root) {
+        Map<String, String> variables = new HashMap<>();
+        
+        // Parse collection-level variables
+        if (root.has("variable")) {
+            JsonNode variablesNode = root.get("variable");
+            if (variablesNode.isArray()) {
+                for (JsonNode var : variablesNode) {
+                    if (var.has("key") && var.has("value")) {
+                        variables.put(var.get("key").asText(), var.get("value").asText());
+                    }
+                }
+            }
+        }
+        
+        return variables;
+    }
+
+    private void parseItems(JsonNode items, List<ApiOperation> operations, Map<String, String> variables, String pathPrefix) {
+        if (!items.isArray()) return;
+        
+        for (JsonNode item : items) {
+            if (item.has("item")) {
+                // This is a folder, recurse
+                String folderName = item.has("name") ? item.get("name").asText() : "";
+                String newPrefix = pathPrefix.isEmpty() ? folderName : pathPrefix + "/" + folderName;
+                parseItems(item.get("item"), operations, variables, newPrefix);
+            } else if (item.has("request")) {
+                // This is a request
+                ApiOperation operation = parseRequest(item, variables, pathPrefix);
+                if (operation != null) {
+                    operations.add(operation);
+                }
+            }
+        }
+    }
+
+    private ApiOperation parseRequest(JsonNode item, Map<String, String> variables, String pathPrefix) {
+        JsonNode request = item.get("request");
+        if (!request.has("url") || !request.has("method")) {
+            Log.warn("Skipping request without URL or method: {}", item.has("name") ? item.get("name").asText() : "unnamed");
+            return null;
+        }
+        
+        ApiOperation operation = new ApiOperation();
+        
+        // Set basic info
+        String name = item.has("name") ? item.get("name").asText() : "unnamed_request";
+        operation.setOperationId(sanitizeOperationId(name));
+        operation.setSummary(name);
+        
+        if (item.has("description")) {
+            JsonNode desc = item.get("description");
+            String description = desc.isTextual() ? desc.asText() : 
+                desc.has("content") ? desc.get("content").asText() : "";
+            operation.setDescription(description);
+        }
+        
+        // Parse method
+        String method = request.get("method").asText().toUpperCase();
+        operation.setMethod(method);
+        
+        // Parse URL
+        String url = parseUrl(request.get("url"), variables);
+        String[] urlParts = parseUrlParts(url);
+        operation.setPath(urlParts[1]); // path part
+        
+        // Parse parameters
+        List<ApiParameter> parameters = new ArrayList<>();
+        
+        // URL parameters (path and query)
+        parseUrlParameters(request.get("url"), parameters);
+        
+        // Headers
+        if (request.has("header")) {
+            parseHeaders(request.get("header"), parameters);
+        }
+        
+        // Body
+        if (request.has("body") && ("POST".equals(method) || "PUT".equals(method) || "PATCH".equals(method))) {
+            parseBody(request.get("body"), parameters);
+        }
+        
+        operation.setParameters(parameters);
+        
+        // Set default response types
+        Map<String, String> responseTypes = new HashMap<>();
+        responseTypes.put("200", "Success");
+        responseTypes.put("400", "Bad Request");
+        responseTypes.put("500", "Internal Server Error");
+        operation.setResponseTypes(responseTypes);
+        
+        return operation;
+    }
+
+    private String parseUrl(JsonNode urlNode, Map<String, String> variables) {
+        if (urlNode.isTextual()) {
+            return replaceVariables(urlNode.asText(), variables);
+        }
+        
+        if (urlNode.has("raw")) {
+            return replaceVariables(urlNode.get("raw").asText(), variables);
+        }
+        
+        // Construct from parts
+        StringBuilder url = new StringBuilder();
+        
+        if (urlNode.has("protocol")) {
+            url.append(urlNode.get("protocol").asText()).append("://");
+        } else {
+            url.append("https://");
+        }
+        
+        if (urlNode.has("host")) {
+            JsonNode host = urlNode.get("host");
+            if (host.isArray()) {
+                for (int i = 0; i < host.size(); i++) {
+                    if (i > 0) url.append(".");
+                    url.append(host.get(i).asText());
+                }
+            } else {
+                url.append(host.asText());
+            }
+        }
+        
+        if (urlNode.has("port")) {
+            url.append(":").append(urlNode.get("port").asText());
+        }
+        
+        if (urlNode.has("path")) {
+            JsonNode path = urlNode.get("path");
+            if (path.isArray()) {
+                for (JsonNode segment : path) {
+                    url.append("/").append(segment.asText());
+                }
+            } else {
+                url.append(path.asText());
+            }
+        }
+        
+        if (urlNode.has("query")) {
+            url.append("?");
+            JsonNode query = urlNode.get("query");
+            if (query.isArray()) {
+                boolean first = true;
+                for (JsonNode param : query) {
+                    if (!first) url.append("&");
+                    url.append(param.get("key").asText()).append("=").append(param.get("value").asText());
+                    first = false;
+                }
+            }
+        }
+        
+        return replaceVariables(url.toString(), variables);
+    }
+
+    private String replaceVariables(String text, Map<String, String> variables) {
+        Matcher matcher = VARIABLE_PATTERN.matcher(text);
+        StringBuffer result = new StringBuffer();
+        
+        while (matcher.find()) {
+            String varName = matcher.group(1);
+            String replacement = variables.getOrDefault(varName, "{{" + varName + "}}");
+            matcher.appendReplacement(result, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(result);
+        
+        return result.toString();
+    }
+
+    private String[] parseUrlParts(String fullUrl) {
+        try {
+            URL url = new URL(fullUrl);
+            String baseUrl = url.getProtocol() + "://" + url.getHost();
+            if (url.getPort() != -1) {
+                baseUrl += ":" + url.getPort();
+            }
+            String path = url.getPath();
+            if (path.isEmpty()) {
+                path = "/";
+            }
+            return new String[]{baseUrl, path};
+        } catch (Exception e) {
+            Log.warn("Failed to parse URL: {}, using fallback", fullUrl);
+            int pathStart = fullUrl.indexOf('/', 8); // Skip protocol://
+            if (pathStart != -1) {
+                return new String[]{fullUrl.substring(0, pathStart), fullUrl.substring(pathStart)};
+            } else {
+                return new String[]{fullUrl, "/"};
+            }
+        }
+    }
+
+    private void parseUrlParameters(JsonNode urlNode, List<ApiParameter> parameters) {
+        // Parse path variables
+        if (urlNode.has("variable")) {
+            JsonNode variables = urlNode.get("variable");
+            if (variables.isArray()) {
+                for (JsonNode var : variables) {
+                    if (var.has("key")) {
+                        ApiParameter param = new ApiParameter();
+                        param.setName(var.get("key").asText());
+                        param.setIn("path");
+                        param.setRequired(true);
+                        param.setType("string");
+                        param.setDescription(var.has("description") ? var.get("description").asText() : "Path parameter");
+                        parameters.add(param);
+                    }
+                }
+            }
+        }
+        
+        // Parse query parameters
+        if (urlNode.has("query")) {
+            JsonNode query = urlNode.get("query");
+            if (query.isArray()) {
+                for (JsonNode param : query) {
+                    if (param.has("key")) {
+                        ApiParameter apiParam = new ApiParameter();
+                        apiParam.setName(param.get("key").asText());
+                        apiParam.setIn("query");
+                        apiParam.setRequired(false);
+                        apiParam.setType("string");
+                        apiParam.setDescription(param.has("description") ? param.get("description").asText() : "Query parameter");
+                        if (param.has("value")) {
+                            apiParam.setExample(param.get("value").asText());
+                        }
+                        parameters.add(apiParam);
+                    }
+                }
+            }
+        }
+    }
+
+    private void parseHeaders(JsonNode headers, List<ApiParameter> parameters) {
+        if (!headers.isArray()) return;
+        
+        for (JsonNode header : headers) {
+            if (header.has("key") && header.has("value")) {
+                String key = header.get("key").asText();
+                
+                // Skip standard headers that are usually handled by HTTP client
+                if (isStandardHeader(key)) {
+                    continue;
+                }
+                
+                ApiParameter param = new ApiParameter();
+                param.setName(key);
+                param.setIn("header");
+                param.setRequired(false);
+                param.setType("string");
+                param.setDescription("Header parameter");
+                param.setExample(header.get("value").asText());
+                parameters.add(param);
+            }
+        }
+    }
+
+    private void parseBody(JsonNode body, List<ApiParameter> parameters) {
+        if (!body.has("mode")) return;
+        
+        String mode = body.get("mode").asText();
+        
+        switch (mode) {
+            case "raw":
+                if (body.has("raw")) {
+                    ApiParameter param = new ApiParameter();
+                    param.setName("body");
+                    param.setIn("body");
+                    param.setRequired(true);
+                    param.setType("object");
+                    param.setDescription("Request body");
+                    param.setExample(body.get("raw").asText());
+                    parameters.add(param);
+                }
+                break;
+                
+            case "formdata":
+            case "urlencoded":
+                if (body.has(mode)) {
+                    JsonNode formData = body.get(mode);
+                    if (formData.isArray()) {
+                        for (JsonNode field : formData) {
+                            if (field.has("key")) {
+                                ApiParameter param = new ApiParameter();
+                                param.setName(field.get("key").asText());
+                                param.setIn("formData");
+                                param.setRequired(false);
+                                param.setType("string");
+                                param.setDescription("Form parameter");
+                                if (field.has("value")) {
+                                    param.setExample(field.get("value").asText());
+                                }
+                                parameters.add(param);
+                            }
+                        }
+                    }
+                }
+                break;
+        }
+    }
+
+    private boolean isStandardHeader(String headerName) {
+        String lower = headerName.toLowerCase();
+        return lower.equals("content-type") || 
+               lower.equals("content-length") ||
+               lower.equals("host") ||
+               lower.equals("user-agent") ||
+               lower.equals("accept") ||
+               lower.equals("accept-encoding") ||
+               lower.equals("connection");
+    }
+
+    private String sanitizeOperationId(String name) {
+        return name.replaceAll("[^a-zA-Z0-9_]", "_")
+                  .replaceAll("_+", "_")
+                  .replaceAll("^_|_$", "");
+    }
+
+    private String extractBaseUrlFromOperations(List<ApiOperation> operations) {
+        // This would need access to the full URLs from operations
+        // For now, return a default
+        return "http://localhost:8080";
+    }
+}
+
+// src/main/java/com/example/generator/OpenApiConverter.java
+package tech.kayys.wayang.mcp.generator;
+
+import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.oas.models.Operation;
+import io.swagger.v3.oas.models.PathItem;
+import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.media.Content;
+import io.swagger.v3.oas.models.media.MediaType;
+import io.swagger.v3.oas.models.media.Schema;
+import io.swagger.v3.oas.models.parameters.Parameter;
+import io.swagger.v3.oas.models.parameters.RequestBody;
+import io.swagger.v3.oas.models.responses.ApiResponse;
+import io.swagger.v3.oas.models.servers.Server;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+public class OpenApiConverter {
+    
+    public static ApiSpecification convertToApiSpec(OpenAPI openAPI) {
+        ApiSpecification apiSpec = new ApiSpecification();
+        
+        // Convert info
+        if (openAPI.getInfo() != null) {
+            Info info = openAPI.getInfo();
+            apiSpec.setTitle(info.getTitle());
+            apiSpec.setDescription(info.getDescription());
+            apiSpec.setVersion(info.getVersion());
+        }
+        
+        // Extract base URL
+        if (openAPI.getServers() != null && !openAPI.getServers().isEmpty()) {
+            Server firstServer = openAPI.getServers().get(0);
+            apiSpec.setBaseUrl(firstServer.getUrl());
+        }
+        
+        // Convert security schemes
+        if (openAPI.getComponents() != null && openAPI.getComponents().getSecuritySchemes() != null) {
+            apiSpec.setSecuritySchemes(openAPI.getComponents().getSecuritySchemes());
+        }
+        
+        // Convert paths to operations
+        List<ApiOperation> operations = new ArrayList<>();
+        if (openAPI.getPaths() != null) {
+            openAPI.getPaths().forEach((path, pathItem) -> {
+                operations.addAll(convertPathItem(path, pathItem));
+            });
+        }
+        
+        apiSpec.setOperations(operations);
+        return apiSpec;
+    }
+    
+    private static List<ApiOperation> convertPathItem(String path, PathItem pathItem) {
+        List<ApiOperation> operations = new ArrayList<>();
+        
+        Map<PathItem.HttpMethod, Operation> operationMap = pathItem.readOperationsMap();
+        operationMap.forEach((method, operation) -> {
+            ApiOperation apiOp = convertOperation(path, method.name(), operation);
+            operations.add(apiOp);
+        });
+        
+        return operations;
+    }
+    
+    private static ApiOperation convertOperation(String path, String method, Operation operation) {
+        ApiOperation apiOp = new ApiOperation();
+        
+        apiOp.setPath(path);
+        apiOp.setMethod(method);
+        apiOp.setOperationId(operation.getOperationId());
+        apiOp.setSummary(operation.getSummary());
+        apiOp.setDescription(operation.getDescription());
+        
+        // Convert parameters
+        List<ApiParameter> parameters = new ArrayList<>();
+        if (operation.getParameters() != null) {
+            parameters.addAll(operation.getParameters().stream()
+                .map(OpenApiConverter::convertParameter)
+                .collect(Collectors.toList()));
+        }
+        
+        // Convert request body
+        if (operation.getRequestBody() != null) {
+            parameters.addAll(convertRequestBody(operation.getRequestBody()));
+        }
+        
+        apiOp.setParameters(parameters);
+        
+        // Convert responses
+        Map<String, String> responseTypes = new HashMap<>();
+        if (operation.getResponses() != null) {
+            operation.getResponses().forEach((code, response) -> {
+                responseTypes.put(code, response.getDescription());
+            });
+        }
+        apiOp.setResponseTypes(responseTypes);
+        
+        // Convert security requirements
+        if (operation.getSecurity() != null) {
+            apiOp.setSecurityRequirements(operation.getSecurity());
+        }
+        
+        return apiOp;
+    }
+    
+    private static ApiParameter convertParameter(Parameter param) {
+        ApiParameter apiParam = new ApiParameter();
+        
+        apiParam.setName(param.getName());
+        apiParam.setIn(param.getIn());
+        apiParam.setDescription(param.getDescription());
+        apiParam.setRequired(param.getRequired() != null ? param.getRequired() : false);
+        
+        if (param.getSchema() != null) {
+            apiParam.setType(getSchemaType(param.getSchema()));
+        } else {
+            apiParam.setType("string");
+        }
+        
+        if (param.getExample() != null) {
+            apiParam.setExample(param.getExample().toString());
+        }
+        
+        return apiParam;
+    }
+    
+    private static List<ApiParameter> convertRequestBody(RequestBody requestBody) {
+        List<ApiParameter> parameters = new ArrayList<>();
+        
+        if (requestBody.getContent() != null) {
+            MediaType jsonContent = requestBody.getContent().get("application/json");
+            if (jsonContent != null && jsonContent.getSchema() != null) {
+                Schema schema = jsonContent.getSchema();
+                
+                if (schema.getProperties() != null) {
+                    schema.getProperties().forEach((propName, propSchema) -> {
+                        ApiParameter param = new ApiParameter();
+                        param.setName(propName);
+                        param.setIn("body");
+                        param.setType(getSchemaType(propSchema));
+                        param.setDescription(propSchema.getDescription());
+                        param.setRequired(schema.getRequired() != null && 
+                            schema.getRequired().contains(propName));
+                        parameters.add(param);
+                    });
+                } else {
+                    ApiParameter bodyParam = new ApiParameter();
+                    bodyParam.setName("requestBody");
+                    bodyParam.setIn("body");
+                    bodyParam.setType("object");
+                    bodyParam.setDescription(requestBody.getDescription());
+                    bodyParam.setRequired(requestBody.getRequired() != null ? requestBody.getRequired() : false);
+                    parameters.add(bodyParam);
+                }
+            }
+        }
+        
+        return parameters;
+    }
+    
+    private static String getSchemaType(Schema schema) {
+        if (schema == null) return "string";
+        
+        String type = schema.getType();
+        if (type != null) {
+            switch (type.toLowerCase()) {
+                case "integer":
+                    return schema.getFormat() != null && schema.getFormat().equals("int64") ? "long" : "int";
+                case "number":
+                    return schema.getFormat() != null && schema.getFormat().equals("float") ? "float" : "double";
+                case "boolean":
+                    return "boolean";
+                case "array":
+                    Schema items = schema.getItems();
+                    String itemType = items != null ? getSchemaType(items) : "string";
+                    return "List<" + itemType + ">";
+                case "object":
+                    return "object";
+                default:
+                    return "string";
+            }
+        }
+        
+        return "string";
+    }
+}
+
+// src/main/java/com/example/generator/ApiSpecification.java
+package tech.kayys.wayang.mcp.generator;
+
+import io.swagger.v3.oas.models.security.SecurityScheme;
+import java.util.List;
+import java.util.Map;
+
+public class ApiSpecification {
+    private String title;
+    private String description;
+    private String version;
+    private String baseUrl;
+    private List<ApiOperation> operations;
+    private Map<String, SecurityScheme> securitySchemes;
+
+    // Getters and setters
+    public String getTitle() { return title; }
+    public void setTitle(String title) { this.title = title; }
+    
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
+    
+    public String getVersion() { return version; }
+    public void setVersion(String version) { this.version = version; }
+    
+    public String getBaseUrl() { return baseUrl; }
+    public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+    
+    public List<ApiOperation> getOperations() { return operations; }
+    public void setOperations(List<ApiOperation> operations) { this.operations = operations; }
+    
+    public Map<String, SecurityScheme> getSecuritySchemes() { return securitySchemes; }
+    public void setSecuritySchemes(Map<String, SecurityScheme> securitySchemes) { this.securitySchemes = securitySchemes; }
+}
+
+// src/main/java/com/example/generator/ApiOperation.java
+package tech.kayys.wayang.mcp.generator;
+
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import java.util.List;
+import java.util.Map;
+
+public class ApiOperation {
+    private String path;
+    private String method;
+    private String operationId;
+    private String summary;
+    private String description;
+    private List<ApiParameter> parameters;
+    private Map<String, String> responseTypes;
+    private List<SecurityRequirement> securityRequirements;
+
+    // Getters and setters
+    public String getPath() { return path; }
+    public void setPath(String path) { this.path = path; }
+    
+    public String getMethod() { return method; }
+    public void setMethod(String method) { this.method = method; }
+    
+    public String getOperationId() { return operationId; }
+    public void setOperationId(String operationId) { this.operationId = operationId; }
+    
+    public String getSummary() { return summary; }
+    public void setSummary(String summary) { this.summary = summary; }
+    
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
+    
+    public List<ApiParameter> getParameters() { return parameters; }
+    public void setParameters(List<ApiParameter> parameters) { this.parameters = parameters; }
+    
+    public Map<String, String> getResponseTypes() { return responseTypes; }
+    public void setResponseTypes(Map<String, String> responseTypes) { this.responseTypes = responseTypes; }
+    
+    public List<SecurityRequirement> getSecurityRequirements() { return securityRequirements; }
+    public void setSecurityRequirements(List<SecurityRequirement> securityRequirements) { 
+        this.securityRequirements = securityRequirements; 
+    }
+}
+
+// src/main/java/com/example/generator/ApiParameter.java
+package tech.kayys.wayang.mcp.generator;
+
+public class ApiParameter {
+    private String name;
+    private String in;
+    private String description;
+    private String type;
+    private boolean required;
+    private String example;
+    private String defaultValue;
+
+    // Getters and setters
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    
+    public String getIn() { return in; }
+    public void setIn(String in) { this.in = in; }
+    
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
+    
+    public String getType() { return type; }
+    public void setType(String type) { this.type = type; }
+    
+    public boolean isRequired() { return required; }
+    public void setRequired(boolean required) { this.required = required; }
+    
+    public String getExample() { return example; }
+    public void setExample(String example) { this.example = example; }
+    
+    public String getDefaultValue() { return defaultValue; }
+    public void setDefaultValue(String defaultValue) { this.defaultValue = defaultValue; }
+} OpenAPI indicators
+            if (root.has("openapi")) {
+                Log.debug("Detected OpenAPI specification (openapi field present)");
+                return McpGeneratorResource.SpecificationType.OPENAPI;
+            }
+            
+            if (root.has("swagger")) {
+                Log.debug("Detected OpenAPI/Swagger specification (swagger field present)");
+                return McpGeneratorResource.SpecificationType.OPENAPI;
+            }
+            
+            // Check for// pom.xml
+<?xml version="1.0"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd" 
+         xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>tech.kayys.wayang.mcp</groupId>
+  <artifactId>mcp-server-generator</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+  
+  <properties>
+    <compiler-plugin.version>3.11.0</compiler-plugin.version>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
+    <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
+    <quarkus.platform.version>3.6.0</quarkus.platform.version>
+  </properties>
+  
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>${quarkus.platform.group-id}</groupId>
+        <artifactId>${quarkus.platform.artifact-id}</artifactId>
+        <version>${quarkus.platform.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+  
+  <dependencies>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-resteasy-reactive-jackson</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-arc</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-qute</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-websockets</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-vertx</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.swagger.parser.v3</groupId>
+      <artifactId>swagger-parser</artifactId>
+      <version>2.1.16</version>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.dataformat</groupId>
+      <artifactId>jackson-dataformat-yaml</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-lang3</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>commons-io</groupId>
+      <artifactId>commons-io</artifactId>
+      <version>2.11.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.jayway.jsonpath</groupId>
+      <artifactId>json-path</artifactId>
+      <version>2.8.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.rest-assured</groupId>
+      <artifactId>rest-assured</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+  
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>${quarkus.platform.group-id}</groupId>
+        <artifactId>quarkus-maven-plugin</artifactId>
+        <version>${quarkus.platform.version}</version>
+        <extensions>true</extensions>
+        <executions>
+          <execution>
+            <goals>
+              <goal>build</goal>
+              <goal>generate-code</goal>
+              <goal>generate-code-tests</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>${compiler-plugin.version}</version>
+        <configuration>
+          <compilerArgs>
+            <arg>-parameters</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
+
+// src/main/java/com/example/generator/McpGeneratorResource.java
+package tech.kayys.wayang.mcp.generator;
+
+import io.quarkus.logging.Log;
+import io.smallrye.mutiny.Uni;
+import jakarta.inject.Inject;
+import jakarta.validation.constraints.NotNull;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import org.apache.commons.io.IOUtils;
+import org.jboss.resteasy.reactive.MultipartForm;
+import org.jboss.resteasy.reactive.PartType;
+import org.jboss.resteasy.reactive.RestForm;
+
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+
+@Path("/api/mcp-generator")
+@Produces(MediaType.APPLICATION_JSON)
+public class McpGeneratorResource {
+
+    @Inject
+    McpServerGeneratorService generatorService;
+
+    @Inject
+    McpServerConfig config;
+
+    public static class FileUpload {
+        @RestForm("file")
+        @PartType(MediaType.APPLICATION_OCTET_STREAM)
+        @NotNull
+        public InputStream file;
+
+        @RestForm("filename")
+        @PartType(MediaType.TEXT_PLAIN)
+        public String filename;
+
+        @RestForm("packageName")
+        @PartType(MediaType.TEXT_PLAIN)
+        public String packageName;
+
+        @RestForm("serverName")
+        @PartType(MediaType.TEXT_PLAIN)
+        public String serverName;
+
+        @RestForm("baseUrl")
+        @PartType(MediaType.TEXT_PLAIN)
+        public String baseUrl;
+
+        @RestForm("specType")
+        @PartType(MediaType.TEXT_PLAIN)
+        public String specType = "auto"; // auto, openapi, postman
+
+        @RestForm("collectionName")
+        @PartType(MediaType.TEXT_PLAIN)
+        public String collectionName;
+
+        public String getPackageNameOrDefault(String defaultValue) {
+            return packageName != null && !packageName.trim().isEmpty() ? packageName : defaultValue;
+        }
+        
+        public String getServerNameOrDefault(String defaultValue) {
+            return serverName != null && !serverName.trim().isEmpty() ? serverName : defaultValue;
+        }
+
+        public String getBaseUrlOrDefault(String defaultValue) {
+            return baseUrl != null && !baseUrl.trim().isEmpty() ? baseUrl : defaultValue;
+        }
+
+        public boolean isIncludeAuth() {
+            return "true".equalsIgnoreCase(includeAuth);
+        }
+
+        public SpecificationType getSpecType() {
+            if (specType == null) return SpecificationType.AUTO;
+            return switch (specType.toLowerCase()) {
+                case "openapi" -> SpecificationType.OPENAPI;
+                case "postman" -> SpecificationType.POSTMAN;
+                default -> SpecificationType.AUTO;
+            };
+        }
+
+        public String getCollectionNameOrDefault(String defaultValue) {
+            return collectionName != null && !collectionName.trim().isEmpty() ? collectionName : defaultValue;
+        }
+    }
+
+    public enum SpecificationType {
+        AUTO, OPENAPI, POSTMAN
+    }
+
+    @POST
+    @Path("/generate")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @Produces(MediaType.APPLICATION_OCTET_STREAM)
+    public Uni<Response> generateMcpServer(@MultipartForm FileUpload upload) {
+        Log.info("Starting MCP server generation for file: " + upload.filename);
+        
+        return generatorService.generateMcpServer(
+            upload.file, 
+            upload.filename, 
+            upload.getPackageNameOrDefault(config.defaultPackage()), 
+            upload.getServerNameOrDefault(config.defaultServerName()),
+            upload.getBaseUrlOrDefault(config.defaultBaseUrl()),
+            upload.isIncludeAuth(),
+            upload.getSpecType(),
+            upload.getCollectionNameOrDefault("Generated Collection")
+        ).map(zipBytes -> {
+            String filename = upload.getServerNameOrDefault(config.defaultServerName()).toLowerCase() + "-mcp-server.zip";
+            Log.info("Successfully generated MCP server ZIP: " + filename + " (" + zipBytes.length + " bytes)");
+            
+            return Response.ok(zipBytes)
+                .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
+                .header("Content-Type", "application/zip")
+                .header("Content-Length", String.valueOf(zipBytes.length))
+                .build();
+        })
+        .onFailure().recoverWithItem(throwable -> {
+            Log.error("Failed to generate MCP server", throwable);
+            
+            return Response.status(Response.Status.BAD_REQUEST)
+                .entity(new ErrorResponse("Generation failed: " + throwable.getMessage()))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+        });
+    }
+
+    @POST
+    @Path("/validate")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Uni<Response> validateOpenApi(@MultipartForm FileUpload upload) {
+        Log.info("Validating OpenAPI specification: " + upload.filename);
+        
+        return generatorService.validateSpec(upload.file, upload.filename, upload.getSpecType())
+            .map(result -> {
+                Log.info("Validation completed for: " + upload.filename);
+                return Response.ok(result).build();
+            })
+            .onFailure().recoverWithItem(throwable -> {
+                Log.error("Validation failed for: " + upload.filename, throwable);
+                
+                return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new ErrorResponse("Validation failed: " + throwable.getMessage()))
+                    .build();
+            });
+    }
+
+    @POST
+    @Path("/preview")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Uni<Response> previewGeneration(@MultipartForm FileUpload upload) {
+        Log.info("Generating preview for: " + upload.filename);
+        
+        return generatorService.previewGeneration(
+            upload.file, 
+            upload.filename, 
+            upload.getPackageNameOrDefault(config.defaultPackage()), 
+            upload.getServerNameOrDefault(config.defaultServerName()),
+            upload.getSpecType(),
+            upload.getCollectionNameOrDefault("Generated Collection")
+        ).map(preview -> {
+            Log.info("Preview generated for: " + upload.filename);
+            return Response.ok(preview).build();
+        })
+        .onFailure().recoverWithItem(throwable -> {
+            Log.error("Preview generation failed for: " + upload.filename, throwable);
+            
+            return Response.status(Response.Status.BAD_REQUEST)
+                .entity(new ErrorResponse("Preview failed: " + throwable.getMessage()))
+                .build();
+        });
+    }
+
+    @GET
+    @Path("/health")
+    public Response health() {
+        return Response.ok(new HealthResponse("UP", "MCP Generator Service is running")).build();
+    }
+
+    @GET
+    @Path("/info")
+    public Response info() {
+        return Response.ok(new GeneratorInfo(
+            "MCP Server Generator",
+            "1.0.0",
+            config.supportedVersions(),
+            config.supportedSpecTypes(),
+            config.maxFileSize(),
+            config.defaultPackage(),
+            config.defaultServerName()
+        )).build();
+    }
+
+    // Response DTOs
+    public static class ErrorResponse {
+        public final String error;
+        public final long timestamp;
+
+        public ErrorResponse(String error) {
+            this.error = error;
+            this.timestamp = System.currentTimeMillis();
+        }
+    }
+
+    public static class HealthResponse {
+        public final String status;
+        public final String message;
+        public final long timestamp;
+
+        public HealthResponse(String status, String message) {
+            this.status = status;
+            this.message = message;
+            this.timestamp = System.currentTimeMillis();
+        }
+    }
+
+    public static class GeneratorInfo {
+        public final String name;
+        public final String version;
+        public final String[] supportedOpenApiVersions;
+        public final String[] supportedSpecTypes;
+        public final long maxFileSize;
+        public final String defaultPackage;
+        public final String defaultServerName;
+
+        public GeneratorInfo(String name, String version, String[] supportedOpenApiVersions, 
+                           String[] supportedSpecTypes, long maxFileSize, String defaultPackage, String defaultServerName) {
+            this.name = name;
+            this.version = version;
+            this.supportedOpenApiVersions = supportedOpenApiVersions;
+            this.supportedSpecTypes = supportedSpecTypes;
+            this.maxFileSize = maxFileSize;
+            this.defaultPackage = defaultPackage;
+            this.defaultServerName = defaultServerName;
+        }
+    }
+}
+
+// src/main/java/com/example/generator/McpServerGeneratorService.java
+package tech.kayys.wayang.mcp.generator;
+
+import io.quarkus.logging.Log;
+import io.quarkus.qute.Template;
+import io.quarkus.qute.TemplateInstance;
+import io.smallrye.mutiny.Uni;
+import io.swagger.parser.OpenAPIParser;
+import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.oas.models.Operation;
+import io.swagger.v3.oas.models.PathItem;
+import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.media.Content;
+import io.swagger.v3.oas.models.media.MediaType;
+import io.swagger.v3.oas.models.media.Schema;
+import io.swagger.v3.oas.models.parameters.Parameter;
+import io.swagger.v3.oas.models.parameters.RequestBody;
+import io.swagger.v3.oas.models.responses.ApiResponse;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.oas.models.servers.Server;
+import io.swagger.v3.parser.core.models.SwaggerParseResult;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.apache.commons.lang3.StringUtils;
+
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+
+@ApplicationScoped
+public class McpServerGeneratorService {
+
+    @Inject
+    @io.quarkus.qute.Location("mcp-server-main.java")
+    Template mcpServerTemplate;
+
+    @Inject
+    @io.quarkus.qute.Location("mcp-tool.java")
+    Template mcpToolTemplate;
+
+    @Inject
+    @io.quarkus.qute.Location("mcp-websocket.java")
+    Template mcpWebSocketTemplate;
+
+    @Inject
+    @io.quarkus.qute.Location("mcp-auth-handler.java")
+    Template mcpAuthHandlerTemplate;
+
+    @Inject
+    @io.quarkus.qute.Location("generated-pom.xml")
+    Template pomTemplate;
+
+    @Inject
+    @io.quarkus.qute.Location("generated-application.properties")
+    Template applicationPropertiesTemplate;
+
+    @Inject
+    @io.quarkus.qute.Location("readme.md")
+    Template readmeTemplate;
+
+    @Inject
+    @io.quarkus.qute.Location("dockerfile")
+    Template dockerfileTemplate;
+
+    @Inject
+    @io.quarkus.qute.Location("docker-compose.yml")
+    Template dockerComposeTemplate;
+
+    @Inject
+    PostmanParser postmanParser;
+
+    @Inject
+    SpecificationDetector specDetector;
+
+    private static final Pattern PACKAGE_NAME_PATTERN = Pattern.compile("^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*$");
+    private static final Pattern CLASS_NAME_PATTERN = Pattern.compile("^[A-Z][a-zA-Z0-9_]*$");
+
+    public Uni<byte[]> generateMcpServer(InputStream inputFile, String filename, String packageName, 
+                                       String serverName, String baseUrl, boolean includeAuth,
+                                       McpGeneratorResource.SpecificationType specType, String collectionName) {
+        return Uni.createFrom().item(() -> {
+            try {
+                Log.info("Starting generation process for: {} (type: {})", filename, specType);
+                
+                // Validate inputs
+                validateInputs(packageName, serverName, filename);
+                
+                // Read file content
+                String content = new String(inputFile.readAllBytes(), StandardCharsets.UTF_8);
+                
+                // Detect or use specified specification type
+                McpGeneratorResource.SpecificationType detectedType = specType == McpGeneratorResource.SpecificationType.AUTO 
+                    ? specDetector.detectSpecificationType(content, filename) 
+                    : specType;
+                
+                Log.info("Processing as {} specification", detectedType);
+                
+                // Parse specification based on type
+                ApiSpecification apiSpec = parseSpecification(content, detectedType, collectionName);
+                
+                // Generate MCP server structure
+                McpServerModel serverModel = createServerModel(apiSpec, packageName, serverName, baseUrl, includeAuth);
+                Log.info("Generated server model with {} tools", serverModel.getTools().size());
+                
+                // Generate source code files
+                Map<String, String> generatedFiles = generateSourceFiles(serverModel);
+                Log.info("Generated {} source files", generatedFiles.size());
+                
+                // Create ZIP archive
+                byte[] zipBytes = createZipArchive(generatedFiles);
+                Log.info("Created ZIP archive: {} bytes", zipBytes.length);
+                
+                return zipBytes;
+                
+            } catch (Exception e) {
+                Log.error("Failed to generate MCP server", e);
+                throw new RuntimeException("Failed to generate MCP server: " + e.getMessage(), e);
+            }
+        });
+    }
+
+    public Uni<ValidationResult> validateSpec(InputStream inputFile, String filename, 
+                                            McpGeneratorResource.SpecificationType specType) {
+        return Uni.createFrom().item(() -> {
+            try {
+                String content = new String(inputFile.readAllBytes(), StandardCharsets.UTF_8);
+                
+                McpGeneratorResource.SpecificationType detectedType = specType == McpGeneratorResource.SpecificationType.AUTO 
+                    ? specDetector.detectSpecificationType(content, filename) 
+                    : specType;
+                
+                ApiSpecification apiSpec = parseSpecification(content, detectedType, "Validation");
+                
+                return new ValidationResult(
+                    true,
+                    List.of(),
+                    List.of(),
+                    extractApiInfo(apiSpec),
+                    detectedType.name()
+                );
+                
+            } catch (Exception e) {
+                return new ValidationResult(
+                    false,
+                    List.of("Failed to parse specification: " + e.getMessage()),
+                    List.of(),
+                    null,
+                    "UNKNOWN"
+                );
+            }
+        });
+    }
+
+    public Uni<GenerationPreview> previewGeneration(InputStream inputFile, String filename, 
+                                                  String packageName, String serverName,
+                                                  McpGeneratorResource.SpecificationType specType, String collectionName) {
+        return Uni.createFrom().item(() -> {
+            try {
+                String content = new String(inputFile.readAllBytes(), StandardCharsets.UTF_8);
+                
+                McpGeneratorResource.SpecificationType detectedType = specType == McpGeneratorResource.SpecificationType.AUTO 
+                    ? specDetector.detectSpecificationType(content, filename) 
+                    : specType;
+                
+                ApiSpecification apiSpec = parseSpecification(content, detectedType, collectionName);
+                McpServerModel serverModel = createServerModel(apiSpec, packageName, serverName, 
+                    "http://localhost:8080", false);
+                
+                return new GenerationPreview(
+                    serverModel.getTitle(),
+                    serverModel.getDescription(),
+                    serverModel.getVersion(),
+                    serverModel.getPackageName(),
+                    serverModel.getServerName(),
+                    detectedType.name(),
+                    serverModel.getTools().stream()
+                        .map(tool -> new ToolPreview(
+                            tool.getName(),
+                            tool.getDescription(),
+                            tool.getMethod(),
+                            tool.getPath(),
+                            tool.getParameters().size()
+                        ))
+                        .collect(Collectors.toList())
+                );
+                
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to generate preview: " + e.getMessage(), e);
+            }
+        });
+    }
+
+    private ApiSpecification parseSpecification(String content, McpGeneratorResource.SpecificationType type, String collectionName) {
+        return switch (type) {
+            case OPENAPI -> parseOpenAPISpecification(content);
+            case POSTMAN -> postmanParser.parsePostmanCollection(content, collectionName);
+            case AUTO -> throw new IllegalStateException("AUTO type should be resolved before parsing");
+        };
+    }
+
+    private ApiSpecification parseOpenAPISpecification(String content) {
+        OpenAPI openAPI = parseOpenAPI(content);
+        
+        // Validate OpenAPI
+        OpenApiValidator.ValidationResult validation = validator.validate(openAPI);
+        if (!validation.isValid()) {
+            throw new IllegalArgumentException("OpenAPI validation failed: " + 
+                String.join(", ", validation.getErrors()));
+        }
+        
+        // Log warnings if any
+        if (!validation.getWarnings().isEmpty()) {
+            Log.warn("OpenAPI validation warnings: {}", String.join(", ", validation.getWarnings()));
+        }
+        
+        return OpenApiConverter.convertToApiSpec(openAPI);
+    }
+
+    private void validateInputs(String packageName, String serverName, String filename) {
+        if (filename == null || filename.trim().isEmpty()) {
+            throw new IllegalArgumentException("Filename cannot be empty");
+        }
+        
+        if (!PACKAGE_NAME_PATTERN.matcher(packageName.toLowerCase()).matches()) {
+            throw new IllegalArgumentException("Invalid package name format: " + packageName);
+        }
+        
+        if (!CLASS_NAME_PATTERN.matcher(serverName).matches()) {
+            throw new IllegalArgumentException("Invalid server name format: " + serverName);
+        }
+    }
+
+    private OpenAPI parseOpenAPI(String content) {
+        OpenAPIParser parser = new OpenAPIParser();
+        SwaggerParseResult result = parser.readContents(content, null, null);
+        
+        if (result.getOpenAPI() == null) {
+            throw new IllegalArgumentException("Invalid OpenAPI specification: " + 
+                (result.getMessages() != null ? String.join(", ", result.getMessages()) : "Unknown error"));
+        }
+        
+        if (result.getMessages() != null && !result.getMessages().isEmpty()) {
+            Log.warn("OpenAPI parsing warnings: " + String.join(", ", result.getMessages()));
+        }
+        
+        return result.getOpenAPI();
+    }
+
+    private McpServerModel createServerModel(ApiSpecification apiSpec, String packageName, String serverName, 
+                                           String baseUrl, boolean includeAuth) {
+        McpServerModel model = new McpServerModel();
+        model.setPackageName(packageName);
+        model.setServerName(serverName);
+        model.setServerClass(serverName);
+        model.setBaseUrl(baseUrl);
+        model.setIncludeAuth(includeAuth);
+        
+        // Set API info
+        model.setTitle(apiSpec.getTitle() != null ? apiSpec.getTitle() : "Generated MCP Server");
+        model.setDescription(apiSpec.getDescription() != null ? apiSpec.getDescription() : "");
+        model.setVersion(apiSpec.getVersion() != null ? apiSpec.getVersion() : "1.0.0");
+
+        // Override base URL if specified in spec
+        if (apiSpec.getBaseUrl() != null) {
+            model.setBaseUrl(apiSpec.getBaseUrl());
+        }
+
+        // Set security schemes if auth is included
+        if (includeAuth && apiSpec.getSecuritySchemes() != null) {
+            model.setSecuritySchemes(apiSpec.getSecuritySchemes());
+        }
+
+        // Generate tools from API operations
+        List<McpToolModel> tools = apiSpec.getOperations().stream()
+            .map(this::convertToMcpTool)
+            .collect(Collectors.toList());
+        
+        model.setTools(tools);
+        return model;
+    }
+
+    private McpToolModel convertToMcpTool(ApiOperation operation) {
+        McpToolModel tool = new McpToolModel();
+        
+        // Generate tool name
+        String toolName = operation.getOperationId() != null ? 
+            sanitizeToolName(operation.getOperationId()) : 
+            generateToolNameFromPath(operation.getPath(), operation.getMethod());
+        
+        tool.setName(toolName);
+        tool.setDescription(operation.getDescription() != null ? 
+            operation.getDescription() : 
+            operation.getSummary() != null ? operation.getSummary() : 
+            "Execute " + operation.getMethod() + " " + operation.getPath());
+        tool.setPath(operation.getPath());
+        tool.setMethod(operation.getMethod());
+        tool.setOperationId(operation.getOperationId());
+        tool.setSummary(operation.getSummary());
+        
+        // Convert parameters
+        List<McpParameterModel> parameters = operation.getParameters().stream()
+            .map(this::convertToMcpParameter)
+            .collect(Collectors.toList());
+        tool.setParameters(parameters);
+        
+        // Set response types
+        tool.setResponseTypes(operation.getResponseTypes());
+        
+        // Set security requirements
+        tool.setSecurityRequirements(operation.getSecurityRequirements());
+        
+        return tool;
+    }
+
+    private McpParameterModel convertToMcpParameter(ApiParameter apiParam) {
+        McpParameterModel param = new McpParameterModel();
+        param.setName(apiParam.getName());
+        param.setDescription(apiParam.getDescription());
+        param.setType(apiParam.getType());
+        param.setRequired(apiParam.isRequired());
+        param.setIn(apiParam.getIn());
+        param.setExample(apiParam.getExample());
+        param.setDefaultValue(apiParam.getDefaultValue());
+        return param;
+    }
+
+    private List<McpToolModel> generateToolsFromPath(String path, PathItem pathItem, OpenAPI openAPI) {
+        List<McpToolModel> tools = new ArrayList<>();
+        
+        Map<PathItem.HttpMethod, Operation> operations = pathItem.readOperationsMap();
+        operations.forEach((method, operation) -> {
+            McpToolModel tool = new McpToolModel();
+            
+            // Generate tool name
+            String toolName = operation.getOperationId() != null ? 
+                sanitizeToolName(operation.getOperationId()) : 
+                generateToolNameFromPath(path, method);
+            
+            tool.setName(toolName);
+            tool.setDescription(operation.getDescription() != null ? 
+                operation.getDescription() : 
+                operation.getSummary() != null ? operation.getSummary() : 
+                "Execute " + method.name() + " " + path);
+            tool.setPath(path);
+            tool.setMethod(method.name());
+            tool.setOperationId(operation.getOperationId());
+            tool.setSummary(operation.getSummary());
+            
+            // Extract parameters
+            List<McpParameterModel> parameters = new ArrayList<>();
+            if (operation.getParameters() != null) {
+                for (Parameter param : operation.getParameters()) {
+                    McpParameterModel paramModel = createParameterModel(param);
+                    parameters.add(paramModel);
+                }
+            }
+            
+            // Handle request body
+            if (operation.getRequestBody() != null) {
+                parameters.addAll(extractRequestBodyParameters(operation.getRequestBody()));
+            }
+            
+            tool.setParameters(parameters);
+            
+            // Extract response information
+            tool.setResponseTypes(extractResponseTypes(operation.getResponses()));
+            
+            // Extract security requirements
+            if (operation.getSecurity() != null) {
+                tool.setSecurityRequirements(operation.getSecurity());
+            }
+            
+            tools.add(tool);
+        });
+        
+        return tools;
+    }
+
+    private String sanitizeToolName(String operationId) {
+        // Convert to camelCase and ensure it's a valid identifier
+        String sanitized = operationId.replaceAll("[^a-zA-Z0-9_]", "_");
+        if (sanitized.matches("^[0-9].*")) {
+            sanitized = "op_" + sanitized;
+        }
+        return toCamelCase(sanitized);
+    }
+
+    private String generateToolNameFromPath(String path, PathItem.HttpMethod method) {
+        // Convert /api/users/{id} GET -> getApiUsersById
+        String cleanPath = path
+            .replaceAll("\\{([^}]+)\\}", "By$1")  // {id} -> ById
+            .replaceAll("[^a-zA-Z0-9_]", "_")     // Replace special chars with _
+            .replaceAll("_+", "_")                // Collapse multiple underscores
+            .replaceAll("^_|_$", "");             // Remove leading/trailing underscores
+        
+        String methodPrefix = method.name().toLowerCase();
+        return methodPrefix + StringUtils.capitalize(toCamelCase(cleanPath));
+    }
+
+    private McpParameterModel createParameterModel(Parameter param) {
+        McpParameterModel paramModel = new McpParameterModel();
+        paramModel.setName(param.getName());
+        paramModel.setDescription(param.getDescription() != null ? param.getDescription() : "");
+        paramModel.setRequired(param.getRequired() != null ? param.getRequired() : false);
+        paramModel.setType(getParameterType(param.getSchema()));
+        paramModel.setIn(param.getIn());
+        
+        // Handle parameter examples and default values
+        if (param.getExample() != null) {
+            paramModel.setExample(param.getExample().toString());
+        }
+        if (param.getSchema() != null && param.getSchema().getDefault() != null) {
+            paramModel.setDefaultValue(param.getSchema().getDefault().toString());
+        }
+        
+        return paramModel;
+    }
+
+    private List<McpParameterModel> extractRequestBodyParameters(RequestBody requestBody) {
+        List<McpParameterModel> parameters = new ArrayList<>();
+        
+        if (requestBody.getContent() != null) {
+            // Handle JSON request body
+            MediaType jsonContent = requestBody.getContent().get("application/json");
+            if (jsonContent != null && jsonContent.getSchema() != null) {
+                McpParameterModel bodyParam = new McpParameterModel();
+                bodyParam.setName("requestBody");
+                bodyParam.setDescription(requestBody.getDescription() != null ? 
+                    requestBody.getDescription() : "Request body");
+                bodyParam.setRequired(requestBody.getRequired() != null ? requestBody.getRequired() : false);
+                bodyParam.setType("object");
+                bodyParam.setIn("body");
+                
+                // Extract schema properties if available
+                Schema schema = jsonContent.getSchema();
+                if (schema.getProperties() != null) {
+                    schema.getProperties().forEach((propName, propSchema) -> {
+                        McpParameterModel propParam = new McpParameterModel();
+                        propParam.setName(propName);
+                        propParam.setDescription(propSchema.getDescription() != null ? 
+                            propSchema.getDescription() : "");
+                        propParam.setType(getParameterType(propSchema));
+                        propParam.setIn("body");
+                        propParam.setRequired(schema.getRequired() != null && 
+                            schema.getRequired().contains(propName));
+                        parameters.add(propParam);
+                    });
+                } else {
+                    parameters.add(bodyParam);
+                }
+            }
+        }
+        
+        return parameters;
+    }
+
+    private Map<String, String> extractResponseTypes(Map<String, ApiResponse> responses) {
+        Map<String, String> responseTypes = new HashMap<>();
+        
+        if (responses != null) {
+            responses.forEach((code, response) -> {
+                String description = response.getDescription() != null ? 
+                    response.getDescription() : "Response " + code;
+                responseTypes.put(code, description);
+            });
+        }
+        
+        return responseTypes;
+    }
+
+    private String toCamelCase(String input) {
+        if (input == null || input.isEmpty()) {
+            return input;
+        }
+        
+        String[] parts = input.split("_");
+        StringBuilder result = new StringBuilder(parts[0].toLowerCase());
+        for (int i = 1; i < parts.length; i++) {
+            if (!parts[i].isEmpty()) {
+                result.append(StringUtils.capitalize(parts[i].toLowerCase()));
+            }
+        }
+        return result.toString();
+    }
+
+    private String getParameterType(Schema schema) {
+        if (schema == null) {
+            return "String";
+        }
+        
+        String type = schema.getType();
+        if (type != null) {
+            switch (type.toLowerCase()) {
+                case "integer":
+                    return schema.getFormat() != null && schema.getFormat().equals("int64") ? "long" : "int";
+                case "number":
+                    return schema.getFormat() != null && schema.getFormat().equals("float") ? "float" : "double";
+                case "boolean":
+                    return "boolean";
+                case "array":
+                    Schema items = schema.getItems();
+                    String itemType = items != null ? getParameterType(items) : "String";
+                    return "List<" + itemType + ">";
+                case "object":
+                    return "Map<String, Object>";
+                default:
+                    return "String";
+            }
+        }
+        
+        // Handle $ref references
+        if (schema.get$ref() != null) {
+            String ref = schema.get$ref();
+            String typeName = ref.substring(ref.lastIndexOf("/") + 1);
+            return StringUtils.capitalize(typeName);
+        }
+        
+        return "String";
+    }
+
+    private ApiInfo extractApiInfo(ApiSpecification apiSpec) {
+        return new ApiInfo(
+            apiSpec.getTitle(),
+            apiSpec.getDescription(),
+            apiSpec.getVersion(),
+            apiSpec.getOperations().size(),
+            apiSpec.getOperations().size()
+        );
+    }
+
+    private int countOperations(OpenAPI openAPI) {
+        if (openAPI.getPaths() == null) {
+            return 0;
+        }
+        
+        return openAPI.getPaths().values().stream()
+            .mapToInt(pathItem -> pathItem.readOperationsMap().size())
+            .sum();
+    }
+
+    private Map<String, String> generateSourceFiles(McpServerModel model) {
+        Map<String, String> files = new HashMap<>();
+        String packagePath = model.getPackageName().replace(".", "/");
+        
+        try {
+            // Generate main MCP server class
+            TemplateInstance mainClass = mcpServerTemplate.data("model", model);
+            files.put("src/main/java/" + packagePath + "/" + model.getServerClass() + ".java", 
+                     mainClass.render());
+            
+            // Generate WebSocket handler
+            TemplateInstance wsHandler = mcpWebSocketTemplate.data("model", model);
+            files.put("src/main/java/" + packagePath + "/websocket/McpWebSocketHandler.java",
+                     wsHandler.render());
+            
+            // Generate auth handler if needed
+            if (model.isIncludeAuth()) {
+                TemplateInstance authHandler = mcpAuthHandlerTemplate.data("model", model);
+                files.put("src/main/java/" + packagePath + "/auth/McpAuthHandler.java",
+                         authHandler.render());
+            }
+            
+            // Generate individual tool classes
+            for (McpToolModel tool : model.getTools()) {
+                TemplateInstance toolClass = mcpToolTemplate.data("model", model).data("tool", tool);
+                String toolClassName = StringUtils.capitalize(tool.getName()) + "Tool";
+                files.put("src/main/java/" + packagePath + "/tools/" + toolClassName + ".java",
+                         toolClass.render());
+            }
+            
+            // Generate configuration files
+            files.put("pom.xml", pomTemplate.data("model", model).render());
+            files.put("src/main/resources/application.properties", 
+                     applicationPropertiesTemplate.data("model", model).render());
+            
+            // Generate documentation
+            files.put("README.md", readmeTemplate.data("model", model).render());
+            
+            // Generate Docker files
+            files.put("Dockerfile", dockerfileTemplate.data("model", model).render());
+            files.put("docker-compose.yml", dockerComposeTemplate.data("model", model).render());
+            
+            // Generate test files
+            generateTestFiles(files, model, packagePath);
+            
+            // Generate additional utility files
+            generateUtilityFiles(files, model, packagePath);
+            
+        } catch (Exception e) {
+            Log.error("Error generating source files", e);
+            throw new RuntimeException("Failed to generate source files: " + e.getMessage(), e);
+        }
+        
+        return files;
+    }
+
+    private void generateUtilityFiles(Map<String, String> files, McpServerModel model, String packagePath) {
+        // Generate .gitignore
+        files.put(".gitignore", generateGitignore());
+        
+        // Generate GitHub Actions workflow
+        files.put(".github/workflows/ci.yml", generateGitHubActions(model));
+        
+        // Generate VS Code launch configuration
+        files.put(".vscode/launch.json", generateVSCodeLaunch());
+        
+        // Generate example scripts
+        files.put("scripts/start-dev.sh", generateStartScript(true));
+        files.put("scripts/start-prod.sh", generateStartScript(false));
+        files.put("scripts/test-mcp.py", generatePythonTestScript(model));
+        
+        // Generate OpenAPI spec for documentation
+        files.put("src/main/resources/meta-inf/openapi.yaml", "# Original OpenAPI spec would go here");
+    }
+
+    private String generateGitignore() {
+        return """
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Application specific
+application-local.properties
+""";
+    }
+
+    private String generateGitHubActions(McpServerModel model) {
+        return String.format("""
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        
+    - name: Cache Maven packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+        
+    - name: Run tests
+      run: ./mvnw clean test
+      
+    - name: Build application
+      run: ./mvnw clean package -DskipTests
+      
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        
+    - name: Build application
+      run: ./mvnw clean package -DskipTests
+      
+    - name: Build Docker image
+      run: docker build -t %s:%s .
+      
+    - name: Test Docker image
+      run: |
+        docker run -d -p 8080:8080 --name test-%s %s:%s
+        sleep 30
+        curl -f http://localhost:8080/health || exit 1
+        docker stop test-%s
+        docker rm test-%s
+""", 
+            model.getServerName().toLowerCase(),
+            model.getVersion(),
+            model.getServerName().toLowerCase(),
+            model.getServerName().toLowerCase(),
+            model.getVersion(),
+            model.getServerName().toLowerCase(),
+            model.getServerName().toLowerCase()
+        );
+    }
+
+    private String generateVSCodeLaunch() {
+        return """
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Quarkus App",
+            "type": "java",
+            "request": "attach",
+            "hostName": "localhost",
+            "port": 5005
+        },
+        {
+            "name": "Launch Quarkus Dev Mode",
+            "type": "java",
+            "request": "launch",
+            "mainClass": "io.quarkus.runner.GeneratedMain",
+            "args": [],
+            "preLaunchTask": "${workspaceFolder}/.vscode/tasks.json#quarkus-dev"
+        }
+    ]
+}
+""";
+    }
+
+    private String generateStartScript(boolean isDev) {
+        if (isDev) {
+            return """
+#!/bin/bash
+# Development start script
+
+echo "Starting MCP Server in development mode..."
+echo "Server will be available at http://localhost:8080"
+echo "Press Ctrl+C to stop"
+
+export QUARKUS_LOG_LEVEL=DEBUG
+./mvnw compile quarkus:dev
+""";
+        } else {
+            return """
+#!/bin/bash
+# Production start script
+
+echo "Starting MCP Server in production mode..."
+
+# Build the application
+echo "Building application..."
+./mvnw clean package -DskipTests
+
+# Start the server
+echo "Starting server..."
+java -jar target/quarkus-app/quarkus-run.jar
+""";
+        }
+    }
+
+    private String generatePythonTestScript(McpServerModel model) {
+        return String.format("""
+#!/usr/bin/env python3
+\"\"\"
+Test script for %s
+\"\"\"
+
+import json
+import requests
+import sys
+
+BASE_URL = "http://localhost:8080"
+
+def test_health():
+    \"\"\"Test health endpoint\"\"\"
+    response = requests.get(f"{BASE_URL}/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "UP"
+    print("✓ Health check passed")
+
+def test_mcp_initialize():
+    \"\"\"Test MCP initialization\"\"\"
+    payload = {
+        "jsonrpc": "2.0",
+        "id": "test-1",
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {
+                "name": "python-test-client",
+                "version": "1.0.0"
+            }
+        }
+    }
+    
+    response = requests.post(f"{BASE_URL}/mcp", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["jsonrpc"] == "2.0"
+    assert "result" in data
+    print("✓ MCP initialization passed")
+
+def test_tools_list():
+    \"\"\"Test tools listing\"\"\"
+    payload = {
+        "jsonrpc": "2.0",
+        "id": "test-2", 
+        "method": "tools/list"
+    }
+    
+    response = requests.post(f"{BASE_URL}/mcp", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["jsonrpc"] == "2.0"
+    assert "result" in data
+    assert "tools" in data["result"]
+    tools = data["result"]["tools"]
+    print(f"✓ Tools list passed - found {len(tools)} tools")
+    
+    for tool in tools:
+        print(f"  - {tool['name']}: {tool['description']}")
+
+def test_ping():
+    \"\"\"Test ping method\"\"\"
+    payload = {
+        "jsonrpc": "2.0",
+        "id": "test-ping",
+        "method": "ping"
+    }
+    
+    response = requests.post(f"{BASE_URL}/mcp", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["jsonrpc"] == "2.0"
+    assert data["result"]["status"] == "pong"
+    print("✓ Ping test passed")
+
+def main():
+    \"\"\"Run all tests\"\"\"
+    print("Testing %s...")
+    print(f"Server URL: {BASE_URL}")
+    
+    try:
+        test_health()
+        test_mcp_initialize()
+        test_tools_list()
+        test_ping()
+        print("\\n🎉 All tests passed!")
+        return 0
+    except Exception as e:
+        print(f"\\n❌ Test failed: {e}")
+        return 1
+
+if __name__ == "__main__":
+    sys.exit(main())
+""", model.getTitle(), model.getTitle());
+    }
+    }
+
+    private void generateTestFiles(Map<String, String> files, McpServerModel model, String packagePath) {
+        // Generate basic test class
+        String testContent = generateTestClass(model);
+        files.put("src/test/java/" + packagePath + "/" + model.getServerClass() + "Test.java", testContent);
+        
+        // Generate test resources
+        files.put("src/test/resources/application-test.properties", generateTestProperties());
+    }
+
+    private String generateTestClass(McpServerModel model) {
+        return String.format("""
+package %s;
+
+import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.RestAssured;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+
+import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.*;
+
+@QuarkusTest
+@DisplayName("%s Tests")
+public class %sTest {
+
+    @BeforeEach
+    void setup() {
+        RestAssured.enableLoggingOfRequestAndResponseIfValidationFails();
+    }
+
+    @Test
+    @DisplayName("Health endpoint should return UP status")
+    public void testHealthEndpoint() {
+        given()
+            .when().get("/health")
+            .then()
+                .statusCode(200)
+                .body("status", equalTo("UP"))
+                .body("server", equalTo("%s"))
+                .body("version", equalTo("%s"));
+    }
+
+    @Test
+    @DisplayName("Server info endpoint should return correct information")
+    public void testServerInfo() {
+        given()
+            .when().get("/info")
+            .then()
+                .statusCode(200)
+                .body("name", equalTo("%s"))
+                .body("version", equalTo("%s"))
+                .body("protocol", equalTo("MCP"))
+                .body("protocolVersion", equalTo("2024-11-05"))
+                .body("availableTools", notNullValue())
+                .body("availableTools.size()", equalTo(%d));
+    }
+
+    @Test
+    @DisplayName("MCP initialize should return proper response")
+    public void testMcpInitialize() {
+        String initRequest = \"\"\"
+        {
+            "jsonrpc": "2.0",
+            "id": "1",
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {
+                    "name": "test-client",
+                    "version": "1.0.0"
+                }
+            }
+        }\"\"\";
+
+        given()
+            .header("Content-Type", "application/json")
+            .body(initRequest)
+            .when().post("/mcp")
+            .then()
+                .statusCode(200)
+                .body("jsonrpc", equalTo("2.0"))
+                .body("id", equalTo("1"))
+                .body("result.protocolVersion", equalTo("2024-11-05"))
+                .body("result.capabilities", notNullValue())
+                .body("result.serverInfo.name", equalTo("%s"))
+                .body("result.serverInfo.version", equalTo("%s"));
+    }
+
+    @Test
+    @DisplayName("Tools list should return all available tools")
+    public void testToolsList() {
+        String listRequest = \"\"\"
+        {
+            "jsonrpc": "2.0",
+            "id": "2",
+            "method": "tools/list"
+        }\"\"\";
+
+        given()
+            .header("Content-Type", "application/json")
+            .body(listRequest)
+            .when().post("/mcp")
+            .then()
+                .statusCode(200)
+                .body("jsonrpc", equalTo("2.0"))
+                .body("id", equalTo("2"))
+                .body("result.tools", notNullValue())
+                .body("result.tools.size()", equalTo(%d));
+    }
+
+    @Test
+    @DisplayName("Ping should return pong")
+    public void testPing() {
+        String pingRequest = \"\"\"
+        {
+            "jsonrpc": "2.0",
+            "id": "ping-test",
+            "method": "ping"
+        }\"\"\";
+
+        given()
+            .header("Content-Type", "application/json")
+            .body(pingRequest)
+            .when().post("/mcp")
+            .then()
+                .statusCode(200)
+                .body("jsonrpc", equalTo("2.0"))
+                .body("id", equalTo("ping-test"))
+                .body("result.status", equalTo("pong"))
+                .body("result.timestamp", notNullValue());
+    }
+
+    @Test
+    @DisplayName("Invalid JSON should return parse error")
+    public void testInvalidJson() {
+        given()
+            .header("Content-Type", "application/json")
+            .body("{ invalid json")
+            .when().post("/mcp")
+            .then()
+                .statusCode(400)
+                .body("jsonrpc", equalTo("2.0"))
+                .body("error.code", equalTo(-32700))
+                .body("error.message", containsString("Invalid JSON"));
+    }
+
+    @Test
+    @DisplayName("Unknown method should return method not found error")
+    public void testUnknownMethod() {
+        String unknownMethodRequest = \"\"\"
+        {
+            "jsonrpc": "2.0",
+            "id": "unknown-test",
+            "method": "unknown/method"
+        }\"\"\";
+
+        given()
+            .header("Content-Type", "application/json")
+            .body(unknownMethodRequest)
+            .when().post("/mcp")
+            .then()
+                .statusCode(200)
+                .body("jsonrpc", equalTo("2.0"))
+                .body("id", equalTo("unknown-test"))
+                .body("error.code", equalTo(-32601))
+                .body("error.message", containsString("Unknown method"));
+    }
+
+    @Test
+    @DisplayName("Tool call with non-existent tool should return error")
+    public void testNonExistentTool() {
+        String toolCallRequest = \"\"\"
+        {
+            "jsonrpc": "2.0",
+            "id": "tool-test",
+            "method": "tools/call",
+            "params": {
+                "name": "non_existent_tool",
+                "arguments": {}
+            }
+        }\"\"\";
+
+        given()
+            .header("Content-Type", "application/json")
+            .body(toolCallRequest)
+            .when().post("/mcp")
+            .then()
+                .statusCode(200)
+                .body("jsonrpc", equalTo("2.0"))
+                .body("id", equalTo("tool-test"))
+                .body("error.code", equalTo(-32602))
+                .body("error.message", containsString("Tool not found"));
+    }
+
+%s
+}
+""", 
+            model.getPackageName(),
+            model.getTitle(),
+            model.getServerClass(),
+            model.getTitle(),
+            model.getVersion(),
+            model.getTitle(),
+            model.getVersion(),
+            model.getTools().size(),
+            model.getTitle(),
+            model.getVersion(),
+            model.getTools().size(),
+            generateToolSpecificTests(model)
+        );
+    }
+
+    private String generateToolSpecificTests(McpServerModel model) {
+        if (model.getTools().isEmpty()) {
+            return "";
+        }
+
+        StringBuilder tests = new StringBuilder();
+        McpToolModel firstTool = model.getTools().get(0);
+
+        tests.append(String.format("""
+    @Test
+    @DisplayName("Tool %s should be callable")
+    public void test%sTool() {
+        String toolCallRequest = \"\"\"
+        {
+            "jsonrpc": "2.0",
+            "id": "tool-%s-test",
+            "method": "tools/call",
+            "params": {
+                "name": "%s",
+                "arguments": {%s}
+            }
+        }\"\"\";
+
+        // Note: This test may fail if the target API is not available
+        // In a real scenario, you would mock the HTTP client or use a test server
+        given()
+            .header("Content-Type", "application/json")
+            .body(toolCallRequest)
+            .when().post("/mcp")
+            .then()
+                .statusCode(200)
+                .body("jsonrpc", equalTo("2.0"))
+                .body("id", equalTo("tool-%s-test"))
+                .body("result", notNullValue());
+    }""", 
+            firstTool.getName(),
+            firstTool.getName().substring(0, 1).toUpperCase() + firstTool.getName().substring(1),
+            firstTool.getName(),
+            firstTool.getName(),
+            generateTestArguments(firstTool),
+            firstTool.getName()));
+
+        return tests.toString();
+    }
+
+    private String generateTestArguments(McpToolModel tool) {
+        if (tool.getParameters() == null || tool.getParameters().isEmpty()) {
+            return "";
+        }
+
+        StringBuilder args = new StringBuilder();
+        for (int i = 0; i < tool.getParameters().size() && i < 3; i++) { // Limit to first 3 params
+            McpParameterModel param = tool.getParameters().get(i);
+            if (i > 0) args.append(", ");
+            
+            String value = switch (param.getType().toLowerCase()) {
+                case "int", "integer" -> "123";
+                case "long" -> "123456789";
+                case "float", "double" -> "123.45";
+                case "boolean" -> "true";
+                default -> "\"test_value\"";
+            };
+            
+            args.append(String.format("\n                    \"%s\": %s", param.getName(), value));
+        }
+        
+        return args.toString();
+    }
+
+    private String generateTestProperties() {
+        return """
+# Test Configuration
+quarkus.http.test-port=0
+quarkus.log.level=INFO
+quarkus.log.category."tech.kayys.wayang.mcp".level=DEBUG
+
+# Test API configuration
+api.base.url=http://localhost:${quarkus.http.test-port}
+
+# Test-specific settings
+mcp.server.name=Test MCP Server
+mcp.server.version=1.0.0-test
+
+# Disable external HTTP calls for testing
+api.mock.enabled=true
+""";
+    }
+
+    private byte[] createZipArchive(Map<String, String> files) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (ZipOutputStream zos = new ZipOutputStream(baos)) {
+            for (Map.Entry<String, String> entry : files.entrySet()) {
+                ZipEntry zipEntry = new ZipEntry(entry.getKey());
+                zos.putNextEntry(zipEntry);
+                zos.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
+                zos.closeEntry();
+            }
+        }
+        return baos.toByteArray();
+    }
+
+    // Response DTOs
+    public static class ValidationResult {
+        public final boolean valid;
+        public final List<String> errors;
+        public final List<String> warnings;
+        public final ApiInfo apiInfo;
+        public final String specType;
+
+        public ValidationResult(boolean valid, List<String> errors, List<String> warnings, ApiInfo apiInfo, String specType) {
+            this.valid = valid;
+            this.errors = errors;
+            this.warnings = warnings;
+            this.apiInfo = apiInfo;
+            this.specType = specType;
+        }
+    }
+
+    public static class ApiInfo {
+        public final String title;
+        public final String description;
+        public final String version;
+        public final int pathCount;
+        public final int operationCount;
+
+        public ApiInfo(String title, String description, String version, int pathCount, int operationCount) {
+            this.title = title;
+            this.description = description;
+            this.version = version;
+            this.pathCount = pathCount;
+            this.operationCount = operationCount;
+        }
+    }
+
+    public static class GenerationPreview {
+        public final String title;
+        public final String description;
+        public final String version;
+        public final String packageName;
+        public final String serverName;
+        public final String specType;
+        public final List<ToolPreview> tools;
+
+        public GenerationPreview(String title, String description, String version, 
+                               String packageName, String serverName, String specType, List<ToolPreview> tools) {
+            this.title = title;
+            this.description = description;
+            this.version = version;
+            this.packageName = packageName;
+            this.serverName = serverName;
+            this.specType = specType;
+            this.tools = tools;
+        }
+    }
+
+    public static class ToolPreview {
+        public final String name;
+        public final String description;
+        public final String method;
+        public final String path;
+        public final int parameterCount;
+
+        public ToolPreview(String name, String description, String method, String path, int parameterCount) {
+            this.name = name;
+            this.description = description;
+            this.method = method;
+            this.path = path;
+            this.parameterCount = parameterCount;
+        }
+    }
+}
+
+// src/main/java/com/example/generator/McpServerModel.java
+package tech.kayys.wayang.mcp.generator;
+
+
+// src/main/java/com/example/generator/McpToolModel.java
+package tech.kayys.wayang.mcp.generator;
+
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+
+
+// src/main/java/com/example/generator/McpParameterModel.java
+package tech.kayys.wayang.mcp.generator;
+
+
+// src/main/java/com/example/generator/McpServerConfig.java
+package tech.kayys.wayang.mcp.generator;
+
+// src/main/java/com/example/generator/OpenApiValidator.java
+package tech.kayys.wayang.mcp.generator;
+
+
+// src/main/resources/application.properties

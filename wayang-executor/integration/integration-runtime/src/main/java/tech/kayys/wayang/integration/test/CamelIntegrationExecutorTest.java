@@ -1,0 +1,638 @@
+package tech.kayys.silat.executor.camel;
+
+import io.quarkus.test.junit.QuarkusTest;
+import io.smallrye.mutiny.helpers.test.UniAssertSubscriber;
+import jakarta.inject.Inject;
+import org.apache.camel.CamelContext;
+import org.apache.camel.ProducerTemplate;
+import org.apache.camel.component.mock.MockEndpoint;
+import org.junit.jupiter.api.*;
+import tech.kayys.silat.core.domain.*;
+import tech.kayys.silat.core.engine.NodeExecutionResult;
+import tech.kayys.silat.core.engine.NodeExecutionTask;
+
+import java.time.Duration;
+import java.util.*;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * COMPREHENSIVE CAMEL INTEGRATION EXECUTOR TESTS
+ */
+@QuarkusTest
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+class CamelIntegrationExecutorTest {
+
+    @Inject
+    CamelIntegrationExecutor executor;
+
+    @Inject
+    CamelContext camelContext;
+
+    @Inject
+    ProducerTemplate producerTemplate;
+
+    private static final String TEST_TENANT_ID = "test-tenant";
+
+    // ==================== CONTENT-BASED ROUTER TESTS ====================
+
+    @Test
+    @Order(1)
+    @DisplayName("Test Content-Based Router - Route to Destination 1")
+    void testContentBasedRouter_Destination1() throws Exception {
+        // Setup mock endpoints
+        MockEndpoint mock1 = camelContext.getEndpoint("mock:destination1", MockEndpoint.class);
+        MockEndpoint mock2 = camelContext.getEndpoint("mock:destination2", MockEndpoint.class);
+
+        mock1.expectedMessageCount(1);
+        mock2.expectedMessageCount(0);
+
+        // Create task
+        NodeExecutionTask task = createTask(
+            Map.of(
+                "patternType", "CONTENT_BASED_ROUTER",
+                "payload", Map.of("type", "urgent", "priority", 1),
+                "targetEndpoints", List.of("mock:destination1", "mock:destination2"),
+                "routingRules", Map.of(
+                    "rule1", "${body[type]} == 'urgent'",
+                    "rule2", "${body[type]} == 'normal'"
+                ),
+                "defaultEndpoint", "mock:default",
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        // Execute
+        NodeExecutionResult result = executor.execute(task)
+            .subscribe()
+            .withSubscriber(UniAssertSubscriber.create())
+            .awaitItem(Duration.ofSeconds(10))
+            .getItem();
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(NodeExecutionStatus.COMPLETED, result.status());
+        assertNotNull(result.output());
+
+        mock1.assertIsSatisfied();
+        mock2.assertIsSatisfied();
+    }
+
+    @Test
+    @Order(2)
+    @DisplayName("Test Content-Based Router - Default Route")
+    void testContentBasedRouter_DefaultRoute() throws Exception {
+        MockEndpoint mockDefault = camelContext.getEndpoint("mock:default", MockEndpoint.class);
+        mockDefault.expectedMessageCount(1);
+
+        NodeExecutionTask task = createTask(
+            Map.of(
+                "patternType", "CONTENT_BASED_ROUTER",
+                "payload", Map.of("type", "unknown"),
+                "targetEndpoints", List.of("mock:destination1", "mock:destination2"),
+                "routingRules", Map.of(
+                    "rule1", "${body[type]} == 'urgent'",
+                    "rule2", "${body[type]} == 'normal'"
+                ),
+                "defaultEndpoint", "mock:default",
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        NodeExecutionResult result = executor.execute(task)
+            .await().atMost(Duration.ofSeconds(10));
+
+        assertEquals(NodeExecutionStatus.COMPLETED, result.status());
+        mockDefault.assertIsSatisfied();
+    }
+
+    // ==================== MESSAGE TRANSLATOR TESTS ====================
+
+    @Test
+    @Order(3)
+    @DisplayName("Test Message Translator - JSON to XML")
+    void testMessageTranslator_JsonToXml() {
+        NodeExecutionTask task = createTask(
+            Map.of(
+                "patternType", "MESSAGE_TRANSLATOR",
+                "payload", Map.of("name", "John", "age", 30),
+                "transformationType", "json-to-xml",
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        NodeExecutionResult result = executor.execute(task)
+            .await().atMost(Duration.ofSeconds(10));
+
+        assertEquals(NodeExecutionStatus.COMPLETED, result.status());
+        assertNotNull(result.output().get("transformed"));
+    }
+
+    @Test
+    @Order(4)
+    @DisplayName("Test Message Translator - Custom Transformation")
+    void testMessageTranslator_CustomScript() {
+        NodeExecutionTask task = createTask(
+            Map.of(
+                "patternType", "MESSAGE_TRANSLATOR",
+                "payload", Map.of("firstName", "John", "lastName", "Doe"),
+                "transformationType", "javascript",
+                "transformationScript", "function transform(input) { " +
+                    "return {fullName: input.firstName + ' ' + input.lastName}; }",
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        NodeExecutionResult result = executor.execute(task)
+            .await().atMost(Duration.ofSeconds(10));
+
+        assertEquals(NodeExecutionStatus.COMPLETED, result.status());
+    }
+
+    // ==================== SPLITTER TESTS ====================
+
+    @Test
+    @Order(5)
+    @DisplayName("Test Splitter - Split CSV")
+    void testSplitter_CsvData() {
+        String csvData = "item1,item2,item3,item4,item5";
+
+        NodeExecutionTask task = createTask(
+            Map.of(
+                "patternType", "SPLITTER",
+                "payload", csvData,
+                "splitDelimiter", ",",
+                "parallelProcessing", false,
+                "targetEndpoints", List.of("mock:split-target"),
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        NodeExecutionResult result = executor.execute(task)
+            .await().atMost(Duration.ofSeconds(10));
+
+        assertEquals(NodeExecutionStatus.COMPLETED, result.status());
+        Map<String, Object> output = result.output();
+        assertTrue(output.containsKey("splits"));
+        List<?> splits = (List<?>) output.get("splits");
+        assertEquals(5, splits.size());
+    }
+
+    @Test
+    @Order(6)
+    @DisplayName("Test Splitter - Parallel Processing")
+    void testSplitter_ParallelProcessing() {
+        NodeExecutionTask task = createTask(
+            Map.of(
+                "patternType", "SPLITTER",
+                "payload", "a\nb\nc\nd\ne\nf",
+                "splitDelimiter", "\n",
+                "parallelProcessing", true,
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        NodeExecutionResult result = executor.execute(task)
+            .await().atMost(Duration.ofSeconds(10));
+
+        assertEquals(NodeExecutionStatus.COMPLETED, result.status());
+    }
+
+    // ==================== AGGREGATOR TESTS ====================
+
+    @Test
+    @Order(7)
+    @DisplayName("Test Aggregator - Collect Strategy")
+    void testAggregator_CollectStrategy() {
+        List<Object> messages = List.of(
+            Map.of("id", 1, "value", "A"),
+            Map.of("id", 2, "value", "B"),
+            Map.of("id", 3, "value", "C")
+        );
+
+        NodeExecutionTask task = createTask(
+            Map.of(
+                "patternType", "AGGREGATOR",
+                "payload", messages,
+                "batchSize", 3,
+                "aggregationTimeout", 5000L,
+                "aggregationStrategy", "collect",
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        NodeExecutionResult result = executor.execute(task)
+            .await().atMost(Duration.ofSeconds(10));
+
+        assertEquals(NodeExecutionStatus.COMPLETED, result.status());
+        assertNotNull(result.output().get("aggregated"));
+    }
+
+    @Test
+    @Order(8)
+    @DisplayName("Test Aggregator - Merge Strategy")
+    void testAggregator_MergeStrategy() {
+        List<Object> messages = List.of(
+            Map.of("key1", "value1"),
+            Map.of("key2", "value2"),
+            Map.of("key3", "value3")
+        );
+
+        NodeExecutionTask task = createTask(
+            Map.of(
+                "patternType", "AGGREGATOR",
+                "payload", messages,
+                "batchSize", 3,
+                "aggregationTimeout", 5000L,
+                "aggregationStrategy", "merge",
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        NodeExecutionResult result = executor.execute(task)
+            .await().atMost(Duration.ofSeconds(10));
+
+        assertEquals(NodeExecutionStatus.COMPLETED, result.status());
+        Map<String, Object> aggregated = (Map<String, Object>) result.output().get("aggregated");
+        assertTrue(aggregated.containsKey("key1"));
+        assertTrue(aggregated.containsKey("key2"));
+        assertTrue(aggregated.containsKey("key3"));
+    }
+
+    // ==================== CONTENT ENRICHER TESTS ====================
+
+    @Test
+    @Order(9)
+    @DisplayName("Test Content Enricher - Merge Strategy")
+    void testContentEnricher_MergeStrategy() throws Exception {
+        // Setup enrichment endpoint
+        camelContext.addRoutes(new org.apache.camel.builder.RouteBuilder() {
+            @Override
+            public void configure() {
+                from("direct:enrichment-source")
+                    .setBody(constant(Map.of("additionalData", "enriched")));
+            }
+        });
+
+        NodeExecutionTask task = createTask(
+            Map.of(
+                "patternType", "CONTENT_ENRICHER",
+                "payload", Map.of("original", "data"),
+                "enrichmentEndpoint", "direct:enrichment-source",
+                "enrichmentStrategy", "merge",
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        NodeExecutionResult result = executor.execute(task)
+            .await().atMost(Duration.ofSeconds(10));
+
+        assertEquals(NodeExecutionStatus.COMPLETED, result.status());
+        Map<String, Object> enriched = (Map<String, Object>) result.output().get("enriched");
+        assertTrue(enriched.containsKey("original"));
+        assertTrue(enriched.containsKey("additionalData"));
+    }
+
+    // ==================== MESSAGE FILTER TESTS ====================
+
+    @Test
+    @Order(10)
+    @DisplayName("Test Message Filter - Pass Filter")
+    void testMessageFilter_PassFilter() {
+        NodeExecutionTask task = createTask(
+            Map.of(
+                "patternType", "MESSAGE_FILTER",
+                "payload", Map.of("status", "active", "priority", 1),
+                "filterExpression", "${body[status]} == 'active'",
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        NodeExecutionResult result = executor.execute(task)
+            .await().atMost(Duration.ofSeconds(10));
+
+        assertEquals(NodeExecutionStatus.COMPLETED, result.status());
+        assertTrue((Boolean) result.output().get("passed"));
+    }
+
+    @Test
+    @Order(11)
+    @DisplayName("Test Message Filter - Fail Filter")
+    void testMessageFilter_FailFilter() {
+        NodeExecutionTask task = createTask(
+            Map.of(
+                "patternType", "MESSAGE_FILTER",
+                "payload", Map.of("status", "inactive"),
+                "filterExpression", "${body[status]} == 'active'",
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        NodeExecutionResult result = executor.execute(task)
+            .await().atMost(Duration.ofSeconds(10));
+
+        assertEquals(NodeExecutionStatus.COMPLETED, result.status());
+        assertFalse((Boolean) result.output().get("passed"));
+    }
+
+    // ==================== RECIPIENT LIST TESTS ====================
+
+    @Test
+    @Order(12)
+    @DisplayName("Test Recipient List - Multiple Recipients")
+    void testRecipientList_MultipleRecipients() throws Exception {
+        MockEndpoint mock1 = camelContext.getEndpoint("mock:recipient1", MockEndpoint.class);
+        MockEndpoint mock2 = camelContext.getEndpoint("mock:recipient2", MockEndpoint.class);
+        MockEndpoint mock3 = camelContext.getEndpoint("mock:recipient3", MockEndpoint.class);
+
+        mock1.expectedMessageCount(1);
+        mock2.expectedMessageCount(1);
+        mock3.expectedMessageCount(1);
+
+        NodeExecutionTask task = createTask(
+            Map.of(
+                "patternType", "RECIPIENT_LIST",
+                "payload", Map.of("message", "broadcast"),
+                "targetEndpoints", List.of(
+                    "mock:recipient1",
+                    "mock:recipient2",
+                    "mock:recipient3"
+                ),
+                "parallelProcessing", true,
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        NodeExecutionResult result = executor.execute(task)
+            .await().atMost(Duration.ofSeconds(10));
+
+        assertEquals(NodeExecutionStatus.COMPLETED, result.status());
+        assertEquals(3, ((List<?>) result.output().get("responses")).size());
+
+        mock1.assertIsSatisfied();
+        mock2.assertIsSatisfied();
+        mock3.assertIsSatisfied();
+    }
+
+    // ==================== WIRE TAP TESTS ====================
+
+    @Test
+    @Order(13)
+    @DisplayName("Test Wire Tap - Monitor Flow")
+    void testWireTap_MonitorFlow() throws Exception {
+        MockEndpoint wireTap = camelContext.getEndpoint("mock:wiretap", MockEndpoint.class);
+        MockEndpoint target = camelContext.getEndpoint("mock:target", MockEndpoint.class);
+
+        wireTap.expectedMessageCount(1);
+        target.expectedMessageCount(1);
+
+        NodeExecutionTask task = createTask(
+            Map.of(
+                "patternType", "WIRE_TAP",
+                "payload", Map.of("data", "test"),
+                "wireTapEndpoint", "mock:wiretap",
+                "targetEndpoints", List.of("mock:target"),
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        NodeExecutionResult result = executor.execute(task)
+            .await().atMost(Duration.ofSeconds(10));
+
+        assertEquals(NodeExecutionStatus.COMPLETED, result.status());
+
+        wireTap.assertIsSatisfied();
+        target.assertIsSatisfied();
+    }
+
+    // ==================== MULTICAST TESTS ====================
+
+    @Test
+    @Order(14)
+    @DisplayName("Test Multicast - Broadcast to All")
+    void testMulticast_BroadcastToAll() throws Exception {
+        MockEndpoint mock1 = camelContext.getEndpoint("mock:multi1", MockEndpoint.class);
+        MockEndpoint mock2 = camelContext.getEndpoint("mock:multi2", MockEndpoint.class);
+
+        mock1.expectedMessageCount(1);
+        mock2.expectedMessageCount(1);
+
+        NodeExecutionTask task = createTask(
+            Map.of(
+                "patternType", "MULTICAST",
+                "payload", Map.of("broadcast", "message"),
+                "targetEndpoints", List.of("mock:multi1", "mock:multi2"),
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        NodeExecutionResult result = executor.execute(task)
+            .await().atMost(Duration.ofSeconds(10));
+
+        assertEquals(NodeExecutionStatus.COMPLETED, result.status());
+
+        mock1.assertIsSatisfied();
+        mock2.assertIsSatisfied();
+    }
+
+    // ==================== CIRCUIT BREAKER TESTS ====================
+
+    @Test
+    @Order(15)
+    @DisplayName("Test Circuit Breaker - Normal Flow")
+    void testCircuitBreaker_NormalFlow() throws Exception {
+        camelContext.addRoutes(new org.apache.camel.builder.RouteBuilder() {
+            @Override
+            public void configure() {
+                from("direct:cb-target")
+                    .setBody(constant(Map.of("result", "success")));
+            }
+        });
+
+        NodeExecutionTask task = createTask(
+            Map.of(
+                "patternType", "CIRCUIT_BREAKER",
+                "payload", Map.of("request", "test"),
+                "targetEndpoints", List.of("direct:cb-target"),
+                "circuitBreakerThreshold", 5,
+                "halfOpenAfter", 30000L,
+                "fallbackResponse", Map.of("result", "fallback"),
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        NodeExecutionResult result = executor.execute(task)
+            .await().atMost(Duration.ofSeconds(10));
+
+        assertEquals(NodeExecutionStatus.COMPLETED, result.status());
+        assertNotNull(result.output().get("result"));
+    }
+
+    // ==================== ERROR HANDLING TESTS ====================
+
+    @Test
+    @Order(16)
+    @DisplayName("Test Error Handling - Invalid Pattern")
+    void testErrorHandling_InvalidPattern() {
+        NodeExecutionTask task = createTask(
+            Map.of(
+                "patternType", "INVALID_PATTERN",
+                "payload", Map.of("data", "test"),
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        NodeExecutionResult result = executor.execute(task)
+            .await().atMost(Duration.ofSeconds(10));
+
+        assertEquals(NodeExecutionStatus.FAILED, result.status());
+        assertNotNull(result.error());
+    }
+
+    @Test
+    @Order(17)
+    @DisplayName("Test Error Handling - Timeout")
+    void testErrorHandling_Timeout() throws Exception {
+        camelContext.addRoutes(new org.apache.camel.builder.RouteBuilder() {
+            @Override
+            public void configure() {
+                from("direct:slow-endpoint")
+                    .delay(60000) // 60 seconds
+                    .setBody(constant("response"));
+            }
+        });
+
+        NodeExecutionTask task = createTask(
+            Map.of(
+                "patternType", "GENERIC",
+                "payload", Map.of("data", "test"),
+                "targetEndpoints", List.of("direct:slow-endpoint"),
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        // Should timeout
+        NodeExecutionResult result = executor.execute(task)
+            .await().atMost(Duration.ofSeconds(5));
+
+        // May fail due to timeout
+        assertNotNull(result);
+    }
+
+    // ==================== PERFORMANCE TESTS ====================
+
+    @Test
+    @Order(18)
+    @DisplayName("Test Performance - High Throughput")
+    void testPerformance_HighThroughput() throws Exception {
+        int messageCount = 100;
+        MockEndpoint mock = camelContext.getEndpoint("mock:perf-target", MockEndpoint.class);
+        mock.expectedMessageCount(messageCount);
+
+        long startTime = System.currentTimeMillis();
+
+        for (int i = 0; i < messageCount; i++) {
+            NodeExecutionTask task = createTask(
+                Map.of(
+                    "patternType", "GENERIC",
+                    "payload", Map.of("messageId", i),
+                    "targetEndpoints", List.of("mock:perf-target"),
+                    "tenantId", TEST_TENANT_ID
+                )
+            );
+
+            executor.execute(task).subscribe().asCompletionStage();
+        }
+
+        mock.assertIsSatisfied(Duration.ofSeconds(30));
+
+        long duration = System.currentTimeMillis() - startTime;
+        double throughput = (messageCount * 1000.0) / duration;
+
+        System.out.printf("Processed %d messages in %d ms (%.2f msg/sec)%n",
+            messageCount, duration, throughput);
+
+        assertTrue(throughput > 10, "Throughput should be > 10 msg/sec");
+    }
+
+    // ==================== INTEGRATION TESTS ====================
+
+    @Test
+    @Order(19)
+    @DisplayName("Test Integration - Multi-Step Pipeline")
+    void testIntegration_MultiStepPipeline() throws Exception {
+        // Step 1: Transform
+        NodeExecutionTask transformTask = createTask(
+            Map.of(
+                "patternType", "MESSAGE_TRANSLATOR",
+                "payload", Map.of("raw", "data"),
+                "transformationType", "json",
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        NodeExecutionResult transformResult = executor.execute(transformTask)
+            .await().atMost(Duration.ofSeconds(10));
+        assertEquals(NodeExecutionStatus.COMPLETED, transformResult.status());
+
+        // Step 2: Filter
+        NodeExecutionTask filterTask = createTask(
+            Map.of(
+                "patternType", "MESSAGE_FILTER",
+                "payload", transformResult.output().get("transformed"),
+                "filterExpression", "${body} != null",
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        NodeExecutionResult filterResult = executor.execute(filterTask)
+            .await().atMost(Duration.ofSeconds(10));
+        assertEquals(NodeExecutionStatus.COMPLETED, filterResult.status());
+
+        // Step 3: Route
+        NodeExecutionTask routeTask = createTask(
+            Map.of(
+                "patternType", "CONTENT_BASED_ROUTER",
+                "payload", filterResult.output().get("filtered"),
+                "targetEndpoints", List.of("mock:final-destination"),
+                "routingRules", Map.of("rule1", "${body} != null"),
+                "defaultEndpoint", "mock:default",
+                "tenantId", TEST_TENANT_ID
+            )
+        );
+
+        NodeExecutionResult routeResult = executor.execute(routeTask)
+            .await().atMost(Duration.ofSeconds(10));
+        assertEquals(NodeExecutionStatus.COMPLETED, routeResult.status());
+    }
+
+    // ==================== HELPER METHODS ====================
+
+    private NodeExecutionTask createTask(Map<String, Object> context) {
+        return new NodeExecutionTask(
+            WorkflowRunId.of("test-run-" + UUID.randomUUID()),
+            NodeId.of("test-node-" + UUID.randomUUID()),
+            1,
+            new ExecutionToken(
+                UUID.randomUUID().toString(),
+                WorkflowRunId.of("test-run"),
+                NodeId.of("test-node"),
+                1,
+                java.time.Instant.now().plusSeconds(3600)
+            ),
+            context
+        );
+    }
+
+    @BeforeEach
+    void setup() throws Exception {
+        // Reset context before each test
+        camelContext.getRouteController().stopAllRoutes();
+    }
+
+    @AfterEach
+    void cleanup() throws Exception {
+        // Clean up routes after each test
+        camelContext.getRouteController().stopAllRoutes();
+    }
+}

@@ -12,6 +12,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import tech.kayys.wayang.canvas.schema.CanvasData;
 import tech.kayys.wayang.canvas.schema.ChangeRecord;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * Canvas version history
@@ -33,12 +35,14 @@ public class CanvasVersion extends io.quarkus.hibernate.reactive.panache.Panache
     @Column(name = "version_tag")
     public String versionTag; // v1.0.0, v1.1.0, etc.
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "canvas_data", columnDefinition = "jsonb")
     public CanvasData canvasData;
 
     @Column(name = "change_summary")
     public String changeSummary;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "change_details", columnDefinition = "jsonb")
     public List<ChangeRecord> changeDetails;
 

@@ -1,0 +1,41 @@
+---
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: silat-postgres
+    environment:
+      POSTGRES_DB: silat_db
+      POSTGRES_USER: silat
+      POSTGRES_PASSWORD: silat_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    networks:
+      - silat-network
+
+  silat-app:
+    build: .
+    container_name: silat-human-task
+    environment:
+      QUARKUS_DATASOURCE_REACTIVE_URL: postgresql://postgres:5432/silat_db
+      QUARKUS_DATASOURCE_USERNAME: silat
+      QUARKUS_DATASOURCE_PASSWORD: silat_password
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    networks:
+      - silat-network
+
+volumes:
+  postgres_data:
+
+networks:
+  silat-network:
+    driver: bridge

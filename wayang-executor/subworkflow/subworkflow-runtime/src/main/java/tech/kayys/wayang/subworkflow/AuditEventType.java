@@ -1,0 +1,10 @@
+package tech.kayys.silat.persistence.subworkflow;
+
+enum AuditEventType {
+    RELATIONSHIP_CREATED,
+    RELATIONSHIP_COMPLETED,
+    RELATIONSHIP_CANCELLED,
+    PERMISSION_GRANTED,
+    PERMISSION_REVOKED,
+    CROSS_TENANT_ACCESS
+}

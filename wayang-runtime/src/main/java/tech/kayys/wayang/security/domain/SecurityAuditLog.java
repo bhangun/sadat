@@ -3,6 +3,8 @@ package tech.kayys.wayang.security.domain;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -49,6 +51,7 @@ public class SecurityAuditLog extends io.quarkus.hibernate.reactive.panache.Pana
     @Column(name = "timestamp")
     public Instant timestamp;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "details", columnDefinition = "jsonb")
     public Map<String, Object> details;
 }

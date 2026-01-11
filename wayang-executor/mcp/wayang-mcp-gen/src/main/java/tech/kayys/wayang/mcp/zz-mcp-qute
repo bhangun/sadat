@@ -1,0 +1,1364 @@
+# {model.title}
+
+{model.description}}
+
+// src/main/resources/templates/mcp-auth-handler.java
+package {model.packageName}.auth;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.util.Base64;
+import java.util.Optional;
+
+/**
+* Authentication handler for MCP server
+* Handles various authentication schemes defined in OpenAPI spec
+*/
+@ApplicationScoped
+public class McpAuthHandler {
+
+public Optional
+<String> extractBearerToken(JsonNode arguments) {
+if (arguments.has("authorization")) {
+String auth = arguments.get("authorization").asText();
+if (auth.toLowerCase().startsWith("bearer ")) {
+return Optional.of(auth.substring(7));
+}
+}
+
+if (arguments.has("token")) {
+return Optional.of(arguments.get("token").asText());
+}
+
+// Check environment variable
+String envToken = System.getenv("API_TOKEN");
+if (envToken != null && !envToken.isEmpty()) {
+return Optional.of(envToken);
+}
+
+return Optional.empty();
+}
+
+public Optional
+<String> extractApiKey(JsonNode arguments) {
+if (arguments.has("apiKey")) {
+return Optional.of(arguments.get("apiKey").asText());
+}
+
+if (arguments.has("api_key")) {
+return Optional.of(arguments.get("api_key").asText());
+}
+
+// Check environment variable
+String envApiKey = System.getenv("API_KEY");
+if (envApiKey != null && !envApiKey.isEmpty()) {
+return Optional.of(envApiKey);
+}
+
+return Optional.empty();
+}
+
+public Optional
+<String> extractBasicAuth(JsonNode arguments) {
+if (arguments.has("username") && arguments.has("password")) {
+String username = arguments.get("username").asText();
+String password = arguments.get("password").asText();
+String credentials = username + ":" + password;
+String encoded = Base64.getEncoder().encodeToString(credentials.getBytes());
+return Optional.of("Basic " + encoded);
+}
+
+return Optional.empty();
+}
+
+public boolean validateToken(String token) {
+// Implement token validation logic here
+// This is a placeholder implementation
+Log.debug("Validating token: {}", token != null ? "***" : "null");
+return token != null && !token.trim().isEmpty();
+}
+
+public boolean validateApiKey(String apiKey) {
+// Implement API key validation logic here
+// This is a placeholder implementation
+Log.debug("Validating API key: {}", apiKey != null ? "***" : "null");
+return apiKey != null && !apiKey.trim().isEmpty();
+}
+}
+
+// src/main/resources/templates/generated-pom.xml
+<?xml version="1.0"?>
+<project
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd"
+    xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>{model.packageName}</groupId>
+    <artifactId>{model.serverName?lower_case}</artifactId>
+    <version>{model.version}</version>
+
+    <properties>
+        <compiler-plugin.version>3.11.0</compiler-plugin.version>
+        <maven.compiler.release>17</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
+        <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
+        <quarkus.platform.version>3.6.0</quarkus.platform.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>${quarkus.platform.group-id}</groupId>
+                <artifactId>${quarkus.platform.artifact-id}</artifactId>
+                <version>${quarkus.platform.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-vertx</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-vertx-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-websockets-next</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-arc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-health</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>rest-assured</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>${quarkus.platform.group-id}</groupId>
+                <artifactId>quarkus-maven-plugin</artifactId>
+                <version>${quarkus.platform.version}</version>
+                <extensions>true</extensions>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>build</goal>
+                            <goal>generate-code</goal>
+                            <goal>generate-code-tests</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>${compiler-plugin.version}</version>
+                <configuration>
+                    <compilerArgs>
+                        <arg>-parameters</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+            <plugin>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.0.0</version>
+                <configuration>
+                    <systemPropertyVariables>
+                        <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                        <maven.home>${maven.home}</maven.home>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>native</id>
+            <activation>
+                <property>
+                    <name>native</name>
+                </property>
+            </activation>
+            <properties>
+                <skipITs>false</skipITs>
+                <quarkus.package.type>native</quarkus.package.type>
+            </properties>
+        </profile>
+    </profiles>
+</project>
+// src/main/resources/templates/generated-application.properties
+# {model.title} Configuration
+# Generated MCP Server
+
+# HTTP Configuration
+quarkus.http.port=8080
+quarkus.http.host=0.0.0.0
+
+# Logging Configuration
+quarkus.log.console.enable=true
+quarkus.log.console.format=%d{HH:mm:ss} %-5p [%c{2.}] (%t) %s%e%n
+quarkus.log.level=INFO
+quarkus.log.category."{model.packageName}".level=DEBUG
+
+# Health Check
+quarkus.smallrye-health.ui.enable=true
+
+# MCP Server Configuration
+mcp.server.name={model.title}
+mcp.server.version={model.version}
+mcp.server.description={model.description}
+
+# API Configuration
+api.base.url={model.baseUrl}
+{#if model.includeAuth}
+# Authentication Configuration (set these as environment variables)
+# api.auth.token=your_bearer_token
+# api.key=your_api_key
+{/if}
+
+# WebSocket Configuration
+quarkus.websockets-next.server.path=/mcp/ws
+
+# CORS Configuration
+quarkus.http.cors=true
+quarkus.http.cors.origins=*
+quarkus.http.cors.methods=GET,POST,OPTIONS
+quarkus.http.cors.headers=accept,content-type,authorization
+
+// src/main/resources/templates/readme.md
+# {model.title}
+
+{model.description}
+
+## Overview
+
+This is an automatically generated MCP (Model Context Protocol) server that can be generated from
+multiple specification types:
+- **OpenAPI/Swagger** (2.x, 3.x) specifications
+- **Postman Collections** (v2.0, v2.1) exports
+
+The server provides {model.tools.size()} tools that correspond to the API endpoints defined in the
+original specification.
+
+## Supported Input Formats
+
+### OpenAPI/Swagger
+- OpenAPI 3.0/3.1 (JSON/YAML)
+- Swagger 2.0 (JSON/YAML)
+- Automatic detection based on `openapi` or `swagger` fields
+
+### Postman Collections
+- Postman Collection v2.0/v2.1 (JSON)
+- Exported collections from Postman app
+- Collections with folders and nested requests
+- Variable substitution support
+- Authentication configurations
+
+## Available Tools
+
+{#for tool in model.tools}
+### {tool.name}
+- **Description**: {tool.description}
+- **HTTP Method**: {tool.method}
+- **Path**: {tool.path}
+{#if tool.parameters}
+- **Parameters**:
+{#for param in tool.parameters}
+- `{param.name}` ({param.javaType}){#if param.required} - **Required**{/if} [{param.in}]:
+{param.description}
+{/for}
+{/if}
+
+{/for}
+
+## Generator Usage
+
+The MCP server was generated using the following options:
+
+### Command Line Example
+```bash
+curl -X POST "http://localhost:8080/api/mcp-generator/generate" \
+-F "file=@your-spec.json" \
+-F "specType=auto" \
+-F "packageName={model.packageName}" \
+-F "serverName={model.serverName}" \
+-F "baseUrl={model.baseUrl}" \
+-F "includeAuth={model.includeAuth?c}" \
+-o generated-mcp-server.zip
+```
+
+### Supported Parameters
+- `specType`: `auto` (default), `openapi`, `postman`
+- `packageName`: Java package name for generated code
+- `serverName`: Name of the generated MCP server class
+- `baseUrl`: Base URL for API calls
+- `includeAuth`: Enable authentication support (`true`/`false`)
+- `collectionName`: Name for Postman collections (when specType=postman)
+
+## Requirements
+
+- Java 17 or later
+- Maven 3.8.1 or later
+
+## Configuration
+
+Set the following environment variables or system properties:
+
+- `API_BASE_URL`: Base URL for API calls (default: {model.baseUrl})
+{#if model.includeAuth}
+- `API_TOKEN`: Bearer token for authentication (if required)
+- `API_KEY`: API key for authentication (if required)
+- `API_USERNAME`: Username for basic auth (if required)
+- `API_PASSWORD`: Password for basic auth (if required)
+{/if}
+
+### Postman Variable Support
+If generated from a Postman collection, the server supports:
+- Environment variables from the collection
+- Collection-level variables
+- Dynamic variable resolution at runtime
+- Authentication configurations from Postman auth settings
+
+## Building and Running
+
+### Development Mode
+
+```bash
+./mvnw compile quarkus:dev
+```
+
+The server will start on `http://localhost:8080`
+
+### Production Build
+
+```bash
+./mvnw package
+java -jar target/quarkus-app/quarkus-run.jar
+```
+
+### Native Build
+
+```bash
+./mvnw package -Pnative
+./target/{model.serverName?lower_case}-{model.version}-runner
+```
+
+### Docker
+
+```bash
+docker build -t {model.serverName?lower_case} .
+docker run -p 8080:8080 {model.serverName?lower_case}
+```
+
+Or using Docker Compose:
+
+```bash
+docker-compose up
+```
+
+## Endpoints
+
+- **MCP Protocol**: `POST /mcp` - Main MCP JSON-RPC endpoint
+- **WebSocket**: `WS /mcp/ws` - WebSocket MCP endpoint
+- **Health Check**: `GET /health` - Health status
+- **Server Info**: `GET /info` - Server information and available tools
+
+## MCP Protocol Usage
+
+The server implements the Model Context Protocol (MCP) specification. It accepts JSON-RPC 2.0
+requests.
+
+### 1. Initialize Session
+
+```json
+{
+"jsonrpc": "2.0",
+"id": "1",
+"method": "initialize",
+"params": {
+"protocolVersion": "2024-11-05",
+"capabilities": {},
+"clientInfo": {
+"name": "example-client",
+"version": "1.0.0"
+}
+}
+}
+```
+
+### 2. List Available Tools
+
+```json
+{
+"jsonrpc": "2.0",
+"id": "2",
+"method": "tools/list"
+}
+```
+
+### 3. Call a Tool
+
+```json
+{
+"jsonrpc": "2.0",
+"id": "3",
+"method": "tools/call",
+"params": {
+"name": "{model.tools.?first.name}",
+"arguments": {
+{#if model.tools.?first.parameters}
+{#for param in model.tools.?first.parameters}
+"{param.name}": "example_value"{#if param_hasNext},{/if}
+{/for}
+{/if}
+}
+}
+}
+```
+
+## Testing
+
+Run the test suite:
+
+```bash
+./mvnw test
+```
+
+### Test with Python Script
+
+A Python test script is included for easy testing:
+
+```bash
+python3 scripts/test-mcp.py
+```
+
+The tests include:
+- Health endpoint verification
+- MCP protocol initialization
+- Tools listing
+- Basic tool execution
+- Error handling scenarios
+
+## Development
+
+### Adding Custom Logic
+
+You can extend the generated tools by modifying the classes in the `tools` package. Each tool class
+implements the `McpTool` interface with an `execute` method.
+
+### Postman-Specific Features
+
+If generated from a Postman collection:
+- Pre-request scripts are converted to parameter validation
+- Test scripts are reflected in response handling
+- Collection variables are supported through environment variables
+- Folder structure is preserved in tool naming
+
+### Authentication
+
+{#if model.includeAuth}
+The server supports multiple authentication methods:
+- **Bearer Token**: Via `Authorization: Bearer
+<token>` header
+- **API Key**: Via `X-API-Key` header or query parameter
+- **Basic Auth**: Via `Authorization: Basic
+<credentials>` header
+
+Authentication can be configured through:
+- Environment variables (preferred for security)
+- Tool call parameters (for dynamic auth)
+- System properties
+
+#### Postman Auth Integration
+If generated from a Postman collection with authentication:
+- Collection-level auth is automatically extracted
+- Request-level auth overrides are supported
+- OAuth2 flows are converted to bearer token auth
+- API key locations (header/query) are preserved
+{#else}
+Authentication support was not included in this generation. To add authentication, regenerate with
+the `includeAuth` option enabled.
+{/if}
+
+### Error Handling
+
+The server provides comprehensive error handling with proper MCP error responses:
+- Parameter validation errors
+- HTTP client errors (timeouts, connection failures)
+- API response errors (4xx, 5xx status codes)
+- JSON parsing errors
+- Authentication failures
+
+### Monitoring
+
+- Health checks are available at `/health`
+- Detailed server info at `/info`
+- WebSocket connections are logged
+- All tool executions are logged with request/response details
+- Metrics integration with Quarkus
+
+## Specification-Specific Notes
+
+### OpenAPI Features
+- Full parameter type mapping
+- Request/response schema validation
+- Security scheme integration
+- Server URL extraction
+- Component references resolution
+
+### Postman Features
+- Variable interpolation (`{{variable}}` syntax)
+- Environment and collection variables
+- Folder organization preserved
+- Request descriptions and examples
+- Authentication configurations
+- Pre/post-request script handling (limited)
+
+## License
+
+Generated code is provided as-is. Please review and modify according to your needs and security
+requirements.
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Connection Refused**: Ensure the target API server is running and accessible
+2. **Authentication Errors**: Verify API tokens/keys are correctly configured
+3. **Timeout Errors**: Check network connectivity and API response times
+4. **JSON Parse Errors**: Validate MCP request format against JSON-RPC 2.0 specification
+5. **Variable Resolution Errors** (Postman): Check environment variable configuration
+
+### Postman-Specific Issues
+
+1. **Missing Variables**: Ensure all Postman variables are defined as environment variables
+2. **Authentication Not Working**: Check if collection auth settings were properly converted
+3. **Request Body Issues**: Verify JSON structure in raw body mode
+4. **URL Building Errors**: Check path variable definitions and query parameters
+
+### Debug Mode
+
+Enable debug logging by setting:
+```properties
+quarkus.log.level=DEBUG
+quarkus.log.category."{model.packageName}".level=DEBUG
+```
+
+Or via environment variable:
+```bash
+export QUARKUS_LOG_LEVEL=DEBUG
+```
+
+### Regeneration
+
+If you encounter issues, try regenerating the server with different options:
+- Explicitly set `specType=postman` or `specType=openapi`
+- Enable authentication with `includeAuth=true`
+- Adjust the base URL if API endpoints are not accessible
+- Check the original specification for any validation errors/if}
+
+### Error Handling
+
+The server provides comprehensive error handling with proper MCP error responses. Check the logs for
+detailed error information.
+
+### Monitoring
+
+- Health checks are available at `/health`
+- Detailed server info at `/info`
+- WebSocket connections are logged
+- All tool executions are logged with request/response details
+
+## License
+
+Generated code is provided as-is. Please review and modify according to your needs and security
+requirements.
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Connection Refused**: Ensure the target API server is running and accessible
+2. **Authentication Errors**: Verify API tokens/keys are correctly configured
+3. **Timeout Errors**: Check network connectivity and API response times
+4. **JSON Parse Errors**: Validate MCP request format against JSON-RPC 2.0 specification
+
+### Debug Mode
+
+Enable debug logging by setting:
+```properties
+quarkus.log.level=DEBUG
+```
+
+Or via environment variable:
+```bash
+export QUARKUS_LOG_LEVEL=DEBUG
+```
+
+// src/main/resources/templates/dockerfile
+FROM registry.access.redhat.com/ubi8/openjdk-17:1.16
+
+ENV LANGUAGE='en_US:en'
+
+# Set application info
+LABEL name="{model.title}" \
+version="{model.version}" \
+description="{model.description}" \
+maintainer="Generated MCP Server"
+
+# Copy the application
+COPY --chown=185 target/quarkus-app/lib/ /deployments/lib/
+COPY --chown=185 target/quarkus-app/*.jar /deployments/
+COPY --chown=185 target/quarkus-app/app/ /deployments/app/
+COPY --chown=185 target/quarkus-app/quarkus/ /deployments/quarkus/
+
+EXPOSE 8080
+USER 185
+
+# Environment configuration
+ENV JAVA_OPTS="-Dquarkus.http.host=0.0.0.0
+-Djava.util.logging.manager=org.jboss.logmanager.LogManager"
+ENV JAVA_APP_JAR="/deployments/quarkus-run.jar"
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+CMD curl -f http://localhost:8080/health || exit 1
+
+# Default configuration
+ENV API_BASE_URL="{model.baseUrl}"
+{#if model.includeAuth}
+ENV API_TOKEN=""
+ENV API_KEY=""
+{/if}
+
+// src/main/resources/templates/docker-compose.yml
+version: '3.8'
+
+services:
+{model.serverName?lower_case}:
+build: .
+ports:
+- "8080:8080"
+environment:
+- QUARKUS_HTTP_HOST=0.0.0.0
+- API_BASE_URL={model.baseUrl}
+{#if model.includeAuth}
+- API_TOKEN=${API_TOKEN:-}
+- API_KEY=${API_KEY:-}
+{/if}
+- QUARKUS_LOG_LEVEL=INFO
+networks:
+- mcp-network
+restart: unless-stopped
+healthcheck:
+test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+interval: 30s
+timeout: 10s
+retries: 3
+start_period: 40s
+
+networks:
+mcp-network:
+driver: bridge
+
+# Optional: Add a reverse proxy for production
+# nginx:
+# image: nginx:alpine
+# ports:
+# - "80:80"
+# - "443:443"
+# volumes:
+# - ./nginx.conf:/etc/nginx/nginx.conf:ro
+# - ./ssl:/etc/nginx/ssl:ro
+# depends_on:
+# - {model.serverName?lower_case}
+# networks:
+# - mcp-network
+# restart: unless-stopped// src/main/resources/templates/mcp-server-main.java
+package {model.packageName};
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.quarkus.logging.Log;
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Promise;
+import io.vertx.core.http.HttpMethod;
+import io.vertx.core.http.HttpServer;
+import io.vertx.core.http.HttpServerRequest;
+import io.vertx.ext.web.Router;
+import io.vertx.ext.web.handler.BodyHandler;
+import io.vertx.ext.web.handler.CorsHandler;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+
+/**
+* {model.title}
+* {model.description}
+*
+* Generated MCP Server from OpenAPI specification
+* Version: {model.version}
+* Package: {model.packageName}
+*/
+@ApplicationScoped
+public class {model.serverClass} extends AbstractVerticle {
+
+private final ObjectMapper objectMapper = new ObjectMapper();
+private final Map
+<String , McpTool> tools = new HashMap
+<>();
+
+@Override
+public void start(Promise
+<Void> startPromise) {
+Log.info("Starting {model.title} v{model.version}");
+
+registerTools();
+setupServer(startPromise);
+}
+
+private void registerTools() {
+Log.info("Registering {} MCP tools", {model.tools.size()});
+{#for tool in model.tools}
+tools.put("{tool.name}", new {tool.className}());
+{/for}
+Log.info("Successfully registered all tools");
+}
+
+private void setupServer(Promise
+<Void> startPromise) {
+Router router = Router.router(vertx);
+
+// Enable CORS
+CorsHandler corsHandler = CorsHandler.create("*")
+.allowedMethods(Set.of(HttpMethod.GET, HttpMethod.POST, HttpMethod.OPTIONS))
+.allowedHeaders(Set.of("Content-Type", "Authorization"));
+router.route().handler(corsHandler);
+
+// Enable body parsing
+router.route().handler(BodyHandler.create());
+
+// MCP endpoint
+router.post("/mcp").handler(ctx -> {
+try {
+String body = ctx.getBodyAsString();
+JsonNode requestJson = objectMapper.readTree(body);
+
+handleMcpRequest(requestJson).thenAccept(response -> {
+ctx.response()
+.putHeader("Content-Type", "application/json")
+.end(response.toString());
+}).exceptionally(throwable -> {
+Log.error("Error handling MCP request", throwable);
+ObjectNode errorResponse = createErrorResponse(
+"Internal error: " + throwable.getMessage());
+ctx.response()
+.setStatusCode(500)
+.putHeader("Content-Type", "application/json")
+.end(errorResponse.toString());
+return null;
+});
+} catch (Exception e) {
+Log.error("Error parsing MCP request", e);
+ObjectNode errorResponse = createErrorResponse("Invalid JSON request: " + e.getMessage());
+ctx.response()
+.setStatusCode(400)
+.putHeader("Content-Type", "application/json")
+.end(errorResponse.toString());
+}
+});
+
+// Health check endpoint
+router.get("/health").handler(ctx -> {
+ObjectNode health = objectMapper.createObjectNode();
+health.put("status", "UP");
+health.put("server", "{model.title}");
+health.put("version", "{model.version}");
+health.put("toolsRegistered", tools.size());
+ctx.response()
+.putHeader("Content-Type", "application/json")
+.end(health.toString());
+});
+
+// Server info endpoint
+router.get("/info").handler(ctx -> {
+ObjectNode info = objectMapper.createObjectNode();
+info.put("name", "{model.title}");
+info.put("description", "{model.description}");
+info.put("version", "{model.version}");
+info.put("protocol", "MCP");
+info.put("protocolVersion", "2024-11-05");
+ArrayNode toolsArray = objectMapper.createArrayNode();
+tools.keySet().forEach(toolsArray::add);
+info.set("availableTools", toolsArray);
+ctx.response()
+.putHeader("Content-Type", "application/json")
+.end(info.toString());
+});
+
+// Create HTTP server
+vertx.createHttpServer()
+.requestHandler(router)
+.listen(8080)
+.onSuccess(server -> {
+Log.info("{model.title} started successfully on port 8080");
+Log.info("MCP endpoint available at: http://localhost:8080/mcp");
+Log.info("Health check at: http://localhost:8080/health");
+startPromise.complete();
+})
+.onFailure(error -> {
+Log.error("Failed to start server", error);
+startPromise.fail(error);
+});
+}
+
+private CompletableFuture
+<ObjectNode> handleMcpRequest(JsonNode request) {
+String method = request.has("method") ? request.get("method").asText() : "";
+String id = request.has("id") ? request.get("id").asText() : null;
+
+Log.debug("Handling MCP request: method={}, id={}", method, id);
+
+switch (method) {
+case "initialize":
+return CompletableFuture.completedFuture(handleInitialize(request));
+case "tools/list":
+return CompletableFuture.completedFuture(handleToolsList(request));
+case "tools/call":
+return handleToolCall(request);
+case "ping":
+return CompletableFuture.completedFuture(handlePing(request));
+default:
+return CompletableFuture.completedFuture(createErrorResponse(
+"Unknown method: " + method, -32601, id));
+}
+}
+
+private ObjectNode handleInitialize(JsonNode request) {
+ObjectNode response = objectMapper.createObjectNode();
+response.put("jsonrpc", "2.0");
+if (request.has("id")) {
+response.set("id", request.get("id"));
+}
+
+ObjectNode result = objectMapper.createObjectNode();
+result.put("protocolVersion", "2024-11-05");
+
+ObjectNode capabilities = objectMapper.createObjectNode();
+ObjectNode toolsCapability = objectMapper.createObjectNode();
+toolsCapability.put("listChanged", true);
+capabilities.set("tools", toolsCapability);
+result.set("capabilities", capabilities);
+
+ObjectNode serverInfo = objectMapper.createObjectNode();
+serverInfo.put("name", "{model.title}");
+serverInfo.put("version", "{model.version}");
+result.set("serverInfo", serverInfo);
+
+response.set("result", result);
+Log.info("MCP session initialized");
+return response;
+}
+
+private ObjectNode handleToolsList(JsonNode request) {
+ObjectNode response = objectMapper.createObjectNode();
+response.put("jsonrpc", "2.0");
+if (request.has("id")) {
+response.set("id", request.get("id"));
+}
+
+ObjectNode result = objectMapper.createObjectNode();
+ArrayNode toolsArray = objectMapper.createArrayNode();
+
+{#for tool in model.tools}
+// Tool: {tool.name}
+ObjectNode tool{tool.name?cap_first} = objectMapper.createObjectNode();
+tool{tool.name?cap_first}.put("name", "{tool.name}");
+tool{tool.name?cap_first}.put("description", "{tool.description}");
+
+ObjectNode inputSchema{tool.name?cap_first} = objectMapper.createObjectNode();
+inputSchema{tool.name?cap_first}.put("type", "object");
+ObjectNode properties{tool.name?cap_first} = objectMapper.createObjectNode();
+{#if tool.parameters}
+ArrayNode required{tool.name?cap_first} = objectMapper.createArrayNode();
+
+{#for param in tool.parameters}
+ObjectNode param{param.name?cap_first} = objectMapper.createObjectNode();
+param{param.name?cap_first}.put("type", "{param.type}");
+param{param.name?cap_first}.put("description", "{param.description}");
+{#if param.example}
+param{param.name?cap_first}.put("example", "{param.example}");
+{/if}
+{#if param.defaultValue}
+param{param.name?cap_first}.put("default", "{param.defaultValue}");
+{/if}
+properties{tool.name?cap_first}.set("{param.name}", param{param.name?cap_first});
+{#if param.required}
+required{tool.name?cap_first}.add("{param.name}");
+{/if}
+{/for}
+
+if (required{tool.name?cap_first}.size() > 0) {
+inputSchema{tool.name?cap_first}.set("required", required{tool.name?cap_first});
+}
+{/if}
+
+inputSchema{tool.name?cap_first}.set("properties", properties{tool.name?cap_first});
+tool{tool.name?cap_first}.set("inputSchema", inputSchema{tool.name?cap_first});
+toolsArray.add(tool{tool.name?cap_first});
+
+{/for}
+
+result.set("tools", toolsArray);
+response.set("result", result);
+
+Log.debug("Returned tools list with {} tools", toolsArray.size());
+return response;
+}
+
+private CompletableFuture
+<ObjectNode> handleToolCall(JsonNode request) {
+if (!request.has("params")) {
+return CompletableFuture.completedFuture(
+createErrorResponse("Missing params in tool call", -32602,
+request.has("id") ? request.get("id").asText() : null));
+}
+
+JsonNode params = request.get("params");
+String toolName = params.has("name") ? params.get("name").asText() : "";
+JsonNode arguments = params.has("arguments") ? params.get("arguments") :
+objectMapper.createObjectNode();
+
+Log.debug("Calling tool: {} with arguments: {}", toolName, arguments);
+
+McpTool tool = tools.get(toolName);
+if (tool == null) {
+return CompletableFuture.completedFuture(
+createErrorResponse("Tool not found: " + toolName, -32602,
+request.has("id") ? request.get("id").asText() : null));
+}
+
+return tool.execute(arguments).thenApply(result -> {
+ObjectNode response = objectMapper.createObjectNode();
+response.put("jsonrpc", "2.0");
+if (request.has("id")) {
+response.set("id", request.get("id"));
+}
+response.set("result", result);
+Log.debug("Tool {} executed successfully", toolName);
+return response;
+}).exceptionally(throwable -> {
+Log.error("Tool execution failed: " + toolName, throwable);
+return createErrorResponse("Tool execution failed: " + throwable.getMessage(), -32603,
+request.has("id") ? request.get("id").asText() : null);
+});
+}
+
+private ObjectNode handlePing(JsonNode request) {
+ObjectNode response = objectMapper.createObjectNode();
+response.put("jsonrpc", "2.0");
+if (request.has("id")) {
+response.set("id", request.get("id"));
+}
+
+ObjectNode result = objectMapper.createObjectNode();
+result.put("status", "pong");
+result.put("timestamp", System.currentTimeMillis());
+response.set("result", result);
+
+return response;
+}
+
+private ObjectNode createErrorResponse(String message) {
+return createErrorResponse(message, -1, null);
+}
+
+private ObjectNode createErrorResponse(String message, int code, String id) {
+ObjectNode response = objectMapper.createObjectNode();
+response.put("jsonrpc", "2.0");
+if (id != null) {
+response.put("id", id);
+}
+
+ObjectNode error = objectMapper.createObjectNode();
+error.put("code", code);
+error.put("message", message);
+response.set("error", error);
+return response;
+}
+
+public interface McpTool {
+CompletableFuture
+<JsonNode> execute(JsonNode arguments);
+}
+}
+
+// src/main/resources/templates/mcp-tool.java
+package {model.packageName}.tools;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import {model.packageName}.{model.serverClass}.McpTool;
+import io.quarkus.logging.Log;
+
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
+
+/**
+* MCP Tool: {tool.name}
+* {tool.description}
+*
+* HTTP Method: {tool.method}
+* Path: {tool.path}
+* {#if tool.operationId}Operation ID: {tool.operationId}{/if}
+*/
+public class {tool.className} implements McpTool {
+
+private final HttpClient httpClient;
+private final ObjectMapper objectMapper = new ObjectMapper();
+private final String baseUrl;
+
+public {tool.className}() {
+this.httpClient = HttpClient.newBuilder()
+.connectTimeout(Duration.ofSeconds(30))
+.build();
+this.baseUrl = System.getProperty("api.base.url", "{model.baseUrl}");
+Log.debug("Initialized tool {tool.name} with base URL: {}", baseUrl);
+}
+
+@Override
+public CompletableFuture
+<JsonNode> execute(JsonNode arguments) {
+Log.info("Executing tool: {tool.name}");
+
+try {
+// Validate required parameters
+{#if tool.parameters}
+{#for param in tool.parameters}
+{#if param.required}
+if (!arguments.has("{param.name}") || arguments.get("{param.name}").isNull()) {
+return CompletableFuture.completedFuture(createErrorResult("Missing required parameter:
+{param.name}"));
+}
+{/if}
+{/for}
+{/if}
+
+String url = buildUrl(arguments);
+HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+.uri(URI.create(url))
+.timeout(Duration.ofSeconds(60));
+
+// Add headers
+requestBuilder.header("User-Agent", "{model.title}/{model.version}");
+requestBuilder.header("Accept", "application/json");
+
+{#if model.includeAuth}
+// Add authentication if configured
+addAuthentication(requestBuilder, arguments);
+{/if}
+
+// Set HTTP method and body
+switch ("{tool.method}".toUpperCase()) {
+case "GET":
+requestBuilder.GET();
+break;
+case "POST":
+String postBody = buildRequestBody(arguments);
+requestBuilder.POST(HttpRequest.BodyPublishers.ofString(postBody));
+requestBuilder.header("Content-Type", "application/json");
+break;
+case "PUT":
+String putBody = buildRequestBody(arguments);
+requestBuilder.PUT(HttpRequest.BodyPublishers.ofString(putBody));
+requestBuilder.header("Content-Type", "application/json");
+break;
+case "PATCH":
+String patchBody = buildRequestBody(arguments);
+requestBuilder.method("PATCH", HttpRequest.BodyPublishers.ofString(patchBody));
+requestBuilder.header("Content-Type", "application/json");
+break;
+case "DELETE":
+requestBuilder.DELETE();
+break;
+default:
+requestBuilder.GET();
+}
+
+HttpRequest request = requestBuilder.build();
+Log.debug("Making HTTP request: {} {}", request.method(), request.uri());
+
+return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+.thenApply(this::processResponse)
+.exceptionally(this::handleException);
+
+} catch (Exception e) {
+Log.error("Error preparing request for tool {tool.name}", e);
+return CompletableFuture.completedFuture(createErrorResult("Request preparation failed: " +
+e.getMessage()));
+}
+}
+
+private String buildUrl(JsonNode arguments) {
+String path = "{tool.path}";
+StringBuilder queryParams = new StringBuilder();
+
+{#if tool.hasPathParameters}
+// Replace path parameters
+{#for param in tool.parameters}
+{#if param.in == 'path'}
+if (arguments.has("{param.name}")) {
+String value = arguments.get("{param.name}").asText();
+path = path.replace("{{param.name}}", URLEncoder.encode(value, StandardCharsets.UTF_8));
+}
+{/if}
+{/for}
+{/if}
+
+{#if tool.hasQueryParameters}
+// Add query parameters
+{#for param in tool.parameters}
+{#if param.in == 'query'}
+if (arguments.has("{param.name}") && !arguments.get("{param.name}").isNull()) {
+if (queryParams.length() == 0) {
+queryParams.append("?");
+} else {
+queryParams.append("&");
+}
+String value = arguments.get("{param.name}").asText();
+queryParams.append("{param.name}=").append(URLEncoder.encode(value, StandardCharsets.UTF_8));
+}
+{/if}
+{/for}
+{/if}
+
+String fullUrl = baseUrl + path + queryParams.toString();
+Log.debug("Built URL: {}", fullUrl);
+return fullUrl;
+}
+
+private String buildRequestBody(JsonNode arguments) {
+{#if tool.hasBodyParameters}
+ObjectNode requestBody = objectMapper.createObjectNode();
+
+{#for param in tool.parameters}
+{#if param.in == 'body'}
+if (arguments.has("{param.name}") && !arguments.get("{param.name}").isNull()) {
+requestBody.set("{param.name}", arguments.get("{param.name}"));
+}
+{/if}
+{/for}
+
+try {
+String body = objectMapper.writeValueAsString(requestBody);
+Log.debug("Built request body: {}", body);
+return body;
+} catch (Exception e) {
+Log.error("Error serializing request body", e);
+return "{}";
+}
+{#else}
+return "{}";
+{/if}
+}
+
+{#if model.includeAuth}
+private void addAuthentication(HttpRequest.Builder requestBuilder, JsonNode arguments) {
+// Add authentication headers based on security schemes
+String authToken = System.getProperty("api.auth.token");
+String apiKey = System.getProperty("api.key");
+
+if (authToken != null && !authToken.isEmpty()) {
+requestBuilder.header("Authorization", "Bearer " + authToken);
+} else if (apiKey != null && !apiKey.isEmpty()) {
+requestBuilder.header("X-API-Key", apiKey);
+}
+
+// Check for auth parameters in arguments
+if (arguments.has("authorization")) {
+requestBuilder.header("Authorization", arguments.get("authorization").asText());
+}
+if (arguments.has("apiKey")) {
+requestBuilder.header("X-API-Key", arguments.get("apiKey").asText());
+}
+}
+{/if}
+
+private JsonNode processResponse(HttpResponse
+<String> response) {
+ObjectNode result = objectMapper.createObjectNode();
+ArrayNode content = objectMapper.createArrayNode();
+
+try {
+int statusCode = response.statusCode();
+String responseBody = response.body();
+
+Log.debug("Received HTTP {} response: {}", statusCode, responseBody);
+
+// Create response content
+ObjectNode textContent = objectMapper.createObjectNode();
+textContent.put("type", "text");
+
+if (statusCode >= 200 && statusCode
+< 300) {
+                // Success response
+                result.put("isError", false);
+                
+                // Try to parse as JSON for better formatting
+                try {
+                    JsonNode jsonResponse = objectMapper.readTree(responseBody);
+                    textContent.put("text", "HTTP " + statusCode + " - Success\n\nResponse:\n" + 
+                        objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(jsonResponse));
+                } catch (Exception e) {
+                    // Not JSON, return as plain text
+                    textContent.put("text", "HTTP " + statusCode + " - Success\n\nResponse:\n" + responseBody);
+                }
+            } else {
+                // Error response
+                result.put("isError", true);
+                textContent.put("text", "HTTP " + statusCode + " - Error\n\nResponse:\n" + responseBody);
+            }
+            
+            content.add(textContent);
+            result.set("content", content);
+            
+        } catch (Exception e) {
+            Log.error("Error processing response", e);
+            return createErrorResult("Response processing failed: " + e.getMessage());
+        }
+        
+        return result;
+    }
+
+    private JsonNode handleException(Throwable throwable) {
+        Log.error("HTTP request failed for tool {tool.name}", throwable);
+        return createErrorResult("HTTP request failed: " + throwable.getMessage());
+    }
+
+    private JsonNode createErrorResult(String message) {
+        ObjectNode result = objectMapper.createObjectNode();
+        result.put("isError", true);
+        
+        ArrayNode content = objectMapper.createArrayNode();
+        ObjectNode textContent = objectMapper.createObjectNode();
+        textContent.put("type", "text");
+        textContent.put("text", "Error: " + message);
+        content.add(textContent);
+        
+        result.set("content", content);
+        return result;
+    }
+}
+
+// src/main/resources/templates/mcp-websocket.java
+package {model.packageName}.websocket;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.quarkus.logging.Log;
+import io.quarkus.websockets.next.OnClose;
+import io.quarkus.websockets.next.OnError;
+import io.quarkus.websockets.next.OnMessage;
+import io.quarkus.websockets.next.OnOpen;
+import io.quarkus.websockets.next.WebSocket;
+import io.quarkus.websockets.next.WebSocketConnection;
+import jakarta.inject.Inject;
+
+/**
+ * WebSocket handler for MCP protocol
+ * Provides real-time MCP communication over WebSocket
+ */
+@WebSocket(path = "/mcp/ws")
+public class McpWebSocketHandler {
+
+    @Inject
+    {model.packageName}.{model.serverClass} mcpServer;
+    
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @OnOpen
+    public void onOpen(WebSocketConnection connection) {
+        Log.info("MCP WebSocket connection opened: {}", connection.id());
+    }
+
+    @OnMessage
+    public String onMessage(String message, WebSocketConnection connection) {
+        Log.debug("Received WebSocket message: {}", message);
+        
+        try {
+            JsonNode request = objectMapper.readTree(message);
+            
+            // Process MCP request (this would need to be adapted to work with the main server)
+            // For now, return a simple acknowledgment
+            return objectMapper.createObjectNode()
+                .put("jsonrpc", "2.0")
+                .put("id", request.has("id") ? request.get("id").asText() : "")
+                .put("result", "WebSocket MCP handler - message received")
+                .toString();
+                
+        } catch (Exception e) {
+            Log.error("Error processing WebSocket message", e);
+            
+            try {
+                return objectMapper.createObjectNode()
+                    .put("jsonrpc", "2.0")
+                    .put("error", objectMapper.createObjectNode()
+                        .put("code", -32700)
+                        .put("message", "Parse error: " + e.getMessage()))
+                    .toString();
+            } catch (Exception ex) {
+                return "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32700,\"message\":\"Parse error\"}}";
+            }
+        }
+    }
+
+    @OnClose
+    public void onClose(WebSocketConnection connection) {
+        Log.info("MCP WebSocket connection closed: {}", connection.id());
+    }
+
+    @OnError
+    public void onError(Throwable error, WebSocketConnection connection) {
+        Log.error("MCP WebSocket error on connection: " + connection.id(), error);
+    }
+}

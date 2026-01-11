@@ -5,6 +5,13 @@
 # Quarkus configuration for the workflow engine service
 # Environment: Development, Staging, Production
 
+# SECURITY NOTE: TLS/SSL is disabled by default for internal services
+# Reasoning:
+# - IKET already enforces: mTLS, JWT/OIDC, Rate limits, AuthZ/policy
+# - Internal services: Not internet-facing, communicate only in trusted network
+# - Use execution tokens, not user JWTs for internal communication
+# This avoids: Double TLS termination, Certificate sprawl, Latency/CPU overhead, Operational complexity
+
 # Application Info
 quarkus:
   index-dependency:
@@ -33,16 +40,19 @@ quarkus:
     limits:
       max-body-size: 10M
       max-form-attribute-size: 2048
+    # SSL/TLS is disabled by default for internal services
+    # to avoid double encryption when IKET already handles mTLS, JWT/OIDC, etc.
     ssl:
-      certificate:
-        files: ${SSL_CERT:src/main/resources/certs/server.crt}
-        key-files: ${SSL_KEY:src/main/resources/certs/server.key}
-      trust-store:
-        files: ${SSL_TRUST_STORE:src/main/resources/certs/ca.crt}
-      client-auth: ${SSL_CLIENT_AUTH:required}
-    
-  # Enable HTTP/2
-  http2: true
+      # certificate:
+      #   files: ${SSL_CERT:src/main/resources/certs/server.crt}
+      #   key-files: ${SSL_KEY:src/main/resources/certs/server.key}
+      # trust-store:
+      #   files: ${SSL_TRUST_STORE:src/main/resources/certs/ca.crt}
+      # client-auth: ${SSL_CLIENT_AUTH:required}
+      enabled: false
+
+  # HTTP/2 is only available with SSL, so we disable it for internal use
+  # http2: true
   
   # ==================== DATABASE CONFIGURATION ====================
   datasource:
@@ -91,6 +101,10 @@ quarkus:
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     
+    # Dev Services configuration
+    devservices:
+      image-name: docker.redpanda.com/redpandadata/redpanda:v24.1.2
+    
     # Producer configuration
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
@@ -121,17 +135,23 @@ quarkus:
       enable-reflection-service: true
       max-inbound-message-size: 4194304  # 4MB
       handshake-timeout: 30s
+    # SSL/TLS is disabled by default for internal services
+    # to avoid double encryption when IKET already handles mTLS, JWT/OIDC, etc.
     ssl:
-      certificate: ${GRPC_SSL_CERT:src/main/resources/certs/server.crt}
-      key: ${GRPC_SSL_KEY:src/main/resources/certs/server.key}
-      trust-store: ${GRPC_SSL_TRUST_STORE:src/main/resources/certs/ca.crt}
-      client-auth: ${GRPC_SSL_CLIENT_AUTH:required}
-      
+      # certificate: ${GRPC_SSL_CERT:src/main/resources/certs/server.crt}
+      # key: ${GRPC_SSL_KEY:src/main/resources/certs/server.key}
+      # trust-store: ${GRPC_SSL_TRUST_STORE:src/main/resources/certs/ca.crt}
+      # client-auth: ${GRPC_SSL_CLIENT_AUTH:required}
+      enabled: false
+
     # gRPC Clients (for executor communication)
     clients:
       executor:
         host: ${EXECUTOR_GRPC_HOST:localhost}
         port: ${EXECUTOR_GRPC_PORT:9091}
+        # Disable SSL for internal communication
+        ssl:
+          enabled: false
         
   # ==================== OBSERVABILITY ====================
   
@@ -382,9 +402,14 @@ silat:
 # Test profile  
 "%test":
   quarkus:
+    kafka:
+      devservices:
+        enabled: false
     datasource:
       db-kind: h2
       jdbc.url: jdbc:h2:mem:test;DB_CLOSE_DELAY=-1
+      devservices:
+        enabled: false
     hibernate-orm:
       database.generation: drop-and-create
       

@@ -8,6 +8,7 @@ import java.util.Map;
 
 import io.smallrye.mutiny.Uni;
 import tech.kayys.silat.model.WorkflowDefinition;
+import tech.kayys.silat.model.TenantId;
 import tech.kayys.silat.model.WorkflowMetadata;
 import tech.kayys.silat.model.NodeDefinition;
 import tech.kayys.silat.model.InputDefinition;
@@ -23,6 +24,7 @@ public class WorkflowDefinitionBuilder {
     private final WorkflowDefinitionClient client;
     private final String name;
     private String version = "1.0.0";
+    private String tenantId = "default";
     private String description;
     private final List<NodeDefinition> nodes = new ArrayList<>();
     private final Map<String, InputDefinition> inputs = new HashMap<>();
@@ -38,6 +40,11 @@ public class WorkflowDefinitionBuilder {
 
     public WorkflowDefinitionBuilder version(String version) {
         this.version = version;
+        return this;
+    }
+
+    public WorkflowDefinitionBuilder tenantId(String tenantId) {
+        this.tenantId = tenantId;
         return this;
     }
 
@@ -85,6 +92,7 @@ public class WorkflowDefinitionBuilder {
 
         WorkflowDefinition request = new WorkflowDefinition(
                 null, // id
+                TenantId.of(tenantId),
                 name,
                 version,
                 description,

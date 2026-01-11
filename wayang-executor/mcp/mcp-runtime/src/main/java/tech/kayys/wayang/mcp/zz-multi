@@ -1,0 +1,886 @@
+package tech.kayys.silat.mcp.parser.multispec;
+
+import io.smallrye.mutiny.Uni;
+import io.swagger.v3.oas.models.*;
+import io.swagger.v3.oas.models.media.*;
+import io.swagger.v3.oas.models.parameters.Parameter;
+import io.swagger.v3.parser.OpenAPIV3Parser;
+import io.swagger.v3.parser.converter.SwaggerConverter;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import tech.kayys.silat.mcp.domain.*;
+import tech.kayys.silat.mcp.parser.*;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * ============================================================================
+ * MULTI-SPEC PARSER ORCHESTRATOR
+ * ============================================================================
+ * 
+ * Supports multiple API specification formats:
+ * - OpenAPI 3.x (3.0.0, 3.0.1, 3.0.2, 3.0.3, 3.1.0)
+ * - Swagger 2.0
+ * - Postman Collection (v2.0, v2.1)
+ * - AsyncAPI (2.x, 3.x)
+ * - GraphQL Schema
+ * - WSDL (SOAP)
+ * 
+ * All specs are normalized to OpenAPI 3.x internally for tool generation.
+ */
+@ApplicationScoped
+public class MultiSpecParserOrchestrator {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(MultiSpecParserOrchestrator.class);
+    
+    @Inject
+    OpenApiV3Parser openApiV3Parser;
+    
+    @Inject
+    SwaggerV2Parser swaggerV2Parser;
+    
+    @Inject
+    PostmanCollectionParser postmanParser;
+    
+    @Inject
+    AsyncApiParser asyncApiParser;
+    
+    @Inject
+    GraphQLSchemaParser graphqlParser;
+    
+    @Inject
+    WsdlParser wsdlParser;
+    
+    @Inject
+    SpecTypeDetector specTypeDetector;
+    
+    /**
+     * Parse any supported spec format
+     */
+    public Uni<OpenApiParseResult> parse(GenerateToolsRequest request) {
+        LOG.info("Parsing spec: type={}, namespace={}", 
+            request.sourceType(), request.namespace());
+        
+        // Auto-detect if source type is generic
+        SourceType detectedType = request.sourceType();
+        if (isGenericType(detectedType)) {
+            return fetchSpec(request)
+                .flatMap(specContent -> 
+                    specTypeDetector.detect(specContent)
+                        .flatMap(detected -> 
+                            parseWithDetectedType(detected, specContent, request)
+                        )
+                );
+        }
+        
+        // Parse based on explicit type
+        return parseByType(detectedType, request);
+    }
+    
+    /**
+     * Check if source type needs auto-detection
+     */
+    private boolean isGenericType(SourceType type) {
+        return type == SourceType.OPENAPI_3_URL || 
+               type == SourceType.OPENAPI_3_FILE || 
+               type == SourceType.OPENAPI_3_RAW;
+    }
+    
+    /**
+     * Parse with detected spec type
+     */
+    private Uni<OpenApiParseResult> parseWithDetectedType(
+            SourceType detectedType,
+            String specContent,
+            GenerateToolsRequest request) {
+        
+        LOG.info("Auto-detected spec type: {}", detectedType);
+        
+        return switch (detectedType) {
+            case OPENAPI_3_URL, OPENAPI_3_FILE, OPENAPI_3_RAW ->
+                openApiV3Parser.parseFromString(specContent);
+            
+            case SWAGGER_2_URL, SWAGGER_2_FILE, SWAGGER_2_RAW ->
+                swaggerV2Parser.parseFromString(specContent);
+            
+            case POSTMAN_URL, POSTMAN_FILE, POSTMAN_RAW ->
+                postmanParser.parseFromString(specContent);
+            
+            case ASYNCAPI_URL, ASYNCAPI_FILE, ASYNCAPI_RAW ->
+                asyncApiParser.parseFromString(specContent);
+            
+            case GRAPHQL_URL, GRAPHQL_FILE, GRAPHQL_RAW ->
+                graphqlParser.parseFromString(specContent);
+            
+            default -> Uni.createFrom().failure(
+                new UnsupportedOperationException(
+                    "Unsupported spec type: " + detectedType));
+        };
+    }
+    
+    /**
+     * Parse by explicit type
+     */
+    private Uni<OpenApiParseResult> parseByType(
+            SourceType type,
+            GenerateToolsRequest request) {
+        
+        return switch (type) {
+            case OPENAPI_3_URL, OPENAPI_3_FILE, OPENAPI_3_RAW ->
+                openApiV3Parser.parse(request);
+            
+            case SWAGGER_2_URL, SWAGGER_2_FILE, SWAGGER_2_RAW ->
+                swaggerV2Parser.parse(request);
+            
+            case POSTMAN_URL, POSTMAN_FILE, POSTMAN_RAW ->
+                postmanParser.parse(request);
+            
+            case ASYNCAPI_URL, ASYNCAPI_FILE, ASYNCAPI_RAW ->
+                asyncApiParser.parse(request);
+            
+            case GRAPHQL_URL, GRAPHQL_FILE, GRAPHQL_RAW ->
+                graphqlParser.parse(request);
+            
+            case WSDL_URL, WSDL_FILE ->
+                wsdlParser.parse(request);
+            
+            case GIT -> Uni.createFrom().failure(
+                new UnsupportedOperationException("Git not yet implemented"));
+            
+            default -> Uni.createFrom().failure(
+                new UnsupportedOperationException("Unknown type: " + type));
+        };
+    }
+    
+    /**
+     * Fetch spec content from source
+     */
+    private Uni<String> fetchSpec(GenerateToolsRequest request) {
+        return switch (request.sourceType()) {
+            case OPENAPI_3_URL, SWAGGER_2_URL, POSTMAN_URL, 
+                 ASYNCAPI_URL, GRAPHQL_URL, WSDL_URL ->
+                fetchFromUrl(request.source());
+            
+            case OPENAPI_3_FILE, SWAGGER_2_FILE, POSTMAN_FILE, 
+                 ASYNCAPI_FILE, GRAPHQL_FILE, WSDL_FILE ->
+                fetchFromFile(request.source());
+            
+            case OPENAPI_3_RAW, SWAGGER_2_RAW, POSTMAN_RAW, 
+                 ASYNCAPI_RAW, GRAPHQL_RAW ->
+                Uni.createFrom().item(request.source());
+            
+            default -> Uni.createFrom().failure(
+                new UnsupportedOperationException("Unknown source type"));
+        };
+    }
+    
+    @Inject
+    io.vertx.mutiny.core.Vertx vertx;
+    
+    private Uni<String> fetchFromUrl(String url) {
+        return vertx.createHttpClient()
+            .request(io.vertx.core.http.HttpMethod.GET, url)
+            .flatMap(req -> req.send()
+                .flatMap(resp -> resp.body()))
+            .map(buffer -> buffer.toString());
+    }
+    
+    private Uni<String> fetchFromFile(String filePath) {
+        return vertx.fileSystem().readFile(filePath)
+            .map(buffer -> buffer.toString());
+    }
+}
+
+// ==================== SPEC TYPE DETECTOR ====================
+
+/**
+ * Automatically detects API specification type
+ */
+@ApplicationScoped
+class SpecTypeDetector {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(SpecTypeDetector.class);
+    
+    public Uni<SourceType> detect(String specContent) {
+        return Uni.createFrom().item(() -> {
+            // Try to parse as JSON/YAML first
+            SpecFormat format = detectFormat(specContent);
+            
+            if (format == SpecFormat.JSON) {
+                return detectJsonSpec(specContent);
+            } else if (format == SpecFormat.YAML) {
+                return detectYamlSpec(specContent);
+            } else if (format == SpecFormat.XML) {
+                return detectXmlSpec(specContent);
+            } else if (format == SpecFormat.GRAPHQL) {
+                return SourceType.GRAPHQL_RAW;
+            }
+            
+            throw new IllegalArgumentException("Unknown spec format");
+        });
+    }
+    
+    /**
+     * Detect spec format (JSON, YAML, XML, GraphQL)
+     */
+    private SpecFormat detectFormat(String content) {
+        String trimmed = content.trim();
+        
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+            return SpecFormat.JSON;
+        } else if (trimmed.startsWith("<?xml") || trimmed.startsWith("<wsdl:") || 
+                   trimmed.startsWith("<definitions")) {
+            return SpecFormat.XML;
+        } else if (trimmed.contains("type Query") || 
+                   trimmed.contains("type Mutation") ||
+                   trimmed.contains("schema {")) {
+            return SpecFormat.GRAPHQL;
+        } else {
+            return SpecFormat.YAML;
+        }
+    }
+    
+    /**
+     * Detect JSON-based spec type
+     */
+    private SourceType detectJsonSpec(String content) {
+        // Check for Postman Collection
+        if (content.contains("\"info\"") && content.contains("\"item\"") &&
+            (content.contains("\"postman_collection\"") || 
+             content.contains("\"schema\": \"https://schema.getpostman.com/"))) {
+            return SourceType.POSTMAN_RAW;
+        }
+        
+        // Check for AsyncAPI
+        if (content.contains("\"asyncapi\"")) {
+            return SourceType.ASYNCAPI_RAW;
+        }
+        
+        // Check for OpenAPI 3.x
+        if (content.contains("\"openapi\"") && 
+            (content.contains("\"3.0") || content.contains("\"3.1"))) {
+            return SourceType.OPENAPI_3_RAW;
+        }
+        
+        // Check for Swagger 2.0
+        if (content.contains("\"swagger\"") && content.contains("\"2.0\"")) {
+            return SourceType.SWAGGER_2_RAW;
+        }
+        
+        throw new IllegalArgumentException("Unknown JSON spec type");
+    }
+    
+    /**
+     * Detect YAML-based spec type
+     */
+    private SourceType detectYamlSpec(String content) {
+        String lower = content.toLowerCase();
+        
+        // Check for AsyncAPI
+        if (lower.contains("asyncapi:")) {
+            return SourceType.ASYNCAPI_RAW;
+        }
+        
+        // Check for OpenAPI 3.x
+        if (lower.contains("openapi:") && 
+            (lower.contains("3.0") || lower.contains("3.1"))) {
+            return SourceType.OPENAPI_3_RAW;
+        }
+        
+        // Check for Swagger 2.0
+        if (lower.contains("swagger:") && lower.contains("2.0")) {
+            return SourceType.SWAGGER_2_RAW;
+        }
+        
+        throw new IllegalArgumentException("Unknown YAML spec type");
+    }
+    
+    /**
+     * Detect XML-based spec type
+     */
+    private SourceType detectXmlSpec(String content) {
+        if (content.contains("wsdl:") || content.contains("<definitions")) {
+            return SourceType.WSDL_URL;
+        }
+        
+        throw new IllegalArgumentException("Unknown XML spec type");
+    }
+    
+    enum SpecFormat {
+        JSON, YAML, XML, GRAPHQL
+    }
+}
+
+// ==================== SWAGGER 2.0 PARSER ====================
+
+/**
+ * Swagger 2.0 parser - converts to OpenAPI 3.x
+ */
+@ApplicationScoped
+class SwaggerV2Parser {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(SwaggerV2Parser.class);
+    
+    @Inject
+    io.vertx.mutiny.core.Vertx vertx;
+    
+    public Uni<OpenApiParseResult> parse(GenerateToolsRequest request) {
+        return switch (request.sourceType()) {
+            case SWAGGER_2_URL -> parseFromUrl(request.source());
+            case SWAGGER_2_FILE -> parseFromFile(request.source());
+            case SWAGGER_2_RAW -> parseFromString(request.source());
+            default -> Uni.createFrom().failure(
+                new IllegalArgumentException("Invalid Swagger 2.0 source type"));
+        };
+    }
+    
+    private Uni<OpenApiParseResult> parseFromUrl(String url) {
+        return vertx.createHttpClient()
+            .request(io.vertx.core.http.HttpMethod.GET, url)
+            .flatMap(req -> req.send().flatMap(resp -> resp.body()))
+            .map(buffer -> buffer.toString())
+            .map(this::convertSwagger2ToOpenApi3);
+    }
+    
+    private Uni<OpenApiParseResult> parseFromFile(String filePath) {
+        return vertx.fileSystem().readFile(filePath)
+            .map(buffer -> buffer.toString())
+            .map(this::convertSwagger2ToOpenApi3);
+    }
+    
+    public Uni<OpenApiParseResult> parseFromString(String swagger2Spec) {
+        return Uni.createFrom().item(convertSwagger2ToOpenApi3(swagger2Spec));
+    }
+    
+    /**
+     * Convert Swagger 2.0 to OpenAPI 3.x using swagger-parser converter
+     */
+    private OpenApiParseResult convertSwagger2ToOpenApi3(String swagger2Spec) {
+        try {
+            LOG.info("Converting Swagger 2.0 to OpenAPI 3.x");
+            
+            // Use swagger-parser's built-in converter
+            SwaggerConverter converter = new SwaggerConverter();
+            OpenAPI openApi = converter.readContents(
+                swagger2Spec, 
+                null, 
+                null
+            ).getOpenAPI();
+            
+            if (openApi == null) {
+                return new OpenApiParseResult(
+                    null,
+                    swagger2Spec,
+                    false,
+                    List.of("Failed to convert Swagger 2.0 to OpenAPI 3.x")
+                );
+            }
+            
+            LOG.info("Successfully converted Swagger 2.0 to OpenAPI 3.x");
+            
+            return new OpenApiParseResult(
+                openApi,
+                swagger2Spec,
+                true,
+                List.of()
+            );
+            
+        } catch (Exception e) {
+            LOG.error("Failed to parse Swagger 2.0", e);
+            return new OpenApiParseResult(
+                null,
+                swagger2Spec,
+                false,
+                List.of("Swagger 2.0 parse error: " + e.getMessage())
+            );
+        }
+    }
+}
+
+// ==================== POSTMAN COLLECTION PARSER ====================
+
+/**
+ * Postman Collection parser (v2.0, v2.1)
+ * Converts Postman collections to OpenAPI 3.x
+ */
+@ApplicationScoped
+class PostmanCollectionParser {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(PostmanCollectionParser.class);
+    
+    @Inject
+    io.vertx.mutiny.core.Vertx vertx;
+    
+    @Inject
+    com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+    
+    public Uni<OpenApiParseResult> parse(GenerateToolsRequest request) {
+        return switch (request.sourceType()) {
+            case POSTMAN_URL -> parseFromUrl(request.source());
+            case POSTMAN_FILE -> parseFromFile(request.source());
+            case POSTMAN_RAW -> parseFromString(request.source());
+            default -> Uni.createFrom().failure(
+                new IllegalArgumentException("Invalid Postman source type"));
+        };
+    }
+    
+    private Uni<OpenApiParseResult> parseFromUrl(String url) {
+        return vertx.createHttpClient()
+            .request(io.vertx.core.http.HttpMethod.GET, url)
+            .flatMap(req -> req.send().flatMap(resp -> resp.body()))
+            .map(buffer -> buffer.toString())
+            .map(this::convertPostmanToOpenApi);
+    }
+    
+    private Uni<OpenApiParseResult> parseFromFile(String filePath) {
+        return vertx.fileSystem().readFile(filePath)
+            .map(buffer -> buffer.toString())
+            .map(this::convertPostmanToOpenApi);
+    }
+    
+    public Uni<OpenApiParseResult> parseFromString(String postmanSpec) {
+        return Uni.createFrom().item(convertPostmanToOpenApi(postmanSpec));
+    }
+    
+    /**
+     * Convert Postman Collection to OpenAPI 3.x
+     */
+    private OpenApiParseResult convertPostmanToOpenApi(String postmanJson) {
+        try {
+            LOG.info("Converting Postman Collection to OpenAPI 3.x");
+            
+            // Parse Postman collection
+            PostmanCollection collection = objectMapper.readValue(
+                postmanJson, 
+                PostmanCollection.class
+            );
+            
+            // Create OpenAPI structure
+            OpenAPI openApi = new OpenAPI();
+            openApi.setOpenapi("3.0.3");
+            
+            // Info
+            Info info = new Info();
+            info.setTitle(collection.info.name);
+            info.setDescription(collection.info.description);
+            info.setVersion("1.0.0");
+            openApi.setInfo(info);
+            
+            // Server
+            if (collection.variable != null) {
+                String baseUrl = extractBaseUrl(collection.variable);
+                if (baseUrl != null) {
+                    Server server = new Server();
+                    server.setUrl(baseUrl);
+                    openApi.setServers(List.of(server));
+                }
+            }
+            
+            // Paths
+            Paths paths = new Paths();
+            processPostmanItems(collection.item, paths);
+            openApi.setPaths(paths);
+            
+            LOG.info("Successfully converted Postman Collection to OpenAPI 3.x");
+            
+            return new OpenApiParseResult(
+                openApi,
+                postmanJson,
+                true,
+                List.of()
+            );
+            
+        } catch (Exception e) {
+            LOG.error("Failed to parse Postman Collection", e);
+            return new OpenApiParseResult(
+                null,
+                postmanJson,
+                false,
+                List.of("Postman parse error: " + e.getMessage())
+            );
+        }
+    }
+    
+    /**
+     * Process Postman items recursively
+     */
+    private void processPostmanItems(
+            List<PostmanItem> items, 
+            Paths paths) {
+        
+        if (items == null) return;
+        
+        for (PostmanItem item : items) {
+            if (item.request != null) {
+                // Leaf item with request
+                addRequestToPath(item, paths);
+            } else if (item.item != null) {
+                // Folder - recurse
+                processPostmanItems(item.item, paths);
+            }
+        }
+    }
+    
+    /**
+     * Add Postman request to OpenAPI path
+     */
+    private void addRequestToPath(PostmanItem item, Paths paths) {
+        if (item.request == null || item.request.url == null) {
+            return;
+        }
+        
+        String path = extractPath(item.request.url);
+        PathItem.HttpMethod method = PathItem.HttpMethod.valueOf(
+            item.request.method.toUpperCase()
+        );
+        
+        PathItem pathItem = paths.get(path);
+        if (pathItem == null) {
+            pathItem = new PathItem();
+            paths.addPathItem(path, pathItem);
+        }
+        
+        Operation operation = createOperation(item);
+        pathItem.operation(method, operation);
+    }
+    
+    /**
+     * Create OpenAPI operation from Postman request
+     */
+    private Operation createOperation(PostmanItem item) {
+        Operation operation = new Operation();
+        
+        // Summary and description
+        operation.setSummary(item.name);
+        if (item.request.description != null) {
+            operation.setDescription(item.request.description);
+        }
+        
+        // Operation ID
+        String operationId = item.name
+            .toLowerCase()
+            .replaceAll("[^a-z0-9]", "_");
+        operation.setOperationId(operationId);
+        
+        // Parameters
+        if (item.request.url != null && item.request.url.query != null) {
+            List<Parameter> parameters = new ArrayList<>();
+            for (PostmanQueryParam qp : item.request.url.query) {
+                Parameter param = new Parameter();
+                param.setName(qp.key);
+                param.setIn("query");
+                param.setDescription(qp.description);
+                param.setRequired(false);
+                
+                Schema<?> schema = new StringSchema();
+                param.setSchema(schema);
+                
+                parameters.add(param);
+            }
+            operation.setParameters(parameters);
+        }
+        
+        // Request body
+        if (item.request.body != null && 
+            item.request.body.mode != null &&
+            item.request.body.mode.equals("raw")) {
+            
+            io.swagger.v3.oas.models.parameters.RequestBody requestBody = 
+                new io.swagger.v3.oas.models.parameters.RequestBody();
+            
+            Content content = new Content();
+            MediaType mediaType = new MediaType();
+            
+            // Try to infer schema from example
+            Schema<?> schema = new ObjectSchema();
+            mediaType.setSchema(schema);
+            
+            content.addMediaType("application/json", mediaType);
+            requestBody.setContent(content);
+            
+            operation.setRequestBody(requestBody);
+        }
+        
+        // Response
+        ApiResponses responses = new ApiResponses();
+        ApiResponse response200 = new ApiResponse();
+        response200.setDescription("Successful response");
+        responses.addApiResponse("200", response200);
+        operation.setResponses(responses);
+        
+        return operation;
+    }
+    
+    /**
+     * Extract path from Postman URL
+     */
+    private String extractPath(PostmanUrl url) {
+        if (url.raw != null) {
+            try {
+                java.net.URI uri = new java.net.URI(url.raw);
+                String path = uri.getPath();
+                return path != null && !path.isEmpty() ? path : "/";
+            } catch (Exception e) {
+                // Fallback
+            }
+        }
+        
+        if (url.path != null && !url.path.isEmpty()) {
+            return "/" + String.join("/", url.path);
+        }
+        
+        return "/unknown";
+    }
+    
+    /**
+     * Extract base URL from variables
+     */
+    private String extractBaseUrl(List<PostmanVariable> variables) {
+        for (PostmanVariable var : variables) {
+            if ("baseUrl".equals(var.key) || "base_url".equals(var.key)) {
+                return var.value;
+            }
+        }
+        return null;
+    }
+    
+    // ==================== POSTMAN DATA STRUCTURES ====================
+    
+    static class PostmanCollection {
+        public PostmanInfo info;
+        public List<PostmanItem> item;
+        public List<PostmanVariable> variable;
+    }
+    
+    static class PostmanInfo {
+        public String name;
+        public String description;
+        public String version;
+    }
+    
+    static class PostmanItem {
+        public String name;
+        public PostmanRequest request;
+        public List<PostmanItem> item;  // For folders
+    }
+    
+    static class PostmanRequest {
+        public String method;
+        public PostmanUrl url;
+        public PostmanBody body;
+        public String description;
+        public List<PostmanHeader> header;
+    }
+    
+    static class PostmanUrl {
+        public String raw;
+        public List<String> path;
+        public List<PostmanQueryParam> query;
+    }
+    
+    static class PostmanQueryParam {
+        public String key;
+        public String value;
+        public String description;
+    }
+    
+    static class PostmanBody {
+        public String mode;
+        public String raw;
+    }
+    
+    static class PostmanHeader {
+        public String key;
+        public String value;
+    }
+    
+    static class PostmanVariable {
+        public String key;
+        public String value;
+    }
+}
+
+// ==================== ASYNCAPI PARSER ====================
+
+/**
+ * AsyncAPI parser (v2.x, v3.x)
+ * Converts AsyncAPI to OpenAPI-like structure for event-driven APIs
+ */
+@ApplicationScoped
+class AsyncApiParser {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(AsyncApiParser.class);
+    
+    @Inject
+    io.vertx.mutiny.core.Vertx vertx;
+    
+    public Uni<OpenApiParseResult> parse(GenerateToolsRequest request) {
+        return switch (request.sourceType()) {
+            case ASYNCAPI_URL -> parseFromUrl(request.source());
+            case ASYNCAPI_FILE -> parseFromFile(request.source());
+            case ASYNCAPI_RAW -> parseFromString(request.source());
+            default -> Uni.createFrom().failure(
+                new IllegalArgumentException("Invalid AsyncAPI source type"));
+        };
+    }
+    
+    private Uni<OpenApiParseResult> parseFromUrl(String url) {
+        return vertx.createHttpClient()
+            .request(io.vertx.core.http.HttpMethod.GET, url)
+            .flatMap(req -> req.send().flatMap(resp -> resp.body()))
+            .map(buffer -> buffer.toString())
+            .map(this::convertAsyncApiToOpenApi);
+    }
+    
+    private Uni<OpenApiParseResult> parseFromFile(String filePath) {
+        return vertx.fileSystem().readFile(filePath)
+            .map(buffer -> buffer.toString())
+            .map(this::convertAsyncApiToOpenApi);
+    }
+    
+    public Uni<OpenApiParseResult> parseFromString(String asyncApiSpec) {
+        return Uni.createFrom().item(convertAsyncApiToOpenApi(asyncApiSpec));
+    }
+    
+    /**
+     * Convert AsyncAPI to OpenAPI structure
+     * AsyncAPI channels become webhook endpoints
+     */
+    private OpenApiParseResult convertAsyncApiToOpenApi(String asyncApiSpec) {
+        try {
+            LOG.info("Converting AsyncAPI to OpenAPI 3.x (webhook style)");
+            
+            // Basic conversion - in production use asyncapi-parser library
+            OpenAPI openApi = new OpenAPI();
+            openApi.setOpenapi("3.0.3");
+            
+            // Parse basic info
+            Info info = new Info();
+            info.setTitle("AsyncAPI Service");
+            info.setDescription("Converted from AsyncAPI specification");
+            info.setVersion("1.0.0");
+            openApi.setInfo(info);
+            
+            // For now, return basic structure
+            // In production, parse channels as webhook callbacks
+            Paths paths = new Paths();
+            openApi.setPaths(paths);
+            
+            return new OpenApiParseResult(
+                openApi,
+                asyncApiSpec,
+                true,
+                List.of("AsyncAPI basic conversion - webhooks not fully supported yet")
+            );
+            
+        } catch (Exception e) {
+            LOG.error("Failed to parse AsyncAPI", e);
+            return new OpenApiParseResult(
+                null,
+                asyncApiSpec,
+                false,
+                List.of("AsyncAPI parse error: " + e.getMessage())
+            );
+        }
+    }
+}
+
+// ==================== GRAPHQL SCHEMA PARSER ====================
+
+/**
+ * GraphQL schema parser
+ * Converts GraphQL schema to OpenAPI structure
+ */
+@ApplicationScoped
+class GraphQLSchemaParser {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(GraphQLSchemaParser.class);
+    
+    @Inject
+    io.vertx.mutiny.core.Vertx vertx;
+    
+    public Uni<OpenApiParseResult> parse(GenerateToolsRequest request) {
+        return switch (request.sourceType()) {
+            case GRAPHQL_URL -> parseFromUrl(request.source());
+            case GRAPHQL_FILE -> parseFromFile(request.source());
+            case GRAPHQL_RAW -> parseFromString(request.source());
+            default -> Uni.createFrom().failure(
+                new IllegalArgumentException("Invalid GraphQL source type"));
+        };
+    }
+    
+    private Uni<OpenApiParseResult> parseFromUrl(String url) {
+        return vertx.createHttpClient()
+            .request(io.vertx.core.http.HttpMethod.GET, url)
+            .flatMap(req -> req.send().flatMap(resp -> resp.body()))
+            .map(buffer -> buffer.toString())
+            .map(this::convertGraphQLToOpenApi);
+    }
+    
+    private Uni<OpenApiParseResult> parseFromFile(String filePath) {
+        return vertx.fileSystem().readFile(filePath)
+            .map(buffer -> buffer.toString())
+            .map(this::convertGraphQLToOpenApi);
+    }
+    
+    public Uni<OpenApiParseResult> parseFromString(String graphqlSchema) {
+        return Uni.createFrom().item(convertGraphQLToOpenApi(graphqlSchema));
+    }
+    
+    /**
+     * Convert GraphQL schema to OpenAPI
+     * Queries become GET operations
+     * Mutations become POST operations
+     */
+    private OpenApiParseResult convertGraphQLToOpenApi(String graphqlSchema) {
+        try {
+            LOG.info("Converting GraphQL schema to OpenAPI 3.x");
+            
+            OpenAPI openApi = new OpenAPI();
+            openApi.setOpenapi("3.0.3");
+            
+            Info info = new Info();
+            info.setTitle("GraphQL API");
+            info.setDescription("Converted from GraphQL schema");
+            info.setVersion("1.0.0");
+            openApi.setInfo(info);
+            
+            // GraphQL endpoint
+            Server server = new Server();
+            server.setUrl("/graphql");
+            openApi.setServers(List.of(server));
+            
+            Paths paths = new Paths();
+            
+            // Create single POST endpoint for GraphQL
+            PathItem pathItem = new PathItem();
+            Operation operation = new Operation();
+            operation.setOperationId("graphql");
+            operation.setSummary("GraphQL endpoint");
+            operation.setDescription("Execute GraphQL queries and mutations");
+            
+            // Request body
+            io.swagger.v3.oas.models.parameters.RequestBody requestBody = 
+                new io.swagger.v3.oas.models.parameters.RequestBody();
+            
+            Content content = new Content();
+            MediaType mediaType = new MediaType();
+            
+            ObjectSchema schema = new ObjectSchema();
+            schema.addProperty("query", new StringSchema().description("GraphQL query"));
+            schema.addProperty("variables", new ObjectSchema().description("Query variables"));
+            
+            mediaType.setSchema(schema);
+            content.addMediaType("application/json", mediaType);
+            requestBody.setContent(content);
+            operation.setRequestBody(requestBody);
+            
+            // Response
+            ApiResponses responses = new ApiResponses();
+            ApiResponse response200 = new ApiResponse();
+            response200.setDescription("GraphQL response");
+            responses.addApiResponse("200", response200);
+            operation.set

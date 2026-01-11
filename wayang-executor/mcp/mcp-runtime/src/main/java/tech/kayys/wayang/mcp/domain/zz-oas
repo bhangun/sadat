@@ -1,0 +1,1341 @@
+package tech.kayys.silat.mcp.parser;
+
+import io.quarkus.hibernate.reactive.panache.Panache;
+import io.smallrye.mutiny.Uni;
+import io.swagger.v3.oas.models.*;
+import io.swagger.v3.oas.models.media.*;
+import io.swagger.v3.oas.models.parameters.Parameter;
+import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.parser.OpenAPIV3Parser;
+import io.swagger.v3.parser.core.models.ParseOptions;
+import io.swagger.v3.parser.core.models.SwaggerParseResult;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import tech.kayys.silat.mcp.domain.*;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Instant;
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * ============================================================================
+ * OPENAPI PARSER & TOOL GENERATOR
+ * ============================================================================
+ * 
+ * Transforms OpenAPI specifications into executable MCP tools.
+ * 
+ * Pipeline:
+ * 1. Parse OpenAPI spec (URL, file, or raw)
+ * 2. Validate spec structure
+ * 3. Extract operations → MCP tools
+ * 4. Generate input/output schemas
+ * 5. Configure HTTP execution
+ * 6. Map authentication
+ * 7. Apply guardrails
+ * 8. Persist to registry
+ */
+@ApplicationScoped
+public class OpenApiToolGenerator {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(OpenApiToolGenerator.class);
+    
+    @Inject
+    OpenApiParser parser;
+    
+    @Inject
+    SchemaConverter schemaConverter;
+    
+    @Inject
+    ToolGuardrailGenerator guardrailGenerator;
+    
+    @Inject
+    AuthProfileMapper authMapper;
+    
+    @Inject
+    ToolCapabilityAnalyzer capabilityAnalyzer;
+    
+    /**
+     * Generate MCP tools from OpenAPI source
+     */
+    public Uni<ToolGenerationResult> generateTools(GenerateToolsRequest request) {
+        LOG.info("Generating tools from OpenAPI source: {} (tenant: {})", 
+            request.namespace(), request.tenantId());
+        
+        return Panache.withTransaction(() ->
+            // Parse OpenAPI spec
+            parser.parse(request)
+                .flatMap(parseResult -> {
+                    if (!parseResult.isValid()) {
+                        return Uni.createFrom().failure(
+                            new OpenApiParseException("Invalid OpenAPI spec: " + 
+                                parseResult.errors()));
+                    }
+                    
+                    // Create source record
+                    return createOpenApiSource(request, parseResult)
+                        .flatMap(source ->
+                            // Generate tools from operations
+                            generateToolsFromSpec(source, parseResult.openApi(), request)
+                                .flatMap(tools ->
+                                    // Persist tools
+                                    persistTools(tools)
+                                        .map(persisted -> 
+                                            new ToolGenerationResult(
+                                                source.getSourceId(),
+                                                source.getNamespace(),
+                                                persisted.size(),
+                                                persisted.stream()
+                                                    .map(McpTool::getToolId)
+                                                    .collect(Collectors.toList()),
+                                                List.of()
+                                            )
+                                        )
+                                )
+                        );
+                })
+        );
+    }
+    
+    /**
+     * Create OpenAPI source record
+     */
+    private Uni<OpenApiSource> createOpenApiSource(
+            GenerateToolsRequest request,
+            OpenApiParseResult parseResult) {
+        
+        return Uni.createFrom().item(() -> {
+            OpenApiSource source = new OpenApiSource();
+            source.setSourceId(UUID.randomUUID());
+            source.setTenantId(request.tenantId());
+            source.setNamespace(request.namespace());
+            source.setDisplayName(parseResult.openApi().getInfo().getTitle());
+            source.setSourceType(request.sourceType());
+            source.setSourceLocation(request.source());
+            source.setSpecContent(request.sourceType() == SourceType.RAW ? 
+                request.source() : null);
+            source.setSpecVersion(parseResult.openApi().getOpenapi());
+            source.setSpecHash(calculateHash(parseResult.rawSpec()));
+            source.setDefaultAuthProfileId(request.authProfileId());
+            source.setStatus(SourceStatus.ACTIVE);
+            source.setCreatedAt(Instant.now());
+            source.setUpdatedAt(Instant.now());
+            source.setCreatedBy(request.userId());
+            
+            return source.persist();
+        }).flatMap(v -> (Uni<OpenApiSource>) v);
+    }
+    
+    /**
+     * Generate tools from OpenAPI operations
+     */
+    private Uni<List<McpTool>> generateToolsFromSpec(
+            OpenApiSource source,
+            OpenAPI openApi,
+            GenerateToolsRequest request) {
+        
+        return Uni.createFrom().item(() -> {
+            List<McpTool> tools = new ArrayList<>();
+            
+            // Get base URL
+            String baseUrl = extractBaseUrl(openApi);
+            
+            // Process each path and operation
+            if (openApi.getPaths() != null) {
+                openApi.getPaths().forEach((path, pathItem) -> {
+                    processPathItem(
+                        source,
+                        openApi,
+                        baseUrl,
+                        path,
+                        pathItem,
+                        request,
+                        tools
+                    );
+                });
+            }
+            
+            LOG.info("Generated {} tools from OpenAPI spec", tools.size());
+            return tools;
+        });
+    }
+    
+    /**
+     * Process a single path item (with all HTTP methods)
+     */
+    private void processPathItem(
+            OpenApiSource source,
+            OpenAPI openApi,
+            String baseUrl,
+            String path,
+            PathItem pathItem,
+            GenerateToolsRequest request,
+            List<McpTool> tools) {
+        
+        // Process each HTTP method
+        Map<PathItem.HttpMethod, Operation> operations = pathItem.readOperationsMap();
+        
+        operations.forEach((httpMethod, operation) -> {
+            try {
+                McpTool tool = createToolFromOperation(
+                    source,
+                    openApi,
+                    baseUrl,
+                    path,
+                    httpMethod,
+                    operation,
+                    request
+                );
+                tools.add(tool);
+            } catch (Exception e) {
+                LOG.error("Failed to create tool from operation: {} {}", 
+                    httpMethod, path, e);
+            }
+        });
+    }
+    
+    /**
+     * Create MCP tool from OpenAPI operation
+     */
+    private McpTool createToolFromOperation(
+            OpenApiSource source,
+            OpenAPI openApi,
+            String baseUrl,
+            String path,
+            PathItem.HttpMethod httpMethod,
+            Operation operation,
+            GenerateToolsRequest request) {
+        
+        McpTool tool = new McpTool();
+        
+        // Identity
+        String operationId = operation.getOperationId() != null ? 
+            operation.getOperationId() : 
+            generateOperationId(httpMethod, path);
+        
+        tool.setToolId(request.namespace() + "." + operationId);
+        tool.setTenantId(request.tenantId());
+        tool.setNamespace(request.namespace());
+        tool.setName(operationId);
+        tool.setOperationId(operationId);
+        
+        // Description - use from OpenAPI or generate
+        String description = extractDescription(operation);
+        tool.setDescription(description);
+        
+        // Capabilities - extract from tags or description
+        Set<String> capabilities = extractCapabilities(operation, description);
+        tool.setCapabilities(capabilities);
+        
+        // Tags
+        Set<String> tags = operation.getTags() != null ? 
+            new HashSet<>(operation.getTags()) : new HashSet<>();
+        tool.setTags(tags);
+        
+        // Capability level - analyze operation safety
+        CapabilityLevel capabilityLevel = capabilityAnalyzer.analyze(
+            httpMethod, operation, path);
+        tool.setCapabilityLevel(capabilityLevel);
+        tool.setReadOnly(httpMethod == PathItem.HttpMethod.GET);
+        
+        // Input schema
+        Map<String, Object> inputSchema = generateInputSchema(
+            openApi, operation, path);
+        tool.setInputSchema(inputSchema);
+        
+        // Output schema
+        Map<String, Object> outputSchema = generateOutputSchema(
+            openApi, operation);
+        tool.setOutputSchema(outputSchema);
+        
+        // HTTP execution config
+        HttpExecutionConfig execConfig = createExecutionConfig(
+            baseUrl, path, httpMethod, operation, openApi);
+        tool.setExecutionConfig(execConfig);
+        
+        // Auth profile
+        tool.setAuthProfileId(request.authProfileId());
+        
+        // Guardrails
+        ToolGuardrails guardrails = guardrailGenerator.generate(
+            httpMethod, operation, request.guardrailsConfig());
+        tool.setGuardrails(guardrails);
+        
+        // Metadata
+        tool.setSource(source);
+        tool.setCreatedAt(Instant.now());
+        tool.setUpdatedAt(Instant.now());
+        tool.setCreatedBy(request.userId());
+        tool.setEnabled(true);
+        
+        // Metrics
+        tool.setMetrics(new ToolMetrics());
+        
+        return tool;
+    }
+    
+    /**
+     * Generate input schema from parameters and request body
+     */
+    private Map<String, Object> generateInputSchema(
+            OpenAPI openApi,
+            Operation operation,
+            String path) {
+        
+        Map<String, Object> schema = new HashMap<>();
+        schema.put("type", "object");
+        
+        Map<String, Object> properties = new HashMap<>();
+        List<String> required = new ArrayList<>();
+        
+        // Path parameters
+        if (operation.getParameters() != null) {
+            for (Parameter param : operation.getParameters()) {
+                if (param.getIn().equals("path") || 
+                    param.getIn().equals("query") || 
+                    param.getIn().equals("header")) {
+                    
+                    Map<String, Object> paramSchema = 
+                        schemaConverter.convert(param.getSchema());
+                    paramSchema.put("description", param.getDescription());
+                    properties.put(param.getName(), paramSchema);
+                    
+                    if (Boolean.TRUE.equals(param.getRequired())) {
+                        required.add(param.getName());
+                    }
+                }
+            }
+        }
+        
+        // Request body
+        if (operation.getRequestBody() != null) {
+            Content content = operation.getRequestBody().getContent();
+            if (content != null) {
+                MediaType mediaType = content.get("application/json");
+                if (mediaType != null && mediaType.getSchema() != null) {
+                    Map<String, Object> bodySchema = 
+                        schemaConverter.convert(mediaType.getSchema());
+                    
+                    // Merge body schema properties
+                    if (bodySchema.get("properties") instanceof Map) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> bodyProps = 
+                            (Map<String, Object>) bodySchema.get("properties");
+                        properties.putAll(bodyProps);
+                        
+                        // Add required fields from body
+                        if (bodySchema.get("required") instanceof List) {
+                            @SuppressWarnings("unchecked")
+                            List<String> bodyRequired = 
+                                (List<String>) bodySchema.get("required");
+                            required.addAll(bodyRequired);
+                        }
+                    }
+                }
+            }
+        }
+        
+        schema.put("properties", properties);
+        if (!required.isEmpty()) {
+            schema.put("required", required);
+        }
+        
+        return schema;
+    }
+    
+    /**
+     * Generate output schema from responses
+     */
+    private Map<String, Object> generateOutputSchema(
+            OpenAPI openApi,
+            Operation operation) {
+        
+        if (operation.getResponses() == null) {
+            return Map.of("type", "object");
+        }
+        
+        // Use 200/201 response schema
+        ApiResponse successResponse = operation.getResponses().get("200");
+        if (successResponse == null) {
+            successResponse = operation.getResponses().get("201");
+        }
+        
+        if (successResponse != null && successResponse.getContent() != null) {
+            MediaType mediaType = successResponse.getContent().get("application/json");
+            if (mediaType != null && mediaType.getSchema() != null) {
+                return schemaConverter.convert(mediaType.getSchema());
+            }
+        }
+        
+        return Map.of("type", "object");
+    }
+    
+    /**
+     * Create HTTP execution configuration
+     */
+    private HttpExecutionConfig createExecutionConfig(
+            String baseUrl,
+            String path,
+            PathItem.HttpMethod httpMethod,
+            Operation operation,
+            OpenAPI openApi) {
+        
+        HttpExecutionConfig config = new HttpExecutionConfig();
+        
+        // HTTP method
+        config.setMethod(HttpMethod.valueOf(httpMethod.name()));
+        config.setBaseUrl(baseUrl);
+        config.setPath(path);
+        
+        // Parameters
+        List<ParameterMapping> parameters = new ArrayList<>();
+        if (operation.getParameters() != null) {
+            for (Parameter param : operation.getParameters()) {
+                ParameterMapping mapping = new ParameterMapping();
+                mapping.setName(param.getName());
+                mapping.setMappedName(param.getName());
+                mapping.setLocation(ParameterLocation.valueOf(
+                    param.getIn().toUpperCase()));
+                mapping.setRequired(Boolean.TRUE.equals(param.getRequired()));
+                mapping.setDescription(param.getDescription());
+                parameters.add(mapping);
+            }
+        }
+        config.setParameters(parameters);
+        
+        // Headers
+        Map<String, String> headers = new HashMap<>();
+        headers.put("User-Agent", "Silat-MCP/1.0");
+        config.setHeaders(headers);
+        
+        // Content type
+        if (operation.getRequestBody() != null && 
+            operation.getRequestBody().getContent() != null) {
+            String contentType = operation.getRequestBody().getContent()
+                .keySet().stream().findFirst().orElse("application/json");
+            config.setContentType(contentType);
+        }
+        
+        // Retry config
+        RetryConfig retryConfig = new RetryConfig();
+        config.setRetryConfig(retryConfig);
+        
+        return config;
+    }
+    
+    /**
+     * Extract description from operation (use docs as capabilities)
+     */
+    private String extractDescription(Operation operation) {
+        if (operation.getSummary() != null) {
+            return operation.getSummary();
+        }
+        if (operation.getDescription() != null) {
+            return operation.getDescription();
+        }
+        if (operation.getOperationId() != null) {
+            return humanizeOperationId(operation.getOperationId());
+        }
+        return "No description available";
+    }
+    
+    /**
+     * Extract capabilities from operation
+     * Use description/summary as capability if available
+     */
+    private Set<String> extractCapabilities(Operation operation, String description) {
+        Set<String> capabilities = new HashSet<>();
+        
+        // Use summary as primary capability
+        if (operation.getSummary() != null) {
+            capabilities.add(operation.getSummary().toLowerCase());
+        }
+        
+        // Add tags as capabilities
+        if (operation.getTags() != null) {
+            capabilities.addAll(operation.getTags().stream()
+                .map(String::toLowerCase)
+                .collect(Collectors.toSet()));
+        }
+        
+        // If no capabilities found, use operation ID
+        if (capabilities.isEmpty() && operation.getOperationId() != null) {
+            capabilities.add(humanizeOperationId(operation.getOperationId()));
+        }
+        
+        return capabilities;
+    }
+    
+    /**
+     * Extract base URL from OpenAPI servers
+     */
+    private String extractBaseUrl(OpenAPI openApi) {
+        if (openApi.getServers() != null && !openApi.getServers().isEmpty()) {
+            return openApi.getServers().get(0).getUrl();
+        }
+        return "https://api.example.com";  // Placeholder
+    }
+    
+    /**
+     * Generate operation ID if not provided
+     */
+    private String generateOperationId(PathItem.HttpMethod method, String path) {
+        String cleaned = path.replaceAll("[^a-zA-Z0-9]", "_");
+        return method.name().toLowerCase() + cleaned;
+    }
+    
+    /**
+     * Humanize operation ID for display
+     */
+    private String humanizeOperationId(String operationId) {
+        return operationId
+            .replaceAll("([a-z])([A-Z])", "$1 $2")
+            .replaceAll("_", " ")
+            .toLowerCase();
+    }
+    
+    /**
+     * Calculate hash of spec for change detection
+     */
+    private String calculateHash(String content) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(content.getBytes(StandardCharsets.UTF_8));
+            return Base64.getEncoder().encodeToString(hash);
+        } catch (Exception e) {
+            return UUID.randomUUID().toString();
+        }
+    }
+    
+    /**
+     * Persist generated tools
+     */
+    private Uni<List<McpTool>> persistTools(List<McpTool> tools) {
+        return Uni.join().all(
+            tools.stream()
+                .map(tool -> tool.<McpTool>persist())
+                .collect(Collectors.toList())
+        ).andFailFast();
+    }
+}
+
+// ==================== OPENAPI PARSER ====================
+
+/**
+ * OpenAPI specification parser
+ */
+@ApplicationScoped
+class OpenApiParser {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(OpenApiParser.class);
+    
+    @Inject
+    io.vertx.mutiny.core.Vertx vertx;
+    
+    /**
+     * Parse OpenAPI from various sources
+     */
+    public Uni<OpenApiParseResult> parse(GenerateToolsRequest request) {
+        return switch (request.sourceType()) {
+            case URL -> parseFromUrl(request.source());
+            case FILE -> parseFromFile(request.source());
+            case RAW -> parseFromString(request.source());
+            case GIT -> parseFromGit(request.source());
+        };
+    }
+    
+    /**
+     * Parse from URL
+     */
+    private Uni<OpenApiParseResult> parseFromUrl(String url) {
+        LOG.info("Parsing OpenAPI from URL: {}", url);
+        
+        return vertx.createHttpClient()
+            .request(io.vertx.core.http.HttpMethod.GET, url)
+            .flatMap(request -> request.send()
+                .flatMap(response -> {
+                    if (response.statusCode() != 200) {
+                        return Uni.createFrom().failure(
+                            new OpenApiParseException(
+                                "Failed to fetch OpenAPI spec: HTTP " + 
+                                response.statusCode()));
+                    }
+                    return response.body();
+                }))
+            .map(buffer -> buffer.toString())
+            .map(this::parseSpec);
+    }
+    
+    /**
+     * Parse from file
+     */
+    private Uni<OpenApiParseResult> parseFromFile(String filePath) {
+        return vertx.fileSystem().readFile(filePath)
+            .map(buffer -> buffer.toString())
+            .map(this::parseSpec);
+    }
+    
+    /**
+     * Parse from raw string
+     */
+    private Uni<OpenApiParseResult> parseFromString(String spec) {
+        return Uni.createFrom().item(parseSpec(spec));
+    }
+    
+    /**
+     * Parse from Git repository
+     */
+    private Uni<OpenApiParseResult> parseFromGit(String gitRef) {
+        // TODO: Implement Git integration
+        return Uni.createFrom().failure(
+            new UnsupportedOperationException("Git source not yet implemented"));
+    }
+    
+    /**
+     * Parse OpenAPI spec string
+     */
+    private OpenApiParseResult parseSpec(String spec) {
+        ParseOptions options = new ParseOptions();
+        options.setResolve(true);
+        options.setResolveFully(true);
+        
+        SwaggerParseResult result = new OpenAPIV3Parser()
+            .readContents(spec, null, options);
+        
+        if (result.getOpenAPI() == null) {
+            return new OpenApiParseResult(
+                null,
+                spec,
+                false,
+                result.getMessages()
+            );
+        }
+        
+        return new OpenApiParseResult(
+            result.getOpenAPI(),
+            spec,
+            result.getMessages() == null || result.getMessages().isEmpty(),
+            result.getMessages() != null ? result.getMessages() : List.of()
+        );
+    }
+}
+
+// ==================== SCHEMA CONVERTER ====================
+
+/**
+ * Convert OpenAPI schema to JSON Schema
+ */
+@ApplicationScoped
+class SchemaConverter {
+    
+    /**
+     * Convert OpenAPI schema to JSON Schema format
+     */
+    public Map<String, Object> convert(Schema<?> schema) {
+        if (schema == null) {
+            return Map.of("type", "object");
+        }
+        
+        Map<String, Object> jsonSchema = new HashMap<>();
+        
+        // Type
+        if (schema.getType() != null) {
+            jsonSchema.put("type", schema.getType());
+        }
+        
+        // Format
+        if (schema.getFormat() != null) {
+            jsonSchema.put("format", schema.getFormat());
+        }
+        
+        // Description
+        if (schema.getDescription() != null) {
+            jsonSchema.put("description", schema.getDescription());
+        }
+        
+        // Enum
+        if (schema.getEnum() != null) {
+            jsonSchema.put("enum", schema.getEnum());
+        }
+        
+        // Properties (for object types)
+        if (schema.getProperties() != null) {
+            Map<String, Object> properties = new HashMap<>();
+            schema.getProperties().forEach((name, propSchema) -> {
+                properties.put(name, convert((Schema<?>) propSchema));
+            });
+            jsonSchema.put("properties", properties);
+        }
+        
+        // Required
+        if (schema.getRequired() != null) {
+            jsonSchema.put("required", schema.getRequired());
+        }
+        
+        // Items (for array types)
+        if (schema.getItems() != null) {
+            jsonSchema.put("items", convert(schema.getItems()));
+        }
+        
+        // Validation constraints
+        if (schema.getMinimum() != null) {
+            jsonSchema.put("minimum", schema.getMinimum());
+        }
+        if (schema.getMaximum() != null) {
+            jsonSchema.put("maximum", schema.getMaximum());
+        }
+        if (schema.getMinLength() != null) {
+            jsonSchema.put("minLength", schema.getMinLength());
+        }
+        if (schema.getMaxLength() != null) {
+            jsonSchema.put("maxLength", schema.getMaxLength());
+        }
+        if (schema.getPattern() != null) {
+            jsonSchema.put("pattern", schema.getPattern());
+        }
+        
+        return jsonSchema;
+    }
+}
+
+// ==================== SUPPORTING CLASSES ====================
+
+record GenerateToolsRequest(
+    String tenantId,
+    String namespace,
+    SourceType sourceType,
+    String source,
+    String authProfileId,
+    String userId,
+    Map<String, Object> guardrailsConfig
+) {}
+
+record OpenApiParseResult(
+    OpenAPI openApi,
+    String rawSpec,
+    boolean isValid,
+    List<String> errors
+) {}
+
+record ToolGenerationResult(
+    UUID sourceId,
+    String namespace,
+    int toolsGenerated,
+    List<String> toolIds,
+    List<String> warnings
+) {}
+
+class OpenApiParseException extends RuntimeException {
+    public OpenApiParseException(String message) {
+        super(message);
+    }
+}
+
+package tech.kayys.silat.mcp.api;
+
+import io.quarkus.security.Authenticated;
+import io.smallrye.mutiny.Uni;
+import jakarta.inject.Inject;
+import jakarta.validation.Valid;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.*;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+import org.jboss.resteasy.reactive.RestResponse;
+import tech.kayys.silat.mcp.domain.*;
+import tech.kayys.silat.mcp.parser.OpenApiToolGenerator;
+import tech.kayys.silat.mcp.parser.GenerateToolsRequest;
+import tech.kayys.silat.mcp.runtime.McpToolExecutor;
+import tech.kayys.silat.mcp.runtime.ToolExecutionRequest;
+
+import java.util.*;
+
+/**
+ * ============================================================================
+ * MCP SERVER REST API
+ * ============================================================================
+ * 
+ * RESTful API for MCP tool management and execution.
+ * 
+ * Endpoints:
+ * - POST /api/v1/mcp/tools/openapi - Generate tools from OpenAPI
+ * - GET /api/v1/mcp/tools - List tools
+ * - GET /api/v1/mcp/tools/{toolId} - Get tool details
+ * - POST /api/v1/mcp/tools/{toolId}/execute - Execute tool
+ * - POST /api/v1/mcp/auth-profiles - Create auth profile
+ */
+
+// ==================== TOOL GENERATION API ====================
+
+@Path("/api/v1/mcp/tools")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+@Authenticated
+@Tag(name = "MCP Tools", description = "MCP tool management")
+public class McpToolResource {
+    
+    @Inject
+    OpenApiToolGenerator toolGenerator;
+    
+    @Inject
+    McpToolExecutor toolExecutor;
+    
+    @Inject
+    tech.kayys.silat.api.security.TenantContext tenantContext;
+    
+    /**
+     * Generate tools from OpenAPI specification
+     */
+    @POST
+    @Path("/openapi")
+    @Operation(summary = "Generate MCP tools from OpenAPI spec")
+    public Uni<RestResponse<ToolGenerationResponse>> generateFromOpenApi(
+            @Valid OpenApiToolRequest request) {
+        
+        String tenantId = tenantContext.getCurrentTenantId().value();
+        
+        GenerateToolsRequest genRequest = new GenerateToolsRequest(
+            tenantId,
+            request.namespace(),
+            request.sourceType(),
+            request.source(),
+            request.authProfileId(),
+            "current-user",  // From security context
+            request.guardrailsConfig() != null ? 
+                request.guardrailsConfig() : Map.of()
+        );
+        
+        return toolGenerator.generateTools(genRequest)
+            .map(result -> RestResponse.ok(
+                new ToolGenerationResponse(
+                    result.sourceId().toString(),
+                    result.namespace(),
+                    result.toolsGenerated(),
+                    result.toolIds(),
+                    result.warnings()
+                )
+            ))
+            .onFailure().recoverWithItem(error ->
+                RestResponse.status(
+                    RestResponse.Status.BAD_REQUEST,
+                    new ToolGenerationResponse(
+                        null,
+                        request.namespace(),
+                        0,
+                        List.of(),
+                        List.of(error.getMessage())
+                    )
+                )
+            );
+    }
+    
+    /**
+     * List tools for tenant
+     */
+    @GET
+    @Operation(summary = "List MCP tools")
+    public Uni<List<ToolMetadataResponse>> listTools(
+            @QueryParam("namespace") String namespace,
+            @QueryParam("capability") String capability,
+            @QueryParam("tag") String tag,
+            @QueryParam("enabled") Boolean enabled,
+            @QueryParam("readOnly") Boolean readOnly) {
+        
+        String tenantId = tenantContext.getCurrentTenantId().value();
+        
+        String query = "tenantId = ?1";
+        List<Object> params = new ArrayList<>();
+        params.add(tenantId);
+        
+        if (namespace != null) {
+            query += " and namespace = ?" + (params.size() + 1);
+            params.add(namespace);
+        }
+        if (enabled != null) {
+            query += " and enabled = ?" + (params.size() + 1);
+            params.add(enabled);
+        }
+        if (readOnly != null) {
+            query += " and readOnly = ?" + (params.size() + 1);
+            params.add(readOnly);
+        }
+        
+        return McpTool.list(query, params.toArray())
+            .map(tools -> tools.stream()
+                .map(t -> {
+                    McpTool tool = (McpTool) t;
+                    return new ToolMetadataResponse(
+                        tool.getToolId(),
+                        tool.getName(),
+                        tool.getDescription(),
+                        tool.getCapabilities(),
+                        tool.getCapabilityLevel().name(),
+                        tool.isReadOnly(),
+                        tool.getTags()
+                    );
+                })
+                .toList()
+            );
+    }
+    
+    /**
+     * Get tool details
+     */
+    @GET
+    @Path("/{toolId}")
+    @Operation(summary = "Get tool details")
+    public Uni<RestResponse<ToolDetailResponse>> getTool(
+            @PathParam("toolId") String toolId) {
+        
+        String tenantId = tenantContext.getCurrentTenantId().value();
+        
+        return McpTool.<McpTool>find(
+            "toolId = ?1 and tenantId = ?2",
+            toolId, tenantId
+        ).firstResult()
+        .map(tool -> {
+            if (tool == null) {
+                return RestResponse.notFound();
+            }
+            
+            return RestResponse.ok(new ToolDetailResponse(
+                tool.getToolId(),
+                tool.getName(),
+                tool.getDescription(),
+                tool.getInputSchema(),
+                tool.getOutputSchema(),
+                tool.getCapabilities(),
+                tool.getCapabilityLevel().name(),
+                tool.isEnabled(),
+                tool.isReadOnly(),
+                tool.getMetrics() != null ? 
+                    tool.getMetrics().getTotalInvocations() : 0L
+            ));
+        });
+    }
+    
+    /**
+     * Execute tool
+     */
+    @POST
+    @Path("/{toolId}/execute")
+    @Operation(summary = "Execute MCP tool")
+    public Uni<RestResponse<ToolExecutionResponse>> executeTool(
+            @PathParam("toolId") String toolId,
+            @Valid ToolExecuteRequest request) {
+        
+        String tenantId = tenantContext.getCurrentTenantId().value();
+        
+        ToolExecutionRequest execRequest = new ToolExecutionRequest(
+            toolId,
+            tenantId,
+            request.arguments(),
+            request.context() != null ? request.context() : Map.of(),
+            "current-user",
+            null,  // workflow run ID
+            null   // agent ID
+        );
+        
+        return toolExecutor.execute(execRequest)
+            .map(result -> {
+                if (result.status() == InvocationStatus.SUCCESS) {
+                    return RestResponse.ok(new ToolExecutionResponse(
+                        "success",
+                        result.output(),
+                        null,
+                        result.executionTimeMs()
+                    ));
+                } else {
+                    return RestResponse.status(
+                        RestResponse.Status.BAD_REQUEST,
+                        new ToolExecutionResponse(
+                            "failure",
+                            Map.of(),
+                            result.errorMessage(),
+                            result.executionTimeMs()
+                        )
+                    );
+                }
+            });
+    }
+    
+    /**
+     * Update tool configuration
+     */
+    @PUT
+    @Path("/{toolId}")
+    @Operation(summary = "Update tool configuration")
+    public Uni<RestResponse<Void>> updateTool(
+            @PathParam("toolId") String toolId,
+            @Valid ToolUpdateRequest request) {
+        
+        String tenantId = tenantContext.getCurrentTenantId().value();
+        
+        return McpTool.<McpTool>find(
+            "toolId = ?1 and tenantId = ?2",
+            toolId, tenantId
+        ).firstResult()
+        .flatMap(tool -> {
+            if (tool == null) {
+                return Uni.createFrom().item(RestResponse.notFound());
+            }
+            
+            if (request.enabled() != null) {
+                tool.setEnabled(request.enabled());
+            }
+            if (request.description() != null) {
+                tool.setDescription(request.description());
+            }
+            if (request.tags() != null) {
+                tool.setTags(request.tags());
+            }
+            
+            return tool.persistAndFlush()
+                .map(v -> RestResponse.ok());
+        });
+    }
+    
+    /**
+     * Delete tool
+     */
+    @DELETE
+    @Path("/{toolId}")
+    @Operation(summary = "Delete tool")
+    public Uni<RestResponse<Void>> deleteTool(
+            @PathParam("toolId") String toolId) {
+        
+        String tenantId = tenantContext.getCurrentTenantId().value();
+        
+        return McpTool.delete(
+            "toolId = ?1 and tenantId = ?2",
+            toolId, tenantId
+        ).map(deleted -> deleted > 0 ? 
+            RestResponse.ok() : 
+            RestResponse.notFound()
+        );
+    }
+}
+
+// ==================== AUTH PROFILE API ====================
+
+@Path("/api/v1/mcp/auth-profiles")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+@Authenticated
+@Tag(name = "MCP Auth Profiles", description = "Authentication profile management")
+public class AuthProfileResource {
+    
+    @Inject
+    tech.kayys.silat.api.security.TenantContext tenantContext;
+    
+    @Inject
+    tech.kayys.silat.mcp.security.VaultSecretManager vaultManager;
+    
+    /**
+     * Create auth profile
+     */
+    @POST
+    @Operation(summary = "Create authentication profile")
+    public Uni<RestResponse<AuthProfileResponse>> createAuthProfile(
+            @Valid CreateAuthProfileRequest request) {
+        
+        String tenantId = tenantContext.getCurrentTenantId().value();
+        
+        return io.quarkus.hibernate.reactive.panache.Panache.withTransaction(() -> {
+            AuthProfile profile = new AuthProfile();
+            profile.setProfileId(UUID.randomUUID().toString());
+            profile.setTenantId(tenantId);
+            profile.setProfileName(request.profileName());
+            profile.setAuthType(AuthType.valueOf(request.authType()));
+            profile.setDescription(request.description());
+            
+            // Configure auth
+            AuthConfig config = new AuthConfig();
+            config.setLocation(AuthLocation.valueOf(request.location()));
+            config.setParamName(request.paramName());
+            config.setScheme(request.scheme());
+            profile.setConfig(config);
+            
+            // Store secret in Vault
+            String vaultPath = "silat/mcp/" + tenantId + "/" + profile.getProfileId();
+            
+            return vaultManager.storeSecret(vaultPath, request.secretValue())
+                .flatMap(v -> {
+                    profile.setVaultPath(vaultPath);
+                    profile.setSecretKey("auth_secret");
+                    profile.setEnabled(true);
+                    profile.setCreatedAt(java.time.Instant.now());
+                    profile.setUpdatedAt(java.time.Instant.now());
+                    
+                    return profile.persist();
+                })
+                .map(p -> RestResponse.status(
+                    RestResponse.Status.CREATED,
+                    new AuthProfileResponse(
+                        profile.getProfileId(),
+                        profile.getProfileName(),
+                        profile.getAuthType().name(),
+                        profile.isEnabled()
+                    )
+                ));
+        });
+    }
+    
+    /**
+     * List auth profiles
+     */
+    @GET
+    @Operation(summary = "List authentication profiles")
+    public Uni<List<AuthProfileResponse>> listAuthProfiles() {
+        String tenantId = tenantContext.getCurrentTenantId().value();
+        
+        return AuthProfile.list("tenantId = ?1 and enabled = true", tenantId)
+            .map(profiles -> profiles.stream()
+                .map(p -> {
+                    AuthProfile profile = (AuthProfile) p;
+                    return new AuthProfileResponse(
+                        profile.getProfileId(),
+                        profile.getProfileName(),
+                        profile.getAuthType().name(),
+                        profile.isEnabled()
+                    );
+                })
+                .toList()
+            );
+    }
+}
+
+// ==================== REQUEST/RESPONSE MODELS ====================
+
+record OpenApiToolRequest(
+    String namespace,
+    SourceType sourceType,
+    String source,
+    String authProfileId,
+    Map<String, Object> guardrailsConfig
+) {}
+
+record ToolGenerationResponse(
+    String sourceId,
+    String namespace,
+    int toolsGenerated,
+    List<String> toolIds,
+    List<String> warnings
+) {}
+
+record ToolMetadataResponse(
+    String toolId,
+    String name,
+    String description,
+    Set<String> capabilities,
+    String capabilityLevel,
+    boolean readOnly,
+    Set<String> tags
+) {}
+
+record ToolDetailResponse(
+    String toolId,
+    String name,
+    String description,
+    Map<String, Object> inputSchema,
+    Map<String, Object> outputSchema,
+    Set<String> capabilities,
+    String capabilityLevel,
+    boolean enabled,
+    boolean readOnly,
+    long totalInvocations
+) {}
+
+record ToolExecuteRequest(
+    Map<String, Object> arguments,
+    Map<String, Object> context
+) {}
+
+record ToolExecutionResponse(
+    String status,
+    Map<String, Object> output,
+    String error,
+    long executionTimeMs
+) {}
+
+record ToolUpdateRequest(
+    Boolean enabled,
+    String description,
+    Set<String> tags
+) {}
+
+record CreateAuthProfileRequest(
+    String profileName,
+    String authType,
+    String location,
+    String paramName,
+    String scheme,
+    String secretValue,
+    String description
+) {}
+
+record AuthProfileResponse(
+    String profileId,
+    String profileName,
+    String authType,
+    boolean enabled
+) {}
+
+// ==================== SECURITY COMPONENTS ====================
+
+package tech.kayys.silat.mcp.security;
+
+
+
+
+
+
+
+// ==================== SCHEMA VALIDATOR ====================
+
+
+// ==================== TOOL REGISTRY ====================
+
+
+// ==================== SUPPORTING CLASSES ====================
+
+record ToolExecutionRequest(
+    String toolId,
+    String tenantId,
+    Map<String, Object> arguments,
+    Map<String, Object> context,
+    String userId,
+    String workflowRunId,
+    String agentId
+) {}
+
+record ValidatedToolRequest(
+    McpTool tool,
+    Map<String, Object> arguments,
+    Map<String, Object> context
+) {}
+
+
+
+// Exceptions
+class ToolNotFoundException extends RuntimeException {
+    public ToolNotFoundException(String message) {
+        super(message);
+    }
+}
+
+class ToolDisabledException extends RuntimeException {
+    public ToolDisabledException(String message) {
+        super(message);
+    }
+}
+
+class ToolValidationException extends RuntimeException {
+    public ToolValidationException(String message, Throwable cause) {
+        super(message, cause);
+    }
+}
+
+class InputTooLargeException extends RuntimeException {
+    public InputTooLargeException(String message) {
+        super(message);
+    }
+}
+
+class ResponseTooLargeException extends RuntimeException {
+    public ResponseTooLargeException(String message) {
+        super(message);
+    }
+}
+
+class RateLimitExceededException extends RuntimeException {
+    public RateLimitExceededException(String message) {
+        super(message);
+    }
+}
+
+class AuthenticationException extends RuntimeException {
+    public AuthenticationException(String message) {
+        super(message);
+    }
+}
+
+package tech.kayys.silat.mcp.parser;
+
+
+// ==================== OPENAPI PARSER ====================
+
+// ==================== SCHEMA CONVERTER ====================
+
+
+// ==================== SUPPORTING CLASSES ====================
+
+record GenerateToolsRequest(
+    String tenantId,
+    String namespace,
+    SourceType sourceType,
+    String source,
+    String authProfileId,
+    String userId,
+    Map<String, Object> guardrailsConfig
+) {}
+
+record OpenApiParseResult(
+    OpenAPI openApi,
+    String rawSpec,
+    boolean isValid,
+    List<String> errors
+) {}
+
+record ToolGenerationResult(
+    UUID sourceId,
+    String namespace,
+    int toolsGenerated,
+    List<String> toolIds,
+    List<String> warnings
+) {}
+
+
+
+package tech.kayys.silat.mcp.domain;
+
+
+// ==================== HTTP EXECUTION CONFIG ====================
+
+
+
+
+
+
+
+
+// ==================== TOOL GUARDRAILS ====================
+
+// ==================== TOOL TYPES & CAPABILITIES ====================
+
+
+
+// ==================== TOOL METRICS ====================
+
+// ==================== OPENAPI SOURCE ====================
+
+
+
+// ==================== AUTH PROFILE ====================
+
+
+
+
+// ==================== TOOL INVOCATION ====================
+
+
+
+// ==================== TOOL REGISTRY QUERY ====================
+
+
+
+// ==================== VALUE OBJECTS ====================
+

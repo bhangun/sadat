@@ -24,7 +24,7 @@
     <modules>
         <module>agent-core</module>
         <module>agent-executor</module>
-        <module>agent-executor-orchestrator</module>
+        <module>agent-orchestrator</module>
     </modules>
 
     <dependencyManagement>

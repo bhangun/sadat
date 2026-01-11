@@ -1,0 +1,1893 @@
+// src/main/java/com/example/generator/ai/AIEnhancementManager.java
+package tech.kayys.wayang.mcp.generator.ai;
+
+import tech.kayys.wayang.mcp.generator.*;
+import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+
+@ApplicationScoped
+public class AIEnhancementManager {
+    
+    @Inject
+    ToolOrchestrator toolOrchestrator;
+    
+    @Inject
+    ParameterInferenceEngine parameterInference;
+    
+    @Inject
+    ResponseSummarizer responseSummarizer;
+    
+    @Inject
+    ErrorRecoveryEngine errorRecovery;
+    
+    @Inject
+    SemanticAnalyzer semanticAnalyzer;
+    
+    @Inject
+    UsageAnalytics usageAnalytics;
+    
+    public CompletableFuture<EnhancedMcpServerModel> enhanceServerModel(McpServerModel serverModel, 
+                                                                        ApiSpecification apiSpec,
+                                                                        AIEnhancementConfig config) {
+        Log.info("Starting AI-powered enhancement for: {}", serverModel.getTitle());
+        
+        return CompletableFuture.supplyAsync(() -> {
+            EnhancedMcpServerModel enhanced = new EnhancedMcpServerModel(serverModel);
+            
+            try {
+                // Step 1: Semantic analysis of API operations
+                if (config.isEnableSemanticAnalysis()) {
+                    Map<String, SemanticMetadata> semanticData = semanticAnalyzer.analyzeOperations(
+                        apiSpec.getOperations());
+                    enhanced.setSemanticMetadata(semanticData);
+                    Log.info("Semantic analysis completed for {} operations", semanticData.size());
+                }
+                
+                // Step 2: Generate intelligent tool chains
+                if (config.isEnableToolChaining()) {
+                    List<ToolChain> toolChains = toolOrchestrator.generateToolChains(
+                        serverModel.getTools(), enhanced.getSemanticMetadata());
+                    enhanced.setToolChains(toolChains);
+                    Log.info("Generated {} intelligent tool chains", toolChains.size());
+                }
+                
+                // Step 3: Infer smart parameter mappings
+                if (config.isEnableSmartParameters()) {
+                    Map<String, ParameterMapping> parameterMappings = parameterInference.inferMappings(
+                        serverModel.getTools(), apiSpec);
+                    enhanced.setParameterMappings(parameterMappings);
+                    Log.info("Inferred parameter mappings for {} tools", parameterMappings.size());
+                }
+                
+                // Step 4: Generate response summarization strategies
+                if (config.isEnableResponseSummarization()) {
+                    Map<String, SummarizationStrategy> strategies = responseSummarizer.generateStrategies(
+                        serverModel.getTools(), apiSpec);
+                    enhanced.setSummarizationStrategies(strategies);
+                    Log.info("Generated summarization strategies for {} tools", strategies.size());
+                }
+                
+                // Step 5: Create error recovery patterns
+                if (config.isEnableErrorRecovery()) {
+                    Map<String, ErrorRecoveryStrategy> recoveryStrategies = errorRecovery.generateStrategies(
+                        serverModel.getTools(), apiSpec);
+                    enhanced.setErrorRecoveryStrategies(recoveryStrategies);
+                    Log.info("Generated error recovery strategies for {} tools", recoveryStrategies.size());
+                }
+                
+                // Step 6: Analyze and optimize tool usage patterns
+                if (config.isEnableUsageOptimization()) {
+                    UsageOptimizationReport report = usageAnalytics.analyzeAndOptimize(
+                        serverModel.getTools(), enhanced);
+                    enhanced.setUsageOptimizationReport(report);
+                    Log.info("Usage optimization completed with {} recommendations", 
+                        report.getRecommendations().size());
+                }
+                
+                Log.info("AI enhancement completed successfully");
+                return enhanced;
+                
+            } catch (Exception e) {
+                Log.error("AI enhancement failed", e);
+                throw new RuntimeException("AI enhancement failed: " + e.getMessage(), e);
+            }
+        });
+    }
+    
+    public AIEnhancementReport generateEnhancementReport(EnhancedMcpServerModel enhanced) {
+        return AIEnhancementReport.builder()
+            .withServerModel(enhanced)
+            .withToolChainCount(enhanced.getToolChains().size())
+            .withParameterMappingCount(enhanced.getParameterMappings().size())
+            .withSemanticInsights(generateSemanticInsights(enhanced))
+            .withOptimizationRecommendations(enhanced.getUsageOptimizationReport().getRecommendations())
+            .build();
+    }
+    
+    private List<String> generateSemanticInsights(EnhancedMcpServerModel enhanced) {
+        List<String> insights = new ArrayList<>();
+        
+        // Analyze semantic patterns
+        Map<String, Long> operationTypes = enhanced.getSemanticMetadata().values().stream()
+            .collect(Collectors.groupingBy(
+                SemanticMetadata::getOperationType,
+                Collectors.counting()
+            ));
+        
+        operationTypes.forEach((type, count) -> 
+            insights.add(String.format("Found %d %s operations", count, type)));
+        
+        // Analyze tool chain complexity
+        OptionalDouble avgChainLength = enhanced.getToolChains().stream()
+            .mapToInt(chain -> chain.getSteps().size())
+            .average();
+        
+        if (avgChainLength.isPresent()) {
+            insights.add(String.format("Average tool chain length: %.1f steps", avgChainLength.getAsDouble()));
+        }
+        
+        return insights;
+    }
+}
+
+// src/main/java/com/example/generator/ai/ToolOrchestrator.java
+package tech.kayys.wayang.mcp.generator.ai;
+
+import tech.kayys.wayang.mcp.generator.McpToolModel;
+import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+@ApplicationScoped
+public class ToolOrchestrator {
+    
+    public List<ToolChain> generateToolChains(List<McpToolModel> tools, 
+                                             Map<String, SemanticMetadata> semanticData) {
+        Log.info("Generating intelligent tool chains from {} tools", tools.size());
+        
+        List<ToolChain> chains = new ArrayList<>();
+        
+        // Identify common workflow patterns
+        chains.addAll(generateCRUDChains(tools, semanticData));
+        chains.addAll(generateSearchAndRetrieveChains(tools, semanticData));
+        chains.addAll(generateDataPipelineChains(tools, semanticData));
+        chains.addAll(generateAuthenticationChains(tools, semanticData));
+        
+        // Optimize chains by removing redundant steps
+        chains = optimizeToolChains(chains);
+        
+        Log.info("Generated {} optimized tool chains", chains.size());
+        return chains;
+    }
+    
+    private List<ToolChain> generateCRUDChains(List<McpToolModel> tools, 
+                                              Map<String, SemanticMetadata> semanticData) {
+        List<ToolChain> chains = new ArrayList<>();
+        
+        // Find CRUD operation groups
+        Map<String, List<McpToolModel>> resourceGroups = groupByResource(tools, semanticData);
+        
+        for (Map.Entry<String, List<McpToolModel>> entry : resourceGroups.entrySet()) {
+            String resource = entry.getKey();
+            List<McpToolModel> resourceTools = entry.getValue();
+            
+            // Create: POST -> GET (verify)
+            Optional<McpToolModel> createTool = findToolByMethod(resourceTools, "POST");
+            Optional<McpToolModel> getTool = findToolByMethod(resourceTools, "GET");
+            
+            if (createTool.isPresent() && getTool.isPresent()) {
+                ToolChain createChain = ToolChain.builder()
+                    .withName("create_" + resource + "_with_verification")
+                    .withDescription("Create a new " + resource + " and verify it was created")
+                    .addStep(createTool.get(), "Create " + resource)
+                    .addStep(getTool.get(), "Verify created " + resource)
+                    .withOutputMapping(createTool.get().getName(), "id", getTool.get().getName(), "id")
+                    .build();
+                
+                chains.add(createChain);
+            }
+            
+            // Update: PUT -> GET (verify)
+            Optional<McpToolModel> updateTool = findToolByMethod(resourceTools, "PUT");
+            
+            if (updateTool.isPresent() && getTool.isPresent()) {
+                ToolChain updateChain = ToolChain.builder()
+                    .withName("update_" + resource + "_with_verification")
+                    .withDescription("Update " + resource + " and verify changes")
+                    .addStep(updateTool.get(), "Update " + resource)
+                    .addStep(getTool.get(), "Verify updated " + resource)
+                    .withOutputMapping(updateTool.get().getName(), "id", getTool.get().getName(), "id")
+                    .build();
+                
+                chains.add(updateChain);
+            }
+            
+            // Delete: DELETE -> GET (verify deletion)
+            Optional<McpToolModel> deleteTool = findToolByMethod(resourceTools, "DELETE");
+            
+            if (deleteTool.isPresent() && getTool.isPresent()) {
+                ToolChain deleteChain = ToolChain.builder()
+                    .withName("delete_" + resource + "_with_verification")
+                    .withDescription("Delete " + resource + " and verify deletion")
+                    .addStep(deleteTool.get(), "Delete " + resource)
+                    .addStep(getTool.get(), "Verify deletion (should return 404)")
+                    .withOutputMapping(deleteTool.get().getName(), "id", getTool.get().getName(), "id")
+                    .withExpectedError(getTool.get().getName(), 404)
+                    .build();
+                
+                chains.add(deleteChain);
+            }
+        }
+        
+        return chains;
+    }
+    
+    private List<ToolChain> generateSearchAndRetrieveChains(List<McpToolModel> tools,
+                                                           Map<String, SemanticMetadata> semanticData) {
+        List<ToolChain> chains = new ArrayList<>();
+        
+        // Find search/list operations
+        List<McpToolModel> searchTools = tools.stream()
+            .filter(tool -> tool.getName().contains("search") || 
+                          tool.getName().contains("list") ||
+                          tool.getName().contains("query"))
+            .toList();
+        
+        // Find detail retrieval operations
+        List<McpToolModel> detailTools = tools.stream()
+            .filter(tool -> tool.getName().contains("get") || 
+                          tool.getName().contains("retrieve") ||
+                          tool.getName().contains("fetch"))
+            .toList();
+        
+        // Create search -> get details chains
+        for (McpToolModel searchTool : searchTools) {
+            for (McpToolModel detailTool : detailTools) {
+                if (areRelatedOperations(searchTool, detailTool, semanticData)) {
+                    ToolChain chain = ToolChain.builder()
+                        .withName("search_and_retrieve_" + extractResource(searchTool.getName()))
+                        .withDescription("Search for items and retrieve detailed information")
+                        .addStep(searchTool, "Search for items")
+                        .addStep(detailTool, "Get detailed information for each item")
+                        .withOutputMapping(searchTool.getName(), "items[].id", detailTool.getName(), "id")
+                        .withIterative(true)
+                        .build();
+                    
+                    chains.add(chain);
+                }
+            }
+        }
+        
+        return chains;
+    }
+    
+    private List<ToolChain> generateDataPipelineChains(List<McpToolModel> tools,
+                                                      Map<String, SemanticMetadata> semanticData) {
+        List<ToolChain> chains = new ArrayList<>();
+        
+        // Identify data transformation patterns
+        // Example: Export -> Transform -> Import
+        List<McpToolModel> exportTools = findToolsByPattern(tools, "export", "download", "extract");
+        List<McpToolModel> transformTools = findToolsByPattern(tools, "convert", "transform", "process");
+        List<McpToolModel> importTools = findToolsByPattern(tools, "import", "upload", "ingest");
+        
+        if (!exportTools.isEmpty() && !importTools.isEmpty()) {
+            for (McpToolModel exportTool : exportTools) {
+                for (McpToolModel importTool : importTools) {
+                    ToolChain.Builder chainBuilder = ToolChain.builder()
+                        .withName("data_pipeline_" + extractResource(exportTool.getName()))
+                        .withDescription("Export, process, and import data")
+                        .addStep(exportTool, "Export data");
+                    
+                    // Add transformation step if available
+                    if (!transformTools.isEmpty()) {
+                        chainBuilder.addStep(transformTools.get(0), "Transform data")
+                            .withOutputMapping(exportTool.getName(), "data", transformTools.get(0).getName(), "input");
+                    }
+                    
+                    chainBuilder.addStep(importTool, "Import processed data");
+                    
+                    chains.add(chainBuilder.build());
+                }
+            }
+        }
+        
+        return chains;
+    }
+    
+    private List<ToolChain> generateAuthenticationChains(List<McpToolModel> tools,
+                                                        Map<String, SemanticMetadata> semanticData) {
+        List<ToolChain> chains = new ArrayList<>();
+        
+        // Find authentication-related operations
+        Optional<McpToolModel> loginTool = tools.stream()
+            .filter(tool -> tool.getName().contains("login") || tool.getName().contains("authenticate"))
+            .findFirst();
+        
+        Optional<McpToolModel> refreshTool = tools.stream()
+            .filter(tool -> tool.getName().contains("refresh") && tool.getName().contains("token"))
+            .findFirst();
+        
+        Optional<McpToolModel> logoutTool = tools.stream()
+            .filter(tool -> tool.getName().contains("logout"))
+            .findFirst();
+        
+        if (loginTool.isPresent()) {
+            // Login -> Use API -> Logout chain
+            ToolChain.Builder authChainBuilder = ToolChain.builder()
+                .withName("authenticated_session")
+                .withDescription("Complete authenticated session workflow")
+                .addStep(loginTool.get(), "Authenticate and get token");
+            
+            // Add a representative API call
+            Optional<McpToolModel> apiTool = tools.stream()
+                .filter(tool -> !tool.getName().contains("login") && 
+                              !tool.getName().contains("logout") &&
+                              !tool.getName().contains("refresh"))
+                .findFirst();
+            
+            if (apiTool.isPresent()) {
+                authChainBuilder.addStep(apiTool.get(), "Execute API call with token")
+                    .withOutputMapping(loginTool.get().getName(), "token", apiTool.get().getName(), "authorization");
+            }
+            
+            if (logoutTool.isPresent()) {
+                authChainBuilder.addStep(logoutTool.get(), "Logout and invalidate token");
+            }
+            
+            chains.add(authChainBuilder.build());
+        }
+        
+        // Token refresh chain
+        if (loginTool.isPresent() && refreshTool.isPresent()) {
+            ToolChain refreshChain = ToolChain.builder()
+                .withName("token_refresh_flow")
+                .withDescription("Refresh authentication token before expiry")
+                .addStep(loginTool.get(), "Initial authentication")
+                .addStep(refreshTool.get(), "Refresh token")
+                .withOutputMapping(loginTool.get().getName(), "refresh_token", refreshTool.get().getName(), "refresh_token")
+                .build();
+            
+            chains.add(refreshChain);
+        }
+        
+        return chains;
+    }
+    
+    private List<ToolChain> optimizeToolChains(List<ToolChain> chains) {
+        // Remove duplicate chains
+        Map<String, ToolChain> uniqueChains = new HashMap<>();
+        
+        for (ToolChain chain : chains) {
+            String signature = generateChainSignature(chain);
+            if (!uniqueChains.containsKey(signature)) {
+                uniqueChains.put(signature, chain);
+            }
+        }
+        
+        return new ArrayList<>(uniqueChains.values());
+    }
+    
+    private String generateChainSignature(ToolChain chain) {
+        return chain.getSteps().stream()
+            .map(ToolChainStep::getToolName)
+            .collect(Collectors.joining("->"));
+    }
+    
+    private Map<String, List<McpToolModel>> groupByResource(List<McpToolModel> tools,
+                                                           Map<String, SemanticMetadata> semanticData) {
+        Map<String, List<McpToolModel>> groups = new HashMap<>();
+        
+        for (McpToolModel tool : tools) {
+            String resource = extractResource(tool.getPath());
+            groups.computeIfAbsent(resource, k -> new ArrayList<>()).add(tool);
+        }
+        
+        return groups;
+    }
+    
+    private String extractResource(String path) {
+        // Extract resource name from path (e.g., /api/users/{id} -> users)
+        String[] parts = path.split("/");
+        for (String part : parts) {
+            if (!part.isEmpty() && !part.startsWith("{") && !part.equals("api") && !part.equals("v1") && !part.equals("v2")) {
+                return part;
+            }
+        }
+        return "unknown";
+    }
+    
+    private Optional<McpToolModel> findToolByMethod(List<McpToolModel> tools, String method) {
+        return tools.stream()
+            .filter(tool -> method.equalsIgnoreCase(tool.getMethod()))
+            .findFirst();
+    }
+    
+    private List<McpToolModel> findToolsByPattern(List<McpToolModel> tools, String... patterns) {
+        return tools.stream()
+            .filter(tool -> Arrays.stream(patterns)
+                .anyMatch(pattern -> tool.getName().toLowerCase().contains(pattern.toLowerCase())))
+            .toList();
+    }
+    
+    private boolean areRelatedOperations(McpToolModel tool1, McpToolModel tool2,
+                                       Map<String, SemanticMetadata> semanticData) {
+        // Check if tools operate on the same resource
+        String resource1 = extractResource(tool1.getPath());
+        String resource2 = extractResource(tool2.getPath());
+        
+        return resource1.equals(resource2);
+    }
+}
+
+// src/main/java/com/example/generator/ai/ParameterInferenceEngine.java
+package tech.kayys.wayang.mcp.generator.ai;
+
+import tech.kayys.wayang.mcp.generator.*;
+import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+@ApplicationScoped
+public class ParameterInferenceEngine {
+    
+    private static final Pattern EMAIL_PATTERN = Pattern.compile(".*email.*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PHONE_PATTERN = Pattern.compile(".*phone.*|.*mobile.*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern DATE_PATTERN = Pattern.compile(".*date.*|.*time.*|.*timestamp.*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern URL_PATTERN = Pattern.compile(".*url.*|.*link.*|.*uri.*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern ID_PATTERN = Pattern.compile(".*id$|.*_id|^id.*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern AMOUNT_PATTERN = Pattern.compile(".*amount.*|.*price.*|.*cost.*", Pattern.CASE_INSENSITIVE);
+    
+    public Map<String, ParameterMapping> inferMappings(List<McpToolModel> tools, ApiSpecification apiSpec) {
+        Log.info("Inferring intelligent parameter mappings for {} tools", tools.size());
+        
+        Map<String, ParameterMapping> mappings = new HashMap<>();
+        
+        for (McpToolModel tool : tools) {
+            for (McpParameterModel param : tool.getParameters()) {
+                String key = tool.getName() + "." + param.getName();
+                
+                ParameterMapping mapping = inferParameterMapping(param, tool, apiSpec);
+                mappings.put(key, mapping);
+            }
+        }
+        
+        Log.info("Inferred {} parameter mappings with smart defaults and validations", mappings.size());
+        return mappings;
+    }
+    
+    private ParameterMapping inferParameterMapping(McpParameterModel param, McpToolModel tool, ApiSpecification apiSpec) {
+        ParameterMapping.Builder builder = ParameterMapping.builder()
+            .withParameterName(param.getName())
+            .withToolName(tool.getName())
+            .withOriginalType(param.getType())
+            .withRequired(param.isRequired());
+        
+        // Infer semantic type
+        String semanticType = inferSemanticType(param);
+        builder.withSemanticType(semanticType);
+        
+        // Generate smart default value
+        Object defaultValue = generateSmartDefault(param, semanticType);
+        if (defaultValue != null) {
+            builder.withSmartDefault(defaultValue);
+        }
+        
+        // Infer validation rules
+        List<ValidationRule> validationRules = inferValidationRules(param, semanticType);
+        builder.withValidationRules(validationRules);
+        
+        // Infer transformation hints
+        List<String> transformationHints = inferTransformationHints(param, semanticType);
+        builder.withTransformationHints(transformationHints);
+        
+        // Infer example values
+        List<Object> exampleValues = generateExampleValues(param, semanticType);
+        builder.withExampleValues(exampleValues);
+        
+        return builder.build();
+    }
+    
+    private String inferSemanticType(McpParameterModel param) {
+        String paramName = param.getName().toLowerCase();
+        
+        if (EMAIL_PATTERN.matcher(paramName).matches()) {
+            return "email";
+        } else if (PHONE_PATTERN.matcher(paramName).matches()) {
+            return "phone";
+        } else if (DATE_PATTERN.matcher(paramName).matches()) {
+            return "datetime";
+        } else if (URL_PATTERN.matcher(paramName).matches()) {
+            return "url";
+        } else if (ID_PATTERN.matcher(paramName).matches()) {
+            return "identifier";
+        } else if (AMOUNT_PATTERN.matcher(paramName).matches()) {
+            return "currency";
+        } else if (paramName.contains("password") || paramName.contains("secret")) {
+            return "secret";
+        } else if (paramName.contains("status") || paramName.contains("state")) {
+            return "enum";
+        } else if (paramName.contains("count") || paramName.contains("quantity")) {
+            return "count";
+        } else if (paramName.contains("percent") || paramName.contains("rate")) {
+            return "percentage";
+        }
+        
+        return "generic";
+    }
+    
+    private Object generateSmartDefault(McpParameterModel param, String semanticType) {
+        if (param.getDefaultValue() != null) {
+            return param.getDefaultValue();
+        }
+        
+        return switch (semanticType) {
+            case "email" -> "user@example.com";
+            case "phone" -> "+1-555-0100";
+            case "datetime" -> "2024-01-01T00:00:00Z";
+            case "url" -> "https://example.com";
+            case "identifier" -> "00000000-0000-0000-0000-000000000000";
+            case "currency" -> "0.00";
+            case "count" -> 0;
+            case "percentage" -> 0.0;
+            case "secret" -> null; // No default for secrets
+            default -> param.getExample() != null ? param.getExample() : generateTypeBasedDefault(param.getType());
+        };
+    }
+    
+    private Object generateTypeBasedDefault(String type) {
+        return switch (type.toLowerCase()) {
+            case "string" -> "";
+            case "int", "integer" -> 0;
+            case "long" -> 0L;
+            case "float", "double" -> 0.0;
+            case "boolean" -> false;
+            default -> null;
+        };
+    }
+    
+    private List<ValidationRule> inferValidationRules(McpParameterModel param, String semanticType) {
+        List<ValidationRule> rules = new ArrayList<>();
+        
+        switch (semanticType) {
+            case "email":
+                rules.add(new ValidationRule("email_format", "Must be a valid email address", 
+                    ValidationRule.ValidationSeverity.ERROR, null));
+                rules.add(new ValidationRule("email_length", "Email must be between 3 and 254 characters", 
+                    ValidationRule.ValidationSeverity.ERROR, null));
+                break;
+                
+            case "phone":
+                rules.add(new ValidationRule("phone_format", "Must be a valid phone number", 
+                    ValidationRule.ValidationSeverity.ERROR, null));
+                break;
+                
+            case "datetime":
+                rules.add(new ValidationRule("datetime_format", "Must be a valid ISO 8601 datetime", 
+                    ValidationRule.ValidationSeverity.ERROR, null));
+                break;
+                
+            case "url":
+                rules.add(new ValidationRule("url_format", "Must be a valid URL", 
+                    ValidationRule.ValidationSeverity.ERROR, null));
+                rules.add(new ValidationRule("url_protocol", "Must use http or https protocol", 
+                    ValidationRule.ValidationSeverity.WARNING, null));
+                break;
+                
+            case "identifier":
+                rules.add(new ValidationRule("id_not_empty", "ID cannot be empty", 
+                    ValidationRule.ValidationSeverity.ERROR, null));
+                break;
+                
+            case "currency":
+                rules.add(new ValidationRule("currency_non_negative", "Amount must be non-negative", 
+                    ValidationRule.ValidationSeverity.ERROR, null));
+                rules.add(new ValidationRule("currency_precision", "Amount must have at most 2 decimal places", 
+                    ValidationRule.ValidationSeverity.WARNING, null));
+                break;
+                
+            case "count":
+                rules.add(new ValidationRule("count_non_negative", "Count must be non-negative", 
+                    ValidationRule.ValidationSeverity.ERROR, null));
+                break;
+                
+            case "percentage":
+                rules.add(new ValidationRule("percentage_range", "Percentage must be between 0 and 100", 
+                    ValidationRule.ValidationSeverity.ERROR, null));
+                break;
+        }
+        
+        // Add generic required validation if parameter is required
+        if (param.isRequired()) {
+            rules.add(new ValidationRule("required", "This parameter is required", 
+                ValidationRule.ValidationSeverity.ERROR, null));
+        }
+        
+        return rules;
+    }
+    
+    private List<String> inferTransformationHints(McpParameterModel param, String semanticType) {
+        List<String> hints = new ArrayList<>();
+        
+        switch (semanticType) {
+            case "email":
+                hints.add("trim");
+                hints.add("toLowerCase");
+                break;
+                
+            case "phone":
+                hints.add("removeNonNumeric");
+                hints.add("formatInternational");
+                break;
+                
+            case "datetime":
+                hints.add("parseISO8601");
+                hints.add("convertToUTC");
+                break;
+                
+            case "url":
+                hints.add("trim");
+                hints.add("ensureProtocol");
+                break;
+                
+            case "identifier":
+                hints.add("trim");
+                break;
+                
+            case "currency":
+                hints.add("roundTwoDecimals");
+                break;
+                
+            case "secret":
+                hints.add("hash");
+                hints.add("encrypt");
+                break;
+        }
+        
+        return hints;
+    }
+    
+    private List<Object> generateExampleValues(McpParameterModel param, String semanticType) {
+        List<Object> examples = new ArrayList<>();
+        
+        if (param.getExample() != null) {
+            examples.add(param.getExample());
+        }
+        
+        switch (semanticType) {
+            case "email":
+                examples.add("john.doe@example.com");
+                examples.add("jane.smith@company.org");
+                examples.add("test.user@domain.co.uk");
+                break;
+                
+            case "phone":
+                examples.add("+1-555-0100");
+                examples.add("+44-20-1234-5678");
+                examples.add("+81-3-1234-5678");
+                break;
+                
+            case "datetime":
+                examples.add("2024-01-15T10:30:00Z");
+                examples.add("2024-06-01T14:00:00+00:00");
+                examples.add("2024-12-31T23:59:59Z");
+                break;
+                
+            case "url":
+                examples.add("https://api.example.com/v1/resource");
+                examples.add("https://example.com/path/to/resource");
+                break;
+                
+            case "identifier":
+                examples.add("123e4567-e89b-12d3-a456-426614174000");
+                examples.add("usr_1234567890");
+                examples.add("ID-2024-001");
+                break;
+                
+            case "currency":
+                examples.add("99.99");
+                examples.add("1234.56");
+                examples.add("0.99");
+                break;
+                
+            case "count":
+                examples.add(1);
+                examples.add(10);
+                examples.add(100);
+                break;
+                
+            case "percentage":
+                examples.add(0.0);
+                examples.add(50.0);
+                examples.add(100.0);
+                break;
+        }
+        
+        return examples;
+    }
+}
+
+
+// src/main/java/com/example/generator/ai/AIEnhancementManager.java
+package tech.kayys.wayang.mcp.generator.ai;
+
+import tech.kayys.wayang.mcp.generator.*;
+import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+
+@ApplicationScoped
+public class AIEnhancementManager {
+    
+    @Inject
+    ToolOrchestrator toolOrchestrator;
+    
+    @Inject
+    ParameterInferenceEngine parameterInference;
+    
+    @Inject
+    ResponseSummarizer responseSummarizer;
+    
+    @Inject
+    ErrorRecoveryEngine errorRecovery;
+    
+    @Inject
+    SemanticAnalyzer semanticAnalyzer;
+    
+    @Inject
+    UsageAnalytics usageAnalytics;
+    
+    public CompletableFuture<EnhancedMcpServerModel> enhanceServerModel(McpServerModel serverModel, 
+                                                                        ApiSpecification apiSpec,
+                                                                        AIEnhancementConfig config) {
+        Log.info("Starting AI-powered enhancement for: {}
+
+// src/main/java/com/example/generator/ai/ResponseSummarizer.java
+package tech.kayys.wayang.mcp.generator.ai;
+
+import tech.kayys.wayang.mcp.generator.*;
+import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.util.*;
+
+@ApplicationScoped
+public class ResponseSummarizer {
+    
+    public Map<String, SummarizationStrategy> generateStrategies(List<McpToolModel> tools, 
+                                                                ApiSpecification apiSpec) {
+        Log.info("Generating response summarization strategies for {} tools", tools.size());
+        
+        Map<String, SummarizationStrategy> strategies = new HashMap<>();
+        
+        for (McpToolModel tool : tools) {
+            SummarizationStrategy strategy = inferSummarizationStrategy(tool, apiSpec);
+            strategies.put(tool.getName(), strategy);
+        }
+        
+        return strategies;
+    }
+    
+    private SummarizationStrategy inferSummarizationStrategy(McpToolModel tool, ApiSpecification apiSpec) {
+        SummarizationStrategy.Builder builder = SummarizationStrategy.builder()
+            .withToolName(tool.getName());
+        
+        // Determine response type
+        String responseType = determineResponseType(tool);
+        builder.withResponseType(responseType);
+        
+        // Generate appropriate summarization approach
+        switch (responseType) {
+            case "list":
+                builder
+                    .withApproach("extract_key_fields")
+                    .addKeyField("id")
+                    .addKeyField("name")
+                    .addKeyField("title")
+                    .withMaxItems(10)
+                    .withSummaryTemplate("Found {count} items: {items}")
+                    .build();
+                break;
+                
+            case "object":
+                builder
+                    .withApproach("flatten_object")
+                    .addKeyField(determineIdentifierField(tool))
+                    .withSummaryTemplate("{resource} retrieved successfully")
+                    .build();
+                break;
+                
+            case "success":
+                builder
+                    .withApproach("status_message")
+                    .withSummaryTemplate("Operation completed successfully")
+                    .build();
+                break;
+                
+            case "error":
+                builder
+                    .withApproach("error_extraction")
+                    .addKeyField("error")
+                    .addKeyField("message")
+                    .addKeyField("code")
+                    .withSummaryTemplate("Error: {message} (Code: {code})")
+                    .build();
+                break;
+                
+            default:
+                builder
+                    .withApproach("generic")
+                    .withSummaryTemplate("Response received")
+                    .build();
+        }
+        
+        return builder.build();
+    }
+    
+    private String determineResponseType(McpToolModel tool) {
+        String method = tool.getMethod().toUpperCase();
+        String path = tool.getPath().toLowerCase();
+        
+        // List/Collection endpoints
+        if ((method.equals("GET") && !path.contains("{id}")) || 
+            tool.getName().contains("list") || 
+            tool.getName().contains("search")) {
+            return "list";
+        }
+        
+        // Single object retrieval
+        if (method.equals("GET") && path.contains("{id}")) {
+            return "object";
+        }
+        
+        // Create/Update operations
+        if (method.equals("POST") || method.equals("PUT") || method.equals("PATCH")) {
+            return "object";
+        }
+        
+        // Delete operations
+        if (method.equals("DELETE")) {
+            return "success";
+        }
+        
+        return "generic";
+    }
+    
+    private String determineIdentifierField(McpToolModel tool) {
+        // Check for common ID field names in parameters
+        for (McpParameterModel param : tool.getParameters()) {
+            String paramName = param.getName().toLowerCase();
+            if (paramName.equals("id") || paramName.endsWith("_id") || paramName.endsWith("id")) {
+                return param.getName();
+            }
+        }
+        return "id"; // default
+    }
+}
+
+// src/main/java/com/example/generator/ai/ErrorRecoveryEngine.java
+package tech.kayys.wayang.mcp.generator.ai;
+
+import tech.kayys.wayang.mcp.generator.*;
+import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.util.*;
+
+@ApplicationScoped
+public class ErrorRecoveryEngine {
+    
+    public Map<String, ErrorRecoveryStrategy> generateStrategies(List<McpToolModel> tools,
+                                                                ApiSpecification apiSpec) {
+        Log.info("Generating error recovery strategies for {} tools", tools.size());
+        
+        Map<String, ErrorRecoveryStrategy> strategies = new HashMap<>();
+        
+        for (McpToolModel tool : tools) {
+            ErrorRecoveryStrategy strategy = createRecoveryStrategy(tool, apiSpec);
+            strategies.put(tool.getName(), strategy);
+        }
+        
+        return strategies;
+    }
+    
+    private ErrorRecoveryStrategy createRecoveryStrategy(McpToolModel tool, ApiSpecification apiSpec) {
+        ErrorRecoveryStrategy.Builder builder = ErrorRecoveryStrategy.builder()
+            .withToolName(tool.getName());
+        
+        // Add retry logic for transient failures
+        builder.addRecoveryAction("retry_on_timeout", ErrorRecoveryAction.builder()
+            .withErrorCode(408)
+            .withAction("retry")
+            .withMaxRetries(3)
+            .withBackoffStrategy("exponential")
+            .withInitialDelayMs(1000)
+            .build());
+        
+        builder.addRecoveryAction("retry_on_server_error", ErrorRecoveryAction.builder()
+            .withErrorCode(500)
+            .withAction("retry")
+            .withMaxRetries(2)
+            .withBackoffStrategy("linear")
+            .withInitialDelayMs(2000)
+            .build());
+        
+        // Rate limiting recovery
+        builder.addRecoveryAction("backoff_on_rate_limit", ErrorRecoveryAction.builder()
+            .withErrorCode(429)
+            .withAction("backoff_and_retry")
+            .withMaxRetries(5)
+            .withBackoffStrategy("exponential")
+            .withInitialDelayMs(5000)
+            .withRespectRetryAfterHeader(true)
+            .build());
+        
+        // Authentication errors
+        builder.addRecoveryAction("refresh_token_on_401", ErrorRecoveryAction.builder()
+            .withErrorCode(401)
+            .withAction("refresh_auth")
+            .withMaxRetries(1)
+            .withFallbackAction("re_authenticate")
+            .build());
+        
+        // Validation errors
+        builder.addRecoveryAction("log_and_fail_on_400", ErrorRecoveryAction.builder()
+            .withErrorCode(400)
+            .withAction("log_and_fail")
+            .withExtractErrorDetails(true)
+            .build());
+        
+        // Not found errors
+        builder.addRecoveryAction("fallback_on_404", ErrorRecoveryAction.builder()
+            .withErrorCode(404)
+            .withAction("return_empty_result")
+            .withFallbackValue(createEmptyResult(tool))
+            .build());
+        
+        // Conflict errors
+        builder.addRecoveryAction("retry_with_updated_data_on_409", ErrorRecoveryAction.builder()
+            .withErrorCode(409)
+            .withAction("fetch_and_retry")
+            .withMaxRetries(1)
+            .build());
+        
+        // Network errors
+        builder.addRecoveryAction("retry_on_network_error", ErrorRecoveryAction.builder()
+            .withErrorPattern(".*timeout.*|.*connection.*|.*network.*")
+            .withAction("retry")
+            .withMaxRetries(3)
+            .withBackoffStrategy("exponential")
+            .withInitialDelayMs(1000)
+            .build());
+        
+        return builder.build();
+    }
+    
+    private Object createEmptyResult(McpToolModel tool) {
+        String method = tool.getMethod().toUpperCase();
+        
+        if (method.equals("GET") && !tool.getPath().contains("{id}")) {
+            return Map.of("items", List.of(), "count", 0);
+        }
+        
+        return null;
+    }
+}
+
+// src/main/java/com/example/generator/ai/SemanticAnalyzer.java
+package tech.kayys.wayang.mcp.generator.ai;
+
+import tech.kayys.wayang.mcp.generator.ApiOperation;
+import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+@ApplicationScoped
+public class SemanticAnalyzer {
+    
+    public Map<String, SemanticMetadata> analyzeOperations(List<ApiOperation> operations) {
+        Log.info("Performing semantic analysis on {} operations", operations.size());
+        
+        Map<String, SemanticMetadata> metadata = new HashMap<>();
+        
+        for (ApiOperation operation : operations) {
+            SemanticMetadata semantic = analyzeOperation(operation);
+            metadata.put(operation.getOperationId(), semantic);
+        }
+        
+        // Perform cross-operation analysis
+        enrichWithRelationships(metadata, operations);
+        
+        return metadata;
+    }
+    
+    private SemanticMetadata analyzeOperation(ApiOperation operation) {
+        SemanticMetadata.Builder builder = SemanticMetadata.builder()
+            .withOperationId(operation.getOperationId());
+        
+        // Determine operation type
+        String operationType = determineOperationType(operation);
+        builder.withOperationType(operationType);
+        
+        // Extract resource
+        String resource = extractResource(operation.getPath());
+        builder.withResource(resource);
+        
+        // Determine intent
+        String intent = determineIntent(operation);
+        builder.withIntent(intent);
+        
+        // Extract entities
+        List<String> entities = extractEntities(operation);
+        builder.withEntities(entities);
+        
+        // Determine complexity
+        int complexity = calculateComplexity(operation);
+        builder.withComplexity(complexity);
+        
+        // Determine idempotency
+        boolean idempotent = isIdempotent(operation);
+        builder.withIdempotent(idempotent);
+        
+        // Determine safety
+        boolean safe = isSafe(operation);
+        builder.withSafe(safe);
+        
+        // Extract domain concepts
+        Set<String> domainConcepts = extractDomainConcepts(operation);
+        builder.withDomainConcepts(domainConcepts);
+        
+        return builder.build();
+    }
+    
+    private String determineOperationType(ApiOperation operation) {
+        String method = operation.getMethod().toUpperCase();
+        String path = operation.getPath().toLowerCase();
+        
+        return switch (method) {
+            case "GET" -> path.contains("{id}") ? "READ_SINGLE" : "READ_COLLECTION";
+            case "POST" -> "CREATE";
+            case "PUT" -> "UPDATE_FULL";
+            case "PATCH" -> "UPDATE_PARTIAL";
+            case "DELETE" -> "DELETE";
+            default -> "CUSTOM";
+        };
+    }
+    
+    private String extractResource(String path) {
+        String[] parts = path.split("/");
+        for (String part : parts) {
+            if (!part.isEmpty() && !part.startsWith("{") && 
+                !part.equals("api") && !part.matches("v\\d+")) {
+                return part;
+            }
+        }
+        return "unknown";
+    }
+    
+    private String determineIntent(ApiOperation operation) {
+        String desc = (operation.getDescription() != null ? operation.getDescription() : "").toLowerCase();
+        String summary = (operation.getSummary() != null ? operation.getSummary() : "").toLowerCase();
+        String combined = desc + " " + summary;
+        
+        if (combined.contains("search") || combined.contains("find") || combined.contains("query")) {
+            return "SEARCH";
+        } else if (combined.contains("create") || combined.contains("add") || combined.contains("new")) {
+            return "CREATE";
+        } else if (combined.contains("update") || combined.contains("modify") || combined.contains("edit")) {
+            return "UPDATE";
+        } else if (combined.contains("delete") || combined.contains("remove")) {
+            return "DELETE";
+        } else if (combined.contains("list") || combined.contains("get all")) {
+            return "LIST";
+        } else if (combined.contains("get") || combined.contains("retrieve") || combined.contains("fetch")) {
+            return "RETRIEVE";
+        } else if (combined.contains("export") || combined.contains("download")) {
+            return "EXPORT";
+        } else if (combined.contains("import") || combined.contains("upload")) {
+            return "IMPORT";
+        }
+        
+        return "GENERIC";
+    }
+    
+    private List<String> extractEntities(ApiOperation operation) {
+        List<String> entities = new ArrayList<>();
+        
+        // Extract from path
+        String[] pathParts = operation.getPath().split("/");
+        for (String part : pathParts) {
+            if (part.startsWith("{") && part.endsWith("}")) {
+                String entity = part.substring(1, part.length() - 1);
+                entities.add(entity);
+            }
+        }
+        
+        // Extract from parameters
+        operation.getParameters().forEach(param -> {
+            if (param.getIn().equals("path") || param.getIn().equals("body")) {
+                entities.add(param.getName());
+            }
+        });
+        
+        return entities;
+    }
+    
+    private int calculateComplexity(ApiOperation operation) {
+        int complexity = 1; // Base complexity
+        
+        // Add complexity for parameters
+        complexity += operation.getParameters().size();
+        
+        // Add complexity for path depth
+        complexity += operation.getPath().split("/").length - 1;
+        
+        // Add complexity for body parameters
+        long bodyParams = operation.getParameters().stream()
+            .filter(p -> "body".equals(p.getIn()))
+            .count();
+        complexity += bodyParams * 2;
+        
+        return complexity;
+    }
+    
+    private boolean isIdempotent(ApiOperation operation) {
+        String method = operation.getMethod().toUpperCase();
+        return method.equals("GET") || method.equals("PUT") || 
+               method.equals("DELETE") || method.equals("HEAD");
+    }
+    
+    private boolean isSafe(ApiOperation operation) {
+        String method = operation.getMethod().toUpperCase();
+        return method.equals("GET") || method.equals("HEAD") || method.equals("OPTIONS");
+    }
+    
+    private Set<String> extractDomainConcepts(ApiOperation operation) {
+        Set<String> concepts = new HashSet<>();
+        
+        String text = (operation.getDescription() != null ? operation.getDescription() : "") + " " +
+                     (operation.getSummary() != null ? operation.getSummary() : "") + " " +
+                     operation.getPath();
+        
+        text = text.toLowerCase();
+        
+        // Common domain concepts
+        String[] domainKeywords = {
+            "user", "account", "profile", "authentication", "authorization",
+            "product", "order", "payment", "invoice", "transaction",
+            "customer", "vendor", "supplier", "employee",
+            "document", "file", "attachment", "upload", "download",
+            "notification", "email", "message", "alert",
+            "report", "analytics", "metrics", "statistics",
+            "setting", "configuration", "preference"
+        };
+        
+        for (String keyword : domainKeywords) {
+            if (text.contains(keyword)) {
+                concepts.add(keyword);
+            }
+        }
+        
+        return concepts;
+    }
+    
+    private void enrichWithRelationships(Map<String, SemanticMetadata> metadata, 
+                                       List<ApiOperation> operations) {
+        // Group operations by resource
+        Map<String, List<String>> resourceGroups = metadata.entrySet().stream()
+            .collect(Collectors.groupingBy(
+                e -> e.getValue().getResource(),
+                Collectors.mapping(Map.Entry::getKey, Collectors.toList())
+            ));
+        
+        // Add relationship information
+        for (Map.Entry<String, SemanticMetadata> entry : metadata.entrySet()) {
+            String operationId = entry.getKey();
+            SemanticMetadata semantic = entry.getValue();
+            
+            List<String> relatedOps = resourceGroups.get(semantic.getResource());
+            if (relatedOps != null) {
+                List<String> related = new ArrayList<>(relatedOps);
+                related.remove(operationId);
+                semantic.setRelatedOperations(related);
+            }
+        }
+    }
+}", serverModel.getTitle());
+        
+        return CompletableFuture.supplyAsync(() -> {
+            EnhancedMcpServerModel enhanced = new EnhancedMcpServerModel(serverModel);
+            
+            try {
+                // Step 1: Semantic analysis of API operations
+                if (config.isEnableSemanticAnalysis()) {
+                    Map<String, SemanticMetadata> semanticData = semanticAnalyzer.analyzeOperations(
+                        apiSpec.getOperations());
+                    enhanced.setSemanticMetadata(semanticData);
+                    Log.info("Semantic analysis completed for {} operations", semanticData.size());
+                }
+                
+                // Step 2: Generate intelligent tool chains
+                if (config.isEnableToolChaining()) {
+                    List<ToolChain> toolChains = toolOrchestrator.generateToolChains(
+                        serverModel.getTools(), enhanced.getSemanticMetadata());
+                    enhanced.setToolChains(toolChains);
+                    Log.info("Generated {} intelligent tool chains", toolChains.size());
+                }
+                
+                // Step 3: Infer smart parameter mappings
+                if (config.isEnableSmartParameters()) {
+                    Map<String, ParameterMapping> parameterMappings = parameterInference.inferMappings(
+                        serverModel.getTools(), apiSpec);
+                    enhanced.setParameterMappings(parameterMappings);
+                    Log.info("Inferred parameter mappings for {} tools", parameterMappings.size());
+                }
+                
+                // Step 4: Generate response summarization strategies
+                if (config.isEnableResponseSummarization()) {
+                    Map<String, SummarizationStrategy> strategies = responseSummarizer.generateStrategies(
+                        serverModel.getTools(), apiSpec);
+                    enhanced.setSummarizationStrategies(strategies);
+                    Log.info("Generated summarization strategies for {} tools", strategies.size());
+                }
+                
+                // Step 5: Create error recovery patterns
+                if (config.isEnableErrorRecovery()) {
+                    Map<String, ErrorRecoveryStrategy> recoveryStrategies = errorRecovery.generateStrategies(
+                        serverModel.getTools(), apiSpec);
+                    enhanced.setErrorRecoveryStrategies(recoveryStrategies);
+                    Log.info("Generated error recovery strategies for {} tools", recoveryStrategies.size());
+                }
+                
+                // Step 6: Analyze and optimize tool usage patterns
+                if (config.isEnableUsageOptimization()) {
+                    UsageOptimizationReport report = usageAnalytics.analyzeAndOptimize(
+                        serverModel.getTools(), enhanced);
+                    enhanced.setUsageOptimizationReport(report);
+                    Log.info("Usage optimization completed with {} recommendations", 
+                        report.getRecommendations().size());
+                }
+                
+                Log.info("AI enhancement completed successfully");
+                return enhanced;
+                
+            } catch (Exception e) {
+                Log.error("AI enhancement failed", e);
+                throw new RuntimeException("AI enhancement failed: " + e.getMessage(), e);
+            }
+        });
+    }
+    
+    public AIEnhancementReport generateEnhancementReport(EnhancedMcpServerModel enhanced) {
+        return AIEnhancementReport.builder()
+            .withServerModel(enhanced)
+            .withToolChainCount(enhanced.getToolChains().size())
+            .withParameterMappingCount(enhanced.getParameterMappings().size())
+            .withSemanticInsights(generateSemanticInsights(enhanced))
+            .withOptimizationRecommendations(enhanced.getUsageOptimizationReport().getRecommendations())
+            .build();
+    }
+    
+    private List<String> generateSemanticInsights(EnhancedMcpServerModel enhanced) {
+        List<String> insights = new ArrayList<>();
+        
+        // Analyze semantic patterns
+        Map<String, Long> operationTypes = enhanced.getSemanticMetadata().values().stream()
+            .collect(Collectors.groupingBy(
+                SemanticMetadata::getOperationType,
+                Collectors.counting()
+            ));
+        
+        operationTypes.forEach((type, count) -> 
+            insights.add(String.format("Found %d %s operations", count, type)));
+        
+        // Analyze tool chain complexity
+        OptionalDouble avgChainLength = enhanced.getToolChains().stream()
+            .mapToInt(chain -> chain.getSteps().size())
+            .average();
+        
+        if (avgChainLength.isPresent()) {
+            insights.add(String.format("Average tool chain length: %.1f steps", avgChainLength.getAsDouble()));
+        }
+        
+        return insights;
+    }
+}
+
+// src/main/java/com/example/generator/ai/ToolOrchestrator.java
+package tech.kayys.wayang.mcp.generator.ai;
+
+import tech.kayys.wayang.mcp.generator.McpToolModel;
+import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+@ApplicationScoped
+public class ToolOrchestrator {
+    
+    public List<ToolChain> generateToolChains(List<McpToolModel> tools, 
+                                             Map<String, SemanticMetadata> semanticData) {
+        Log.info("Generating intelligent tool chains from {} tools", tools.size());
+        
+        List<ToolChain> chains = new ArrayList<>();
+        
+        // Identify common workflow patterns
+        chains.addAll(generateCRUDChains(tools, semanticData));
+        chains.addAll(generateSearchAndRetrieveChains(tools, semanticData));
+        chains.addAll(generateDataPipelineChains(tools, semanticData));
+        chains.addAll(generateAuthenticationChains(tools, semanticData));
+        
+        // Optimize chains by removing redundant steps
+        chains = optimizeToolChains(chains);
+        
+        Log.info("Generated {} optimized tool chains", chains.size());
+        return chains;
+    }
+    
+    private List<ToolChain> generateCRUDChains(List<McpToolModel> tools, 
+                                              Map<String, SemanticMetadata> semanticData) {
+        List<ToolChain> chains = new ArrayList<>();
+        
+        // Find CRUD operation groups
+        Map<String, List<McpToolModel>> resourceGroups = groupByResource(tools, semanticData);
+        
+        for (Map.Entry<String, List<McpToolModel>> entry : resourceGroups.entrySet()) {
+            String resource = entry.getKey();
+            List<McpToolModel> resourceTools = entry.getValue();
+            
+            // Create: POST -> GET (verify)
+            Optional<McpToolModel> createTool = findToolByMethod(resourceTools, "POST");
+            Optional<McpToolModel> getTool = findToolByMethod(resourceTools, "GET");
+            
+            if (createTool.isPresent() && getTool.isPresent()) {
+                ToolChain createChain = ToolChain.builder()
+                    .withName("create_" + resource + "_with_verification")
+                    .withDescription("Create a new " + resource + " and verify it was created")
+                    .addStep(createTool.get(), "Create " + resource)
+                    .addStep(getTool.get(), "Verify created " + resource)
+                    .withOutputMapping(createTool.get().getName(), "id", getTool.get().getName(), "id")
+                    .build();
+                
+                chains.add(createChain);
+            }
+            
+            // Update: PUT -> GET (verify)
+            Optional<McpToolModel> updateTool = findToolByMethod(resourceTools, "PUT");
+            
+            if (updateTool.isPresent() && getTool.isPresent()) {
+                ToolChain updateChain = ToolChain.builder()
+                    .withName("update_" + resource + "_with_verification")
+                    .withDescription("Update " + resource + " and verify changes")
+                    .addStep(updateTool.get(), "Update " + resource)
+                    .addStep(getTool.get(), "Verify updated " + resource)
+                    .withOutputMapping(updateTool.get().getName(), "id", getTool.get().getName(), "id")
+                    .build();
+                
+                chains.add(updateChain);
+            }
+            
+            // Delete: DELETE -> GET (verify deletion)
+            Optional<McpToolModel> deleteTool = findToolByMethod(resourceTools, "DELETE");
+            
+            if (deleteTool.isPresent() && getTool.isPresent()) {
+                ToolChain deleteChain = ToolChain.builder()
+                    .withName("delete_" + resource + "_with_verification")
+                    .withDescription("Delete " + resource + " and verify deletion")
+                    .addStep(deleteTool.get(), "Delete " + resource)
+                    .addStep(getTool.get(), "Verify deletion (should return 404)")
+                    .withOutputMapping(deleteTool.get().getName(), "id", getTool.get().getName(), "id")
+                    .withExpectedError(getTool.get().getName(), 404)
+                    .build();
+                
+                chains.add(deleteChain);
+            }
+        }
+        
+        return chains;
+    }
+    
+    private List<ToolChain> generateSearchAndRetrieveChains(List<McpToolModel> tools,
+                                                           Map<String, SemanticMetadata> semanticData) {
+        List<ToolChain> chains = new ArrayList<>();
+        
+        // Find search/list operations
+        List<McpToolModel> searchTools = tools.stream()
+            .filter(tool -> tool.getName().contains("search") || 
+                          tool.getName().contains("list") ||
+                          tool.getName().contains("query"))
+            .toList();
+        
+        // Find detail retrieval operations
+        List<McpToolModel> detailTools = tools.stream()
+            .filter(tool -> tool.getName().contains("get") || 
+                          tool.getName().contains("retrieve") ||
+                          tool.getName().contains("fetch"))
+            .toList();
+        
+        // Create search -> get details chains
+        for (McpToolModel searchTool : searchTools) {
+            for (McpToolModel detailTool : detailTools) {
+                if (areRelatedOperations(searchTool, detailTool, semanticData)) {
+                    ToolChain chain = ToolChain.builder()
+                        .withName("search_and_retrieve_" + extractResource(searchTool.getName()))
+                        .withDescription("Search for items and retrieve detailed information")
+                        .addStep(searchTool, "Search for items")
+                        .addStep(detailTool, "Get detailed information for each item")
+                        .withOutputMapping(searchTool.getName(), "items[].id", detailTool.getName(), "id")
+                        .withIterative(true)
+                        .build();
+                    
+                    chains.add(chain);
+                }
+            }
+        }
+        
+        return chains;
+    }
+    
+    private List<ToolChain> generateDataPipelineChains(List<McpToolModel> tools,
+                                                      Map<String, SemanticMetadata> semanticData) {
+        List<ToolChain> chains = new ArrayList<>();
+        
+        // Identify data transformation patterns
+        // Example: Export -> Transform -> Import
+        List<McpToolModel> exportTools = findToolsByPattern(tools, "export", "download", "extract");
+        List<McpToolModel> transformTools = findToolsByPattern(tools, "convert", "transform", "process");
+        List<McpToolModel> importTools = findToolsByPattern(tools, "import", "upload", "ingest");
+        
+        if (!exportTools.isEmpty() && !importTools.isEmpty()) {
+            for (McpToolModel exportTool : exportTools) {
+                for (McpToolModel importTool : importTools) {
+                    ToolChain.Builder chainBuilder = ToolChain.builder()
+                        .withName("data_pipeline_" + extractResource(exportTool.getName()))
+                        .withDescription("Export, process, and import data")
+                        .addStep(exportTool, "Export data");
+                    
+                    // Add transformation step if available
+                    if (!transformTools.isEmpty()) {
+                        chainBuilder.addStep(transformTools.get(0), "Transform data")
+                            .withOutputMapping(exportTool.getName(), "data", transformTools.get(0).getName(), "input");
+                    }
+                    
+                    chainBuilder.addStep(importTool, "Import processed data");
+                    
+                    chains.add(chainBuilder.build());
+                }
+            }
+        }
+        
+        return chains;
+    }
+    
+    private List<ToolChain> generateAuthenticationChains(List<McpToolModel> tools,
+                                                        Map<String, SemanticMetadata> semanticData) {
+        List<ToolChain> chains = new ArrayList<>();
+        
+        // Find authentication-related operations
+        Optional<McpToolModel> loginTool = tools.stream()
+            .filter(tool -> tool.getName().contains("login") || tool.getName().contains("authenticate"))
+            .findFirst();
+        
+        Optional<McpToolModel> refreshTool = tools.stream()
+            .filter(tool -> tool.getName().contains("refresh") && tool.getName().contains("token"))
+            .findFirst();
+        
+        Optional<McpToolModel> logoutTool = tools.stream()
+            .filter(tool -> tool.getName().contains("logout"))
+            .findFirst();
+        
+        if (loginTool.isPresent()) {
+            // Login -> Use API -> Logout chain
+            ToolChain.Builder authChainBuilder = ToolChain.builder()
+                .withName("authenticated_session")
+                .withDescription("Complete authenticated session workflow")
+                .addStep(loginTool.get(), "Authenticate and get token");
+            
+            // Add a representative API call
+            Optional<McpToolModel> apiTool = tools.stream()
+                .filter(tool -> !tool.getName().contains("login") && 
+                              !tool.getName().contains("logout") &&
+                              !tool.getName().contains("refresh"))
+                .findFirst();
+            
+            if (apiTool.isPresent()) {
+                authChainBuilder.addStep(apiTool.get(), "Execute API call with token")
+                    .withOutputMapping(loginTool.get().getName(), "token", apiTool.get().getName(), "authorization");
+            }
+            
+            if (logoutTool.isPresent()) {
+                authChainBuilder.addStep(logoutTool.get(), "Logout and invalidate token");
+            }
+            
+            chains.add(authChainBuilder.build());
+        }
+        
+        // Token refresh chain
+        if (loginTool.isPresent() && refreshTool.isPresent()) {
+            ToolChain refreshChain = ToolChain.builder()
+                .withName("token_refresh_flow")
+                .withDescription("Refresh authentication token before expiry")
+                .addStep(loginTool.get(), "Initial authentication")
+                .addStep(refreshTool.get(), "Refresh token")
+                .withOutputMapping(loginTool.get().getName(), "refresh_token", refreshTool.get().getName(), "refresh_token")
+                .build();
+            
+            chains.add(refreshChain);
+        }
+        
+        return chains;
+    }
+    
+    private List<ToolChain> optimizeToolChains(List<ToolChain> chains) {
+        // Remove duplicate chains
+        Map<String, ToolChain> uniqueChains = new HashMap<>();
+        
+        for (ToolChain chain : chains) {
+            String signature = generateChainSignature(chain);
+            if (!uniqueChains.containsKey(signature)) {
+                uniqueChains.put(signature, chain);
+            }
+        }
+        
+        return new ArrayList<>(uniqueChains.values());
+    }
+    
+    private String generateChainSignature(ToolChain chain) {
+        return chain.getSteps().stream()
+            .map(ToolChainStep::getToolName)
+            .collect(Collectors.joining("->"));
+    }
+    
+    private Map<String, List<McpToolModel>> groupByResource(List<McpToolModel> tools,
+                                                           Map<String, SemanticMetadata> semanticData) {
+        Map<String, List<McpToolModel>> groups = new HashMap<>();
+        
+        for (McpToolModel tool : tools) {
+            String resource = extractResource(tool.getPath());
+            groups.computeIfAbsent(resource, k -> new ArrayList<>()).add(tool);
+        }
+        
+        return groups;
+    }
+    
+    private String extractResource(String path) {
+        // Extract resource name from path (e.g., /api/users/{id} -> users)
+        String[] parts = path.split("/");
+        for (String part : parts) {
+            if (!part.isEmpty() && !part.startsWith("{") && !part.equals("api") && !part.equals("v1") && !part.equals("v2")) {
+                return part;
+            }
+        }
+        return "unknown";
+    }
+    
+    private Optional<McpToolModel> findToolByMethod(List<McpToolModel> tools, String method) {
+        return tools.stream()
+            .filter(tool -> method.equalsIgnoreCase(tool.getMethod()))
+            .findFirst();
+    }
+    
+    private List<McpToolModel> findToolsByPattern(List<McpToolModel> tools, String... patterns) {
+        return tools.stream()
+            .filter(tool -> Arrays.stream(patterns)
+                .anyMatch(pattern -> tool.getName().toLowerCase().contains(pattern.toLowerCase())))
+            .toList();
+    }
+    
+    private boolean areRelatedOperations(McpToolModel tool1, McpToolModel tool2,
+                                       Map<String, SemanticMetadata> semanticData) {
+        // Check if tools operate on the same resource
+        String resource1 = extractResource(tool1.getPath());
+        String resource2 = extractResource(tool2.getPath());
+        
+        return resource1.equals(resource2);
+    }
+}
+
+// src/main/java/com/example/generator/ai/ParameterInferenceEngine.java
+package tech.kayys.wayang.mcp.generator.ai;
+
+import tech.kayys.wayang.mcp.generator.*;
+import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+@ApplicationScoped
+public class ParameterInferenceEngine {
+    
+    private static final Pattern EMAIL_PATTERN = Pattern.compile(".*email.*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PHONE_PATTERN = Pattern.compile(".*phone.*|.*mobile.*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern DATE_PATTERN = Pattern.compile(".*date.*|.*time.*|.*timestamp.*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern URL_PATTERN = Pattern.compile(".*url.*|.*link.*|.*uri.*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern ID_PATTERN = Pattern.compile(".*id$|.*_id|^id.*", Pattern.CASE_INSENSITIVE);
+    private static final Pattern AMOUNT_PATTERN = Pattern.compile(".*amount.*|.*price.*|.*cost.*", Pattern.CASE_INSENSITIVE);
+    
+    public Map<String, ParameterMapping> inferMappings(List<McpToolModel> tools, ApiSpecification apiSpec) {
+        Log.info("Inferring intelligent parameter mappings for {} tools", tools.size());
+        
+        Map<String, ParameterMapping> mappings = new HashMap<>();
+        
+        for (McpToolModel tool : tools) {
+            for (McpParameterModel param : tool.getParameters()) {
+                String key = tool.getName() + "." + param.getName();
+                
+                ParameterMapping mapping = inferParameterMapping(param, tool, apiSpec);
+                mappings.put(key, mapping);
+            }
+        }
+        
+        Log.info("Inferred {} parameter mappings with smart defaults and validations", mappings.size());
+        return mappings;
+    }
+    
+    private ParameterMapping inferParameterMapping(McpParameterModel param, McpToolModel tool, ApiSpecification apiSpec) {
+        ParameterMapping.Builder builder = ParameterMapping.builder()
+            .withParameterName(param.getName())
+            .withToolName(tool.getName())
+            .withOriginalType(param.getType())
+            .withRequired(param.isRequired());
+        
+        // Infer semantic type
+        String semanticType = inferSemanticType(param);
+        builder.withSemanticType(semanticType);
+        
+        // Generate smart default value
+        Object defaultValue = generateSmartDefault(param, semanticType);
+        if (defaultValue != null) {
+            builder.withSmartDefault(defaultValue);
+        }
+        
+        // Infer validation rules
+        List<ValidationRule> validationRules = inferValidationRules(param, semanticType);
+        builder.withValidationRules(validationRules);
+        
+        // Infer transformation hints
+        List<String> transformationHints = inferTransformationHints(param, semanticType);
+        builder.withTransformationHints(transformationHints);
+        
+        // Infer example values
+        List<Object> exampleValues = generateExampleValues(param, semanticType);
+        builder.withExampleValues(exampleValues);
+        
+        return builder.build();
+    }
+    
+    private String inferSemanticType(McpParameterModel param) {
+        String paramName = param.getName().toLowerCase();
+        
+        if (EMAIL_PATTERN.matcher(paramName).matches()) {
+            return "email";
+        } else if (PHONE_PATTERN.matcher(paramName).matches()) {
+            return "phone";
+        } else if (DATE_PATTERN.matcher(paramName).matches()) {
+            return "datetime";
+        } else if (URL_PATTERN.matcher(paramName).matches()) {
+            return "url";
+        } else if (ID_PATTERN.matcher(paramName).matches()) {
+            return "identifier";
+        } else if (AMOUNT_PATTERN.matcher(paramName).matches()) {
+            return "currency";
+        } else if (paramName.contains("password") || paramName.contains("secret")) {
+            return "secret";
+        } else if (paramName.contains("status") || paramName.contains("state")) {
+            return "enum";
+        } else if (paramName.contains("count") || paramName.contains("quantity")) {
+            return "count";
+        } else if (paramName.contains("percent") || paramName.contains("rate")) {
+            return "percentage";
+        }
+        
+        return "generic";
+    }
+    
+    private Object generateSmartDefault(McpParameterModel param, String semanticType) {
+        if (param.getDefaultValue() != null) {
+            return param.getDefaultValue();
+        }
+        
+        return switch (semanticType) {
+            case "email" -> "user@example.com";
+            case "phone" -> "+1-555-0100";
+            case "datetime" -> "2024-01-01T00:00:00Z";
+            case "url" -> "https://example.com";
+            case "identifier" -> "00000000-0000-0000-0000-000000000000";
+            case "currency" -> "0.00";
+            case "count" -> 0;
+            case "percentage" -> 0.0;
+            case "secret" -> null; // No default for secrets
+            default -> param.getExample() != null ? param.getExample() : generateTypeBasedDefault(param.getType());
+        };
+    }
+    
+    private Object generateTypeBasedDefault(String type) {
+        return switch (type.toLowerCase()) {
+            case "string" -> "";
+            case "int", "integer" -> 0;
+            case "long" -> 0L;
+            case "float", "double" -> 0.0;
+            case "boolean" -> false;
+            default -> null;
+        };
+    }
+    
+    private List<ValidationRule> inferValidationRules(McpParameterModel param, String semanticType) {
+        List<ValidationRule> rules = new ArrayList<>();
+        
+        switch (semanticType) {
+            case "email":
+                rules.add(new ValidationRule("email_format", "Must be a valid email address", 
+                    ValidationRule.ValidationSeverity.ERROR, null));
+                rules.add(new ValidationRule("email_length", "Email must be between 3 and 254 characters", 
+                    ValidationRule.ValidationSeverity.ERROR, null));
+                break;
+                
+            case "phone":
+                rules.add(new ValidationRule("phone_format", "Must be a valid phone number", 
+                    ValidationRule.ValidationSeverity.ERROR, null));
+                break;
+                
+            case "datetime":
+                rules.add(new ValidationRule("datetime_format", "Must be a valid ISO 8601 datetime", 
+                    ValidationRule.ValidationSeverity.ERROR, null));
+                break;
+                
+            case "url":
+                rules.add(new ValidationRule("url_format", "Must be a valid URL", 
+                    ValidationRule.ValidationSeverity.ERROR, null));
+                rules.add(new ValidationRule("url_protocol", "Must use http or https protocol", 
+                    ValidationRule.ValidationSeverity.WARNING, null));
+                break;
+                
+            case "identifier":
+                rules.add(new ValidationRule("id_not_empty", "ID cannot be empty", 
+                    ValidationRule.ValidationSeverity.ERROR, null));
+                break;
+                
+            case "currency":
+                rules.add(new ValidationRule("currency_non_negative", "Amount must be non-negative", 
+                    ValidationRule.ValidationSeverity.ERROR, null));
+                rules.add(new ValidationRule("currency_precision", "Amount must have at most 2 decimal places", 
+                    ValidationRule.ValidationSeverity.WARNING, null));
+                break;
+                
+            case "count":
+                rules.add(new ValidationRule("count_non_negative", "Count must be non-negative", 
+                    ValidationRule.ValidationSeverity.ERROR, null));
+                break;
+                
+            case "percentage":
+                rules.add(new ValidationRule("percentage_range", "Percentage must be between 0 and 100", 
+                    ValidationRule.ValidationSeverity.ERROR, null));
+                break;
+        }
+        
+        // Add generic required validation if parameter is required
+        if (param.isRequired()) {
+            rules.add(new ValidationRule("required", "This parameter is required", 
+                ValidationRule.ValidationSeverity.ERROR, null));
+        }
+        
+        return rules;
+    }
+    
+    private List<String> inferTransformationHints(McpParameterModel param, String semanticType) {
+        List<String> hints = new ArrayList<>();
+        
+        switch (semanticType) {
+            case "email":
+                hints.add("trim");
+                hints.add("toLowerCase");
+                break;
+                
+            case "phone":
+                hints.add("removeNonNumeric");
+                hints.add("formatInternational");
+                break;
+                
+            case "datetime":
+                hints.add("parseISO8601");
+                hints.add("convertToUTC");
+                break;
+                
+            case "url":
+                hints.add("trim");
+                hints.add("ensureProtocol");
+                break;
+                
+            case "identifier":
+                hints.add("trim");
+                break;
+                
+            case "currency":
+                hints.add("roundTwoDecimals");
+                break;
+                
+            case "secret":
+                hints.add("hash");
+                hints.add("encrypt");
+                break;
+        }
+        
+        return hints;
+    }
+    
+    private List<Object> generateExampleValues(McpParameterModel param, String semanticType) {
+        List<Object> examples = new ArrayList<>();
+        
+        if (param.getExample() != null) {
+            examples.add(param.getExample());
+        }
+        
+        switch (semanticType) {
+            case "email":
+                examples.add("john.doe@example.com");
+                examples.add("jane.smith@company.org");
+                examples.add("test.user@domain.co.uk");
+                break;
+                
+            case "phone":
+                examples.add("+1-555-0100");
+                examples.add("+44-20-1234-5678");
+                examples.add("+81-3-1234-5678");
+                break;
+                
+            case "datetime":
+                examples.add("2024-01-15T10:30:00Z");
+                examples.add("2024-06-01T14:00:00+00:00");
+                examples.add("2024-12-31T23:59:59Z");
+                break;
+                
+            case "url":
+                examples.add("https://api.example.com/v1/resource");
+                examples.add("https://example.com/path/to/resource");
+                break;
+                
+            case "identifier":
+                examples.add("123e4567-e89b-12d3-a456-426614174000");
+                examples.add("usr_1234567890");
+                examples.add("ID-2024-001");
+                break;
+                
+            case "currency":
+                examples.add("99.99");
+                examples.add("1234.56");
+                examples.add("0.99");
+                break;
+                
+            case "count":
+                examples.add(1);
+                examples.add(10);
+                examples.add(100);
+                break;
+                
+            case "percentage":
+                examples.add(0.0);
+                examples.add(50.0);
+                examples.add(100.0);
+                break;
+        }
+        
+        return examples;
+    }
+}

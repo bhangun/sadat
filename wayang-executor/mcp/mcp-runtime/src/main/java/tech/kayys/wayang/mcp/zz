@@ -1,0 +1,1429 @@
+package tech.kayys.silat.mcp.api;
+
+import io.quarkus.security.Authenticated;
+import io.smallrye.mutiny.Uni;
+import jakarta.inject.Inject;
+import jakarta.validation.Valid;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.*;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+import org.jboss.resteasy.reactive.RestResponse;
+import tech.kayys.silat.mcp.domain.*;
+import tech.kayys.silat.mcp.parser.OpenApiToolGenerator;
+import tech.kayys.silat.mcp.parser.GenerateToolsRequest;
+import tech.kayys.silat.mcp.runtime.McpToolExecutor;
+import tech.kayys.silat.mcp.runtime.ToolExecutionRequest;
+
+import java.util.*;
+
+/**
+ * ============================================================================
+ * MCP SERVER REST API
+ * ============================================================================
+ * 
+ * RESTful API for MCP tool management and execution.
+ * 
+ * Endpoints:
+ * - POST /api/v1/mcp/tools/openapi - Generate tools from OpenAPI
+ * - GET /api/v1/mcp/tools - List tools
+ * - GET /api/v1/mcp/tools/{toolId} - Get tool details
+ * - POST /api/v1/mcp/tools/{toolId}/execute - Execute tool
+ * - POST /api/v1/mcp/auth-profiles - Create auth profile
+ */
+
+// ==================== TOOL GENERATION API ====================
+
+@Path("/api/v1/mcp/tools")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+@Authenticated
+@Tag(name = "MCP Tools", description = "MCP tool management")
+public class McpToolResource {
+    
+    @Inject
+    OpenApiToolGenerator toolGenerator;
+    
+    @Inject
+    McpToolExecutor toolExecutor;
+    
+    @Inject
+    tech.kayys.silat.api.security.TenantContext tenantContext;
+    
+    @Inject
+    tech.kayys.silat.mcp.parser.wsdl.SpecFormatRegistry specFormatRegistry;
+    
+    /**
+     * Get supported specification formats
+     */
+    @GET
+    @Path("/formats")
+    @Operation(summary = "List supported API specification formats")
+    public Map<String, tech.kayys.silat.mcp.parser.wsdl.SpecFormatRegistry.SpecFormatInfo> getSupportedFormats() {
+        return specFormatRegistry.getSupportedFormats();
+    }
+    
+    /**
+     * Generate tools from OpenAPI specification
+     */
+    @POST
+    @Path("/openapi")
+    @Operation(summary = "Generate MCP tools from OpenAPI spec")
+    public Uni<RestResponse<ToolGenerationResponse>> generateFromOpenApi(
+            @Valid OpenApiToolRequest request) {
+        
+        String tenantId = tenantContext.getCurrentTenantId().value();
+        
+        GenerateToolsRequest genRequest = new GenerateToolsRequest(
+            tenantId,
+            request.namespace(),
+            request.sourceType(),
+            request.source(),
+            request.authProfileId(),
+            "current-user",  // From security context
+            request.guardrailsConfig() != null ? 
+                request.guardrailsConfig() : Map.of()
+        );
+        
+        return toolGenerator.generateTools(genRequest)
+            .map(result -> RestResponse.ok(
+                new ToolGenerationResponse(
+                    result.sourceId().toString(),
+                    result.namespace(),
+                    result.toolsGenerated(),
+                    result.toolIds(),
+                    result.warnings()
+                )
+            ))
+            .onFailure().recoverWithItem(error ->
+                RestResponse.status(
+                    RestResponse.Status.BAD_REQUEST,
+                    new ToolGenerationResponse(
+                        null,
+                        request.namespace(),
+                        0,
+                        List.of(),
+                        List.of(error.getMessage())
+                    )
+                )
+            );
+    }
+    
+    /**
+     * List tools for tenant
+     */
+    @GET
+    @Operation(summary = "List MCP tools")
+    public Uni<List<ToolMetadataResponse>> listTools(
+            @QueryParam("namespace") String namespace,
+            @QueryParam("capability") String capability,
+            @QueryParam("tag") String tag,
+            @QueryParam("enabled") Boolean enabled,
+            @QueryParam("readOnly") Boolean readOnly) {
+        
+        String tenantId = tenantContext.getCurrentTenantId().value();
+        
+        String query = "tenantId = ?1";
+        List<Object> params = new ArrayList<>();
+        params.add(tenantId);
+        
+        if (namespace != null) {
+            query += " and namespace = ?" + (params.size() + 1);
+            params.add(namespace);
+        }
+        if (enabled != null) {
+            query += " and enabled = ?" + (params.size() + 1);
+            params.add(enabled);
+        }
+        if (readOnly != null) {
+            query += " and readOnly = ?" + (params.size() + 1);
+            params.add(readOnly);
+        }
+        
+        return McpTool.list(query, params.toArray())
+            .map(tools -> tools.stream()
+                .map(t -> {
+                    McpTool tool = (McpTool) t;
+                    return new ToolMetadataResponse(
+                        tool.getToolId(),
+                        tool.getName(),
+                        tool.getDescription(),
+                        tool.getCapabilities(),
+                        tool.getCapabilityLevel().name(),
+                        tool.isReadOnly(),
+                        tool.getTags()
+                    );
+                })
+                .toList()
+            );
+    }
+    
+    /**
+     * Get tool details
+     */
+    @GET
+    @Path("/{toolId}")
+    @Operation(summary = "Get tool details")
+    public Uni<RestResponse<ToolDetailResponse>> getTool(
+            @PathParam("toolId") String toolId) {
+        
+        String tenantId = tenantContext.getCurrentTenantId().value();
+        
+        return McpTool.<McpTool>find(
+            "toolId = ?1 and tenantId = ?2",
+            toolId, tenantId
+        ).firstResult()
+        .map(tool -> {
+            if (tool == null) {
+                return RestResponse.notFound();
+            }
+            
+            return RestResponse.ok(new ToolDetailResponse(
+                tool.getToolId(),
+                tool.getName(),
+                tool.getDescription(),
+                tool.getInputSchema(),
+                tool.getOutputSchema(),
+                tool.getCapabilities(),
+                tool.getCapabilityLevel().name(),
+                tool.isEnabled(),
+                tool.isReadOnly(),
+                tool.getMetrics() != null ? 
+                    tool.getMetrics().getTotalInvocations() : 0L
+            ));
+        });
+    }
+    
+    /**
+     * Execute tool
+     */
+    @POST
+    @Path("/{toolId}/execute")
+    @Operation(summary = "Execute MCP tool")
+    public Uni<RestResponse<ToolExecutionResponse>> executeTool(
+            @PathParam("toolId") String toolId,
+            @Valid ToolExecuteRequest request) {
+        
+        String tenantId = tenantContext.getCurrentTenantId().value();
+        
+        ToolExecutionRequest execRequest = new ToolExecutionRequest(
+            toolId,
+            tenantId,
+            request.arguments(),
+            request.context() != null ? request.context() : Map.of(),
+            "current-user",
+            null,  // workflow run ID
+            null   // agent ID
+        );
+        
+        return toolExecutor.execute(execRequest)
+            .map(result -> {
+                if (result.status() == InvocationStatus.SUCCESS) {
+                    return RestResponse.ok(new ToolExecutionResponse(
+                        "success",
+                        result.output(),
+                        null,
+                        result.executionTimeMs()
+                    ));
+                } else {
+                    return RestResponse.status(
+                        RestResponse.Status.BAD_REQUEST,
+                        new ToolExecutionResponse(
+                            "failure",
+                            Map.of(),
+                            result.errorMessage(),
+                            result.executionTimeMs()
+                        )
+                    );
+                }
+            });
+    }
+    
+    /**
+     * Update tool configuration
+     */
+    @PUT
+    @Path("/{toolId}")
+    @Operation(summary = "Update tool configuration")
+    public Uni<RestResponse<Void>> updateTool(
+            @PathParam("toolId") String toolId,
+            @Valid ToolUpdateRequest request) {
+        
+        String tenantId = tenantContext.getCurrentTenantId().value();
+        
+        return McpTool.<McpTool>find(
+            "toolId = ?1 and tenantId = ?2",
+            toolId, tenantId
+        ).firstResult()
+        .flatMap(tool -> {
+            if (tool == null) {
+                return Uni.createFrom().item(RestResponse.notFound());
+            }
+            
+            if (request.enabled() != null) {
+                tool.setEnabled(request.enabled());
+            }
+            if (request.description() != null) {
+                tool.setDescription(request.description());
+            }
+            if (request.tags() != null) {
+                tool.setTags(request.tags());
+            }
+            
+            return tool.persistAndFlush()
+                .map(v -> RestResponse.ok());
+        });
+    }
+    
+    /**
+     * Delete tool
+     */
+    @DELETE
+    @Path("/{toolId}")
+    @Operation(summary = "Delete tool")
+    public Uni<RestResponse<Void>> deleteTool(
+            @PathParam("toolId") String toolId) {
+        
+        String tenantId = tenantContext.getCurrentTenantId().value();
+        
+        return McpTool.delete(
+            "toolId = ?1 and tenantId = ?2",
+            toolId, tenantId
+        ).map(deleted -> deleted > 0 ? 
+            RestResponse.ok() : 
+            RestResponse.notFound()
+        );
+    }
+}
+
+// ==================== AUTH PROFILE API ====================
+
+@Path("/api/v1/mcp/auth-profiles")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+@Authenticated
+@Tag(name = "MCP Auth Profiles", description = "Authentication profile management")
+public class AuthProfileResource {
+    
+    @Inject
+    tech.kayys.silat.api.security.TenantContext tenantContext;
+    
+    @Inject
+    tech.kayys.silat.mcp.security.VaultSecretManager vaultManager;
+    
+    /**
+     * Create auth profile
+     */
+    @POST
+    @Operation(summary = "Create authentication profile")
+    public Uni<RestResponse<AuthProfileResponse>> createAuthProfile(
+            @Valid CreateAuthProfileRequest request) {
+        
+        String tenantId = tenantContext.getCurrentTenantId().value();
+        
+        return io.quarkus.hibernate.reactive.panache.Panache.withTransaction(() -> {
+            AuthProfile profile = new AuthProfile();
+            profile.setProfileId(UUID.randomUUID().toString());
+            profile.setTenantId(tenantId);
+            profile.setProfileName(request.profileName());
+            profile.setAuthType(AuthType.valueOf(request.authType()));
+            profile.setDescription(request.description());
+            
+            // Configure auth
+            AuthConfig config = new AuthConfig();
+            config.setLocation(AuthLocation.valueOf(request.location()));
+            config.setParamName(request.paramName());
+            config.setScheme(request.scheme());
+            profile.setConfig(config);
+            
+            // Store secret in Vault
+            String vaultPath = "silat/mcp/" + tenantId + "/" + profile.getProfileId();
+            
+            return vaultManager.storeSecret(vaultPath, request.secretValue())
+                .flatMap(v -> {
+                    profile.setVaultPath(vaultPath);
+                    profile.setSecretKey("auth_secret");
+                    profile.setEnabled(true);
+                    profile.setCreatedAt(java.time.Instant.now());
+                    profile.setUpdatedAt(java.time.Instant.now());
+                    
+                    return profile.persist();
+                })
+                .map(p -> RestResponse.status(
+                    RestResponse.Status.CREATED,
+                    new AuthProfileResponse(
+                        profile.getProfileId(),
+                        profile.getProfileName(),
+                        profile.getAuthType().name(),
+                        profile.isEnabled()
+                    )
+                ));
+        });
+    }
+    
+    /**
+     * List auth profiles
+     */
+    @GET
+    @Operation(summary = "List authentication profiles")
+    public Uni<List<AuthProfileResponse>> listAuthProfiles() {
+        String tenantId = tenantContext.getCurrentTenantId().value();
+        
+        return AuthProfile.list("tenantId = ?1 and enabled = true", tenantId)
+            .map(profiles -> profiles.stream()
+                .map(p -> {
+                    AuthProfile profile = (AuthProfile) p;
+                    return new AuthProfileResponse(
+                        profile.getProfileId(),
+                        profile.getProfileName(),
+                        profile.getAuthType().name(),
+                        profile.isEnabled()
+                    );
+                })
+                .toList()
+            );
+    }
+}
+
+// ==================== REQUEST/RESPONSE MODELS ====================
+
+record OpenApiToolRequest(
+    String namespace,
+    SourceType sourceType,
+    String source,
+    String authProfileId,
+    Map<String, Object> guardrailsConfig
+) {}
+
+record ToolGenerationResponse(
+    String sourceId,
+    String namespace,
+    int toolsGenerated,
+    List<String> toolIds,
+    List<String> warnings
+) {}
+
+record ToolMetadataResponse(
+    String toolId,
+    String name,
+    String description,
+    Set<String> capabilities,
+    String capabilityLevel,
+    boolean readOnly,
+    Set<String> tags
+) {}
+
+record ToolDetailResponse(
+    String toolId,
+    String name,
+    String description,
+    Map<String, Object> inputSchema,
+    Map<String, Object> outputSchema,
+    Set<String> capabilities,
+    String capabilityLevel,
+    boolean enabled,
+    boolean readOnly,
+    long totalInvocations
+) {}
+
+record ToolExecuteRequest(
+    Map<String, Object> arguments,
+    Map<String, Object> context
+) {}
+
+record ToolExecutionResponse(
+    String status,
+    Map<String, Object> output,
+    String error,
+    long executionTimeMs
+) {}
+
+record ToolUpdateRequest(
+    Boolean enabled,
+    String description,
+    Set<String> tags
+) {}
+
+record CreateAuthProfileRequest(
+    String profileName,
+    String authType,
+    String location,
+    String paramName,
+    String scheme,
+    String secretValue,
+    String description
+) {}
+
+record AuthProfileResponse(
+    String profileId,
+    String profileName,
+    String authType,
+    boolean enabled
+) {}
+
+// ==================== SECURITY COMPONENTS ====================
+
+package tech.kayys.silat.mcp.security;
+
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.*;
+
+/**
+ * Auth injector - Injects authentication into HTTP requests
+ */
+@ApplicationScoped
+public class AuthInjector {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(AuthInjector.class);
+    
+    @jakarta.inject.Inject
+    VaultSecretManager vaultManager;
+    
+    public Uni<tech.kayys.silat.mcp.runtime.HttpRequestContext> injectAuth(
+            tech.kayys.silat.mcp.runtime.HttpRequestContext request,
+            String authProfileId) {
+        
+        if (authProfileId == null) {
+            return Uni.createFrom().item(request);
+        }
+        
+        return tech.kayys.silat.mcp.domain.AuthProfile.<tech.kayys.silat.mcp.domain.AuthProfile>findById(authProfileId)
+            .flatMap(profile -> {
+                if (profile == null || !profile.isEnabled()) {
+                    return Uni.createFrom().item(request);
+                }
+                
+                // Retrieve secret from Vault
+                return vaultManager.getSecret(profile.getVaultPath())
+                    .map(secret -> {
+                        Map<String, String> headers = new HashMap<>(request.headers());
+                        
+                        // Inject based on auth type and location
+                        switch (profile.getConfig().getLocation()) {
+                            case HEADER -> {
+                                String headerValue = buildAuthHeader(
+                                    profile.getConfig().getScheme(),
+                                    secret
+                                );
+                                headers.put(
+                                    profile.getConfig().getParamName(),
+                                    headerValue
+                                );
+                            }
+                            case QUERY -> {
+                                // Add to query params (less secure)
+                                Map<String, String> queryParams = 
+                                    new HashMap<>(request.queryParams());
+                                queryParams.put(
+                                    profile.getConfig().getParamName(),
+                                    secret
+                                );
+                                return new tech.kayys.silat.mcp.runtime.HttpRequestContext(
+                                    request.method(),
+                                    request.url(),
+                                    queryParams,
+                                    headers,
+                                    request.body(),
+                                    request.contentType()
+                                );
+                            }
+                        }
+                        
+                        return new tech.kayys.silat.mcp.runtime.HttpRequestContext(
+                            request.method(),
+                            request.url(),
+                            request.queryParams(),
+                            headers,
+                            request.body(),
+                            request.contentType()
+                        );
+                    });
+            });
+    }
+    
+    private String buildAuthHeader(String scheme, String secret) {
+        if (scheme != null && !scheme.isEmpty()) {
+            return scheme + " " + secret;
+        }
+        return secret;
+    }
+}
+
+/**
+ * Vault secret manager for secure credential storage
+ */
+@ApplicationScoped
+public class VaultSecretManager {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(VaultSecretManager.class);
+    
+    // In production, integrate with HashiCorp Vault, AWS Secrets Manager, etc.
+    private final Map<String, String> inMemoryVault = new java.util.concurrent.ConcurrentHashMap<>();
+    
+    public Uni<Void> storeSecret(String path, String secret) {
+        LOG.info("Storing secret at path: {}", path);
+        inMemoryVault.put(path, secret);
+        return Uni.createFrom().voidItem();
+    }
+    
+    public Uni<String> getSecret(String path) {
+        String secret = inMemoryVault.get(path);
+        if (secret == null) {
+            return Uni.createFrom().failure(
+                new RuntimeException("Secret not found: " + path));
+        }
+        return Uni.createFrom().item(secret);
+    }
+    
+    public Uni<Void> deleteSecret(String path) {
+        inMemoryVault.remove(path);
+        return Uni.createFrom().voidItem();
+    }
+}
+
+/**
+ * Rate limiter
+ */
+@ApplicationScoped
+public class RateLimiter {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(RateLimiter.class);
+    
+    private final Map<String, RateLimitBucket> buckets = 
+        new java.util.concurrent.ConcurrentHashMap<>();
+    
+    public void checkLimit(
+            String tenantId,
+            String toolId,
+            tech.kayys.silat.mcp.domain.ToolGuardrails guardrails) {
+        
+        String key = tenantId + ":" + toolId;
+        RateLimitBucket bucket = buckets.computeIfAbsent(
+            key,
+            k -> new RateLimitBucket(
+                guardrails.getRateLimitPerMinute(),
+                guardrails.getRateLimitPerHour()
+            )
+        );
+        
+        if (!bucket.tryAcquire()) {
+            throw new tech.kayys.silat.mcp.runtime.RateLimitExceededException(
+                "Rate limit exceeded for tool: " + toolId);
+        }
+    }
+    
+    private static class RateLimitBucket {
+        private final int perMinute;
+        private final int perHour;
+        private int minuteCount = 0;
+        private int hourCount = 0;
+        private long lastMinuteReset = System.currentTimeMillis();
+        private long lastHourReset = System.currentTimeMillis();
+        
+        RateLimitBucket(int perMinute, int perHour) {
+            this.perMinute = perMinute;
+            this.perHour = perHour;
+        }
+        
+        synchronized boolean tryAcquire() {
+            long now = System.currentTimeMillis();
+            
+            // Reset counters if needed
+            if (now - lastMinuteReset > 60000) {
+                minuteCount = 0;
+                lastMinuteReset = now;
+            }
+            if (now - lastHourReset > 3600000) {
+                hourCount = 0;
+                lastHourReset = now;
+            }
+            
+            // Check limits
+            if (minuteCount >= perMinute || hourCount >= perHour) {
+                return false;
+            }
+            
+            minuteCount++;
+            hourCount++;
+            return true;
+        }
+    }
+}
+
+/**
+ * Network security filter
+ */
+@ApplicationScoped
+public class NetworkSecurityFilter {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(NetworkSecurityFilter.class);
+    
+    public Uni<Void> validateRequest(
+            tech.kayys.silat.mcp.runtime.HttpRequestContext request,
+            tech.kayys.silat.mcp.domain.ToolGuardrails guardrails) {
+        
+        return Uni.createFrom().item(() -> {
+            // Validate against allowed domains
+            if (guardrails.getAllowedDomains() != null && 
+                !guardrails.getAllowedDomains().isEmpty()) {
+                
+                String domain = extractDomain(request.url());
+                boolean allowed = guardrails.getAllowedDomains().stream()
+                    .anyMatch(allowedDomain -> 
+                        domain.endsWith(allowedDomain));
+                
+                if (!allowed) {
+                    throw new SecurityException(
+                        "Domain not allowed: " + domain);
+                }
+            }
+            
+            return null;
+        });
+    }
+    
+    private String extractDomain(String url) {
+        try {
+            java.net.URI uri = new java.net.URI(url);
+            return uri.getHost();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+}
+
+/**
+ * PII redactor
+ */
+@ApplicationScoped
+public class PiiRedactor {
+    
+    public Map<String, Object> redact(
+            Map<String, Object> data,
+            Set<String> piiPatterns) {
+        
+        if (piiPatterns == null || piiPatterns.isEmpty()) {
+            return data;
+        }
+        
+        Map<String, Object> redacted = new HashMap<>();
+        
+        data.forEach((key, value) -> {
+            if (value instanceof String) {
+                String str = (String) value;
+                for (String pattern : piiPatterns) {
+                    str = str.replaceAll(pattern, "[REDACTED]");
+                }
+                redacted.put(key, str);
+            } else {
+                redacted.put(key, value);
+            }
+        });
+        
+        return redacted;
+    }
+}
+
+// ==================== SUPPORTING SERVICES ====================
+
+package tech.kayys.silat.mcp.service;
+
+import io.smallrye.mutiny.Uni;
+import jakarta.enterprise.context.ApplicationScoped;
+import tech.kayys.silat.mcp.domain.*;
+import tech.kayys.silat.mcp.runtime.*;
+
+/**
+ * Tool invocation recorder for audit
+ */
+@ApplicationScoped
+public class ToolInvocationRecorder {
+    
+    public Uni<Void> record(
+            ToolExecutionRequest request,
+            ToolExecutionResult result,
+            java.time.Instant startTime) {
+        
+        return io.quarkus.hibernate.reactive.panache.Panache.withTransaction(() -> {
+            ToolInvocation invocation = new ToolInvocation();
+            invocation.setInvocationId(UUID.randomUUID());
+            invocation.setTenantId(request.tenantId());
+            invocation.setToolId(request.toolId());
+            invocation.setWorkflowRunId(request.workflowRunId());
+            invocation.setAgentId(request.agentId());
+            invocation.setUserId(request.userId());
+            invocation.setArguments(request.arguments());
+            invocation.setResult(result.output());
+            invocation.setStatus(result.status());
+            invocation.setErrorMessage(result.errorMessage());
+            invocation.setExecutionTimeMs(result.executionTimeMs());
+            invocation.setInvokedAt(startTime);
+            invocation.setCompletedAt(java.time.Instant.now());
+            
+            return invocation.persist().replaceWithVoid();
+        });
+    }
+}
+
+/**
+ * Tool metrics collector
+ */
+@ApplicationScoped
+public class ToolMetricsCollector {
+    
+    public Uni<Void> collect(String toolId, ToolExecutionResult result) {
+        // Update tool metrics asynchronously
+        return Uni.createFrom().voidItem();
+    }
+}
+
+/**
+ * Tool capability analyzer
+ */
+@ApplicationScoped
+public class ToolCapabilityAnalyzer {
+    
+    public tech.kayys.silat.mcp.domain.CapabilityLevel analyze(
+            io.swagger.v3.oas.models.PathItem.HttpMethod method,
+            io.swagger.v3.oas.models.Operation operation,
+            String path) {
+        
+        // Analyze based on HTTP method
+        return switch (method) {
+            case GET, HEAD, OPTIONS -> tech.kayys.silat.mcp.domain.CapabilityLevel.READ_ONLY;
+            case POST, PUT, PATCH -> {
+                // Check for administrative keywords
+                String fullPath = (path + " " + 
+                    (operation.getSummary() != null ? operation.getSummary() : ""))
+                    .toLowerCase();
+                
+                if (fullPath.contains("admin") || 
+                    fullPath.contains("delete") ||
+                    fullPath.contains("remove")) {
+                    yield tech.kayys.silat.mcp.domain.CapabilityLevel.ADMINISTRATIVE;
+                }
+                yield tech.kayys.silat.mcp.domain.CapabilityLevel.WRITE;
+            }
+            case DELETE -> tech.kayys.silat.mcp.domain.CapabilityLevel.CRITICAL;
+        };
+    }
+}
+
+package tech.kayys.silat.mcp.parser.wsdl;
+
+import io.smallrye.mutiny.Uni;
+import io.swagger.v3.oas.models.*;
+import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.media.*;
+import io.swagger.v3.oas.models.parameters.RequestBody;
+import io.swagger.v3.oas.models.responses.ApiResponse;
+import io.swagger.v3.oas.models.responses.ApiResponses;
+import io.swagger.v3.oas.models.servers.Server;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.w3c.dom.*;
+import tech.kayys.silat.mcp.parser.*;
+
+import javax.xml.parsers.*;
+import java.io.*;
+import java.util.*;
+
+/**
+ * ============================================================================
+ * WSDL PARSER (SOAP Web Services)
+ * ============================================================================
+ * 
+ * Parses WSDL 1.1 and 2.0 specifications and converts to OpenAPI 3.x
+ * 
+ * SOAP operations become REST-like endpoints:
+ * - Each SOAP operation → POST endpoint
+ * - SOAP request → JSON request body
+ * - SOAP response → JSON response
+ * 
+ * This allows SOAP services to be consumed as MCP tools.
+ */
+@ApplicationScoped
+public class WsdlParser {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(WsdlParser.class);
+    
+    @Inject
+    io.vertx.mutiny.core.Vertx vertx;
+    
+    public Uni<OpenApiParseResult> parse(GenerateToolsRequest request) {
+        return switch (request.sourceType()) {
+            case WSDL_URL -> parseFromUrl(request.source());
+            case WSDL_FILE -> parseFromFile(request.source());
+            default -> Uni.createFrom().failure(
+                new IllegalArgumentException("Invalid WSDL source type"));
+        };
+    }
+    
+    private Uni<OpenApiParseResult> parseFromUrl(String url) {
+        LOG.info("Fetching WSDL from URL: {}", url);
+        
+        return vertx.createHttpClient()
+            .request(io.vertx.core.http.HttpMethod.GET, url)
+            .flatMap(req -> req.send().flatMap(resp -> resp.body()))
+            .map(buffer -> buffer.toString())
+            .map(this::convertWsdlToOpenApi);
+    }
+    
+    private Uni<OpenApiParseResult> parseFromFile(String filePath) {
+        return vertx.fileSystem().readFile(filePath)
+            .map(buffer -> buffer.toString())
+            .map(this::convertWsdlToOpenApi);
+    }
+    
+    /**
+     * Convert WSDL to OpenAPI 3.x
+     */
+    private OpenApiParseResult convertWsdlToOpenApi(String wsdlContent) {
+        try {
+            LOG.info("Parsing WSDL and converting to OpenAPI 3.x");
+            
+            // Parse WSDL XML
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
+            DocumentBuilder builder = factory.newDocumentBuilder();
+            Document doc = builder.parse(
+                new ByteArrayInputStream(wsdlContent.getBytes())
+            );
+            
+            // Extract WSDL components
+            WsdlDefinition wsdl = parseWsdlDocument(doc);
+            
+            // Convert to OpenAPI
+            OpenAPI openApi = new OpenAPI();
+            openApi.setOpenapi("3.0.3");
+            
+            // Info
+            Info info = new Info();
+            info.setTitle(wsdl.serviceName != null ? 
+                wsdl.serviceName : "SOAP Web Service");
+            info.setDescription("Converted from WSDL specification");
+            info.setVersion("1.0.0");
+            openApi.setInfo(info);
+            
+            // Server
+            if (wsdl.endpointUrl != null) {
+                Server server = new Server();
+                server.setUrl(wsdl.endpointUrl);
+                openApi.setServers(List.of(server));
+            }
+            
+            // Convert operations to paths
+            Paths paths = new Paths();
+            for (WsdlOperation operation : wsdl.operations) {
+                String path = "/soap/" + operation.name.toLowerCase();
+                PathItem pathItem = createPathItemForSoapOperation(operation);
+                paths.addPathItem(path, pathItem);
+            }
+            openApi.setPaths(paths);
+            
+            LOG.info("Successfully converted WSDL to OpenAPI with {} operations", 
+                wsdl.operations.size());
+            
+            return new OpenApiParseResult(
+                openApi,
+                wsdlContent,
+                true,
+                List.of()
+            );
+            
+        } catch (Exception e) {
+            LOG.error("Failed to parse WSDL", e);
+            return new OpenApiParseResult(
+                null,
+                wsdlContent,
+                false,
+                List.of("WSDL parse error: " + e.getMessage())
+            );
+        }
+    }
+    
+    /**
+     * Parse WSDL document structure
+     */
+    private WsdlDefinition parseWsdlDocument(Document doc) {
+        WsdlDefinition wsdl = new WsdlDefinition();
+        
+        Element root = doc.getDocumentElement();
+        
+        // Extract service name
+        NodeList services = root.getElementsByTagNameNS("*", "service");
+        if (services.getLength() > 0) {
+            Element service = (Element) services.item(0);
+            wsdl.serviceName = service.getAttribute("name");
+            
+            // Extract endpoint URL
+            NodeList ports = service.getElementsByTagNameNS("*", "port");
+            if (ports.getLength() > 0) {
+                Element port = (Element) ports.item(0);
+                NodeList addresses = port.getElementsByTagNameNS("*", "address");
+                if (addresses.getLength() > 0) {
+                    Element address = (Element) addresses.item(0);
+                    wsdl.endpointUrl = address.getAttribute("location");
+                }
+            }
+        }
+        
+        // Extract operations from binding
+        NodeList bindings = root.getElementsByTagNameNS("*", "binding");
+        if (bindings.getLength() > 0) {
+            Element binding = (Element) bindings.item(0);
+            NodeList operations = binding.getElementsByTagNameNS("*", "operation");
+            
+            for (int i = 0; i < operations.getLength(); i++) {
+                Element opElement = (Element) operations.item(i);
+                WsdlOperation operation = new WsdlOperation();
+                operation.name = opElement.getAttribute("name");
+                
+                // Extract SOAP action
+                NodeList soapOps = opElement.getElementsByTagNameNS(
+                    "http://schemas.xmlsoap.org/wsdl/soap/", "operation");
+                if (soapOps.getLength() > 0) {
+                    Element soapOp = (Element) soapOps.item(0);
+                    operation.soapAction = soapOp.getAttribute("soapAction");
+                }
+                
+                wsdl.operations.add(operation);
+            }
+        }
+        
+        // Extract messages and types (simplified)
+        // In production, fully parse XSD schemas
+        
+        return wsdl;
+    }
+    
+    /**
+     * Create OpenAPI PathItem for SOAP operation
+     */
+    private PathItem createPathItemForSoapOperation(WsdlOperation operation) {
+        PathItem pathItem = new PathItem();
+        
+        Operation op = new Operation();
+        op.setOperationId(operation.name);
+        op.setSummary("SOAP: " + operation.name);
+        op.setDescription("SOAP operation converted to REST endpoint");
+        
+        // Add SOAP action as header parameter
+        if (operation.soapAction != null) {
+            op.addExtension("x-soap-action", operation.soapAction);
+        }
+        
+        // Request body (generic SOAP envelope)
+        RequestBody requestBody = new RequestBody();
+        requestBody.setDescription("SOAP request parameters");
+        requestBody.setRequired(true);
+        
+        Content content = new Content();
+        MediaType mediaType = new MediaType();
+        
+        // Generic schema for SOAP parameters
+        ObjectSchema schema = new ObjectSchema();
+        schema.setDescription("SOAP operation parameters (extracted from SOAP envelope)");
+        mediaType.setSchema(schema);
+        
+        content.addMediaType("application/json", mediaType);
+        requestBody.setContent(content);
+        op.setRequestBody(requestBody);
+        
+        // Response
+        ApiResponses responses = new ApiResponses();
+        ApiResponse response200 = new ApiResponse();
+        response200.setDescription("SOAP response (extracted from SOAP envelope)");
+        
+        Content responseContent = new Content();
+        MediaType responseMediaType = new MediaType();
+        responseMediaType.setSchema(new ObjectSchema());
+        responseContent.addMediaType("application/json", responseMediaType);
+        response200.setContent(responseContent);
+        
+        responses.addApiResponse("200", response200);
+        op.setResponses(responses);
+        
+        pathItem.setPost(op);
+        
+        return pathItem;
+    }
+    
+    // ==================== WSDL DATA STRUCTURES ====================
+    
+    static class WsdlDefinition {
+        String serviceName;
+        String endpointUrl;
+        List<WsdlOperation> operations = new ArrayList<>();
+    }
+    
+    static class WsdlOperation {
+        String name;
+        String soapAction;
+        String inputMessage;
+        String outputMessage;
+    }
+}
+
+// ==================== API BLUEPRINT PARSER ====================
+
+/**
+ * API Blueprint parser (Markdown-based API spec)
+ * Converts API Blueprint to OpenAPI 3.x
+ */
+@ApplicationScoped
+class ApiBlueprintParser {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(ApiBlueprintParser.class);
+    
+    public Uni<OpenApiParseResult> parse(GenerateToolsRequest request) {
+        // API Blueprint uses Markdown format
+        // In production, use drafter or other API Blueprint parser
+        
+        return Uni.createFrom().item(() -> {
+            LOG.warn("API Blueprint parsing not yet fully implemented");
+            
+            OpenAPI openApi = new OpenAPI();
+            openApi.setOpenapi("3.0.3");
+            
+            Info info = new Info();
+            info.setTitle("API Blueprint Service");
+            info.setDescription("Converted from API Blueprint");
+            info.setVersion("1.0.0");
+            openApi.setInfo(info);
+            
+            openApi.setPaths(new Paths());
+            
+            return new OpenApiParseResult(
+                openApi,
+                request.source(),
+                true,
+                List.of("API Blueprint basic conversion - full parsing not implemented")
+            );
+        });
+    }
+}
+
+// ==================== RAML PARSER ====================
+
+/**
+ * RAML (RESTful API Modeling Language) parser
+ * Converts RAML 0.8 and 1.0 to OpenAPI 3.x
+ */
+@ApplicationScoped
+class RamlParser {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(RamlParser.class);
+    
+    public Uni<OpenApiParseResult> parse(GenerateToolsRequest request) {
+        // RAML uses YAML format
+        // In production, use raml-java-parser
+        
+        return Uni.createFrom().item(() -> {
+            LOG.warn("RAML parsing not yet fully implemented");
+            
+            OpenAPI openApi = new OpenAPI();
+            openApi.setOpenapi("3.0.3");
+            
+            Info info = new Info();
+            info.setTitle("RAML API");
+            info.setDescription("Converted from RAML specification");
+            info.setVersion("1.0.0");
+            openApi.setInfo(info);
+            
+            openApi.setPaths(new Paths());
+            
+            return new OpenApiParseResult(
+                openApi,
+                request.source(),
+                true,
+                List.of("RAML basic conversion - full parsing not implemented")
+            );
+        });
+    }
+}
+
+// ==================== HAR (HTTP Archive) PARSER ====================
+
+/**
+ * HAR (HTTP Archive) parser
+ * Converts captured HTTP requests from HAR files to OpenAPI
+ */
+@ApplicationScoped
+class HarParser {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(HarParser.class);
+    
+    @Inject
+    com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+    
+    public Uni<OpenApiParseResult> parse(GenerateToolsRequest request) {
+        return Uni.createFrom().item(() -> {
+            try {
+                LOG.info("Parsing HAR file to OpenAPI");
+                
+                // Parse HAR JSON
+                HarFile har = objectMapper.readValue(
+                    request.source(), 
+                    HarFile.class
+                );
+                
+                OpenAPI openApi = new OpenAPI();
+                openApi.setOpenapi("3.0.3");
+                
+                Info info = new Info();
+                info.setTitle("API from HAR");
+                info.setDescription("Generated from HTTP Archive");
+                info.setVersion("1.0.0");
+                openApi.setInfo(info);
+                
+                Paths paths = new Paths();
+                
+                // Group requests by URL pattern
+                Map<String, List<HarEntry>> groupedEntries = 
+                    groupEntriesByPath(har.log.entries);
+                
+                // Convert each group to OpenAPI path
+                groupedEntries.forEach((path, entries) -> {
+                    PathItem pathItem = createPathFromHarEntries(entries);
+                    paths.addPathItem(path, pathItem);
+                });
+                
+                openApi.setPaths(paths);
+                
+                return new OpenApiParseResult(
+                    openApi,
+                    request.source(),
+                    true,
+                    List.of()
+                );
+                
+            } catch (Exception e) {
+                LOG.error("Failed to parse HAR", e);
+                return new OpenApiParseResult(
+                    null,
+                    request.source(),
+                    false,
+                    List.of("HAR parse error: " + e.getMessage())
+                );
+            }
+        });
+    }
+    
+    private Map<String, List<HarEntry>> groupEntriesByPath(List<HarEntry> entries) {
+        Map<String, List<HarEntry>> grouped = new HashMap<>();
+        
+        for (HarEntry entry : entries) {
+            String path = extractPath(entry.request.url);
+            grouped.computeIfAbsent(path, k -> new ArrayList<>()).add(entry);
+        }
+        
+        return grouped;
+    }
+    
+    private PathItem createPathFromHarEntries(List<HarEntry> entries) {
+        PathItem pathItem = new PathItem();
+        
+        for (HarEntry entry : entries) {
+            String method = entry.request.method.toLowerCase();
+            Operation operation = createOperationFromHarEntry(entry);
+            
+            switch (method) {
+                case "get" -> pathItem.setGet(operation);
+                case "post" -> pathItem.setPost(operation);
+                case "put" -> pathItem.setPut(operation);
+                case "delete" -> pathItem.setDelete(operation);
+                case "patch" -> pathItem.setPatch(operation);
+            }
+        }
+        
+        return pathItem;
+    }
+    
+    private Operation createOperationFromHarEntry(HarEntry entry) {
+        Operation operation = new Operation();
+        
+        String path = extractPath(entry.request.url);
+        operation.setOperationId(entry.request.method.toLowerCase() + 
+            path.replaceAll("[^a-zA-Z0-9]", "_"));
+        operation.setSummary("Generated from HAR");
+        
+        // Response
+        ApiResponses responses = new ApiResponses();
+        ApiResponse response = new ApiResponse();
+        response.setDescription("Response (HTTP " + entry.response.status + ")");
+        responses.addApiResponse(String.valueOf(entry.response.status), response);
+        operation.setResponses(responses);
+        
+        return operation;
+    }
+    
+    private String extractPath(String url) {
+        try {
+            java.net.URI uri = new java.net.URI(url);
+            return uri.getPath();
+        } catch (Exception e) {
+            return "/unknown";
+        }
+    }
+    
+    // HAR data structures
+    static class HarFile {
+        public HarLog log;
+    }
+    
+    static class HarLog {
+        public List<HarEntry> entries;
+    }
+    
+    static class HarEntry {
+        public HarRequest request;
+        public HarResponse response;
+    }
+    
+    static class HarRequest {
+        public String method;
+        public String url;
+        public List<HarHeader> headers;
+    }
+    
+    static class HarResponse {
+        public int status;
+        public String statusText;
+    }
+    
+    static class HarHeader {
+        public String name;
+        public String value;
+    }
+}
+
+// ==================== INSOMNIA PARSER ====================
+
+/**
+ * Insomnia workspace/collection parser
+ * Similar to Postman but for Insomnia REST client
+ */
+@ApplicationScoped
+class InsomniaParser {
+    
+    private static final Logger LOG = LoggerFactory.getLogger(InsomniaParser.class);
+    
+    @Inject
+    com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+    
+    public Uni<OpenApiParseResult> parse(GenerateToolsRequest request) {
+        return Uni.createFrom().item(() -> {
+            try {
+                LOG.info("Parsing Insomnia collection to OpenAPI");
+                
+                InsomniaWorkspace workspace = objectMapper.readValue(
+                    request.source(),
+                    InsomniaWorkspace.class
+                );
+                
+                OpenAPI openApi = new OpenAPI();
+                openApi.setOpenapi("3.0.3");
+                
+                Info info = new Info();
+                info.setTitle(workspace.name != null ? workspace.name : "Insomnia API");
+                info.setDescription("Converted from Insomnia workspace");
+                info.setVersion("1.0.0");
+                openApi.setInfo(info);
+                
+                Paths paths = new Paths();
+                
+                // Process requests
+                for (InsomniaResource resource : workspace.resources) {
+                    if ("request".equals(resource._type)) {
+                        addInsomniaRequestToPath(resource, paths);
+                    }
+                }
+                
+                openApi.setPaths(paths);
+                
+                return new OpenApiParseResult(
+                    openApi,
+                    request.source(),
+                    true,
+                    List.of()
+                );
+                
+            } catch (Exception e) {
+                LOG.error("Failed to parse Insomnia collection", e);
+                return new OpenApiParseResult(
+                    null,
+                    request.source(),
+                    false,
+                    List.of("Insomnia parse error: " + e.getMessage())
+                );
+            }
+        });
+    }
+    
+    private void addInsomniaRequestToPath(InsomniaResource resource, Paths paths) {
+        if (resource.url == null || resource.method == null) {
+            return;
+        }
+        
+        String path = extractPath(resource.url);
+        String method = resource.method.toLowerCase();
+        
+        PathItem pathItem = paths.get(path);
+        if (pathItem == null) {
+            pathItem = new PathItem();
+            paths.addPathItem(path, pathItem);
+        }
+        
+        Operation operation = new Operation();
+        operation.setOperationId(resource.name != null ? 
+            resource.name.toLowerCase().replaceAll("[^a-z0-9]", "_") :
+            method + "_" + path.replaceAll("[^a-z0-9]", "_"));
+        operation.setSummary(resource.name);
+        
+        // Response
+        ApiResponses responses = new ApiResponses();
+        ApiResponse response200 = new ApiResponse();
+        response200.setDescription("Successful response");
+        responses.addApiResponse("200", response200);
+        operation.setResponses(responses);
+        
+        switch (method) {
+            case "get" -> pathItem.setGet(operation);
+            case "post" -> pathItem.setPost(operation);
+            case "put" -> pathItem.setPut(operation);
+            case "delete" -> pathItem.setDelete(operation);
+            case "patch" -> pathItem.setPatch(operation);
+        }
+    }
+    
+    private String extractPath(String url) {
+        try {
+            java.net.URI uri = new java.net.URI(url);
+            return uri.getPath();
+        } catch (Exception e) {
+            return "/unknown";
+        }
+    }
+    
+    static class InsomniaWorkspace {
+        public String name;
+        public List<InsomniaResource> resources;
+    }
+    
+    static class InsomniaResource {
+        public String _type;
+        public String name;
+        public String url;
+        public String method;
+    }
+}
+
+
+

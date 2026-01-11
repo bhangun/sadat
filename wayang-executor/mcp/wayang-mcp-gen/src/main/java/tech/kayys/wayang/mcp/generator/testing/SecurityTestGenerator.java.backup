@@ -1,0 +1,543 @@
+package tech.kayys.wayang.mcp.generator.testing;
+
+import tech.kayys.wayang.mcp.model.ApiOperation;
+import tech.kayys.wayang.mcp.model.ApiSpecification;
+
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+@ApplicationScoped
+public class SecurityTestGenerator {
+    Logger log = LoggerFactory.getLogger(SecurityTestGenerator.class);
+
+    public SecurityTestSuite generateSecurityTests(ApiSpecification apiSpec, TestConfiguration config) {
+        log.info("Generating security tests for API: {}", apiSpec.getTitle());
+
+        SecurityTestSuite.Builder suiteBuilder = SecurityTestSuite.builder()
+                .withName(apiSpec.getTitle() + " Security Tests")
+                .withDescription("OWASP API security tests");
+
+        // Generate OWASP API Security tests
+        generateOwaspApiSecurityTests(apiSpec, suiteBuilder);
+
+        // Generate authentication tests
+        generateAuthenticationTests(apiSpec, suiteBuilder);
+
+        // Generate authorization tests
+        generateAuthorizationTests(apiSpec, suiteBuilder);
+
+        // Generate input validation tests
+        generateInputValidationTests(apiSpec, suiteBuilder);
+
+        return suiteBuilder.build();
+    }
+
+    private void generateOwaspApiSecurityTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        // OWASP API Security Top 10 tests
+
+        // API1: Broken Object Level Authorization
+        generateBrokenObjectLevelAuthTests(apiSpec, builder);
+
+        // API2: Broken User Authentication
+        generateBrokenUserAuthTests(apiSpec, builder);
+
+        // API4: Lack of Resources & Rate Limiting
+        generateRateLimitingTests(apiSpec, builder);
+
+        // API8: Injection
+        generateInjectionTests(apiSpec, builder);
+    }
+
+    private void generateBrokenObjectLevelAuthTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        for (ApiOperation operation : apiSpec.getOperations()) {
+            if (operation.getPath().contains("{id}") || operation.getPath().contains("{userId}")) {
+                String testCode = generateBrokenObjectLevelAuthTestCode(operation);
+
+                SecurityTest test = SecurityTest.builder()
+                        .withName("broken_object_level_auth_" + operation.getOperationId())
+                        .withDescription("OWASP API1: Test for broken object level authorization")
+                        .withCategory("OWASP-API1")
+                        .withTestCode(testCode)
+                        .withOperation(operation)
+                        .build();
+
+                builder.addTest(test);
+            }
+        }
+    }
+
+    private void generateBrokenUserAuthTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        for (ApiOperation operation : apiSpec.getOperations()) {
+            String testCode = generateBrokenUserAuthTestCode(operation);
+
+            SecurityTest test = SecurityTest.builder()
+                    .withName("broken_user_auth_" + operation.getOperationId())
+                    .withDescription("OWASP API2: Test for broken user authentication")
+                    .withCategory("OWASP-API2")
+                    .withTestCode(testCode)
+                    .withOperation(operation)
+                    .build();
+
+            builder.addTest(test);
+        }
+    }
+
+    private void generateRateLimitingTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        for (ApiOperation operation : apiSpec.getOperations()) {
+            String testCode = generateRateLimitingTestCode(operation);
+
+            SecurityTest test = SecurityTest.builder()
+                    .withName("rate_limiting_" + operation.getOperationId())
+                    .withDescription("OWASP API4: Test for lack of rate limiting")
+                    .withCategory("OWASP-API4")
+                    .withTestCode(testCode)
+                    .withOperation(operation)
+                    .build();
+
+            builder.addTest(test);
+        }
+    }
+
+    private void generateInjectionTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        for (ApiOperation operation : apiSpec.getOperations()) {
+            if (operation.getParameters().stream()
+                    .anyMatch(p -> "body".equals(p.getIn()) || "query".equals(p.getIn()))) {
+                String testCode = generateInjectionTestCode(operation);
+
+                SecurityTest test = SecurityTest.builder()
+                        .withName("injection_" + operation.getOperationId())
+                        .withDescription("OWASP API8: Test for injection vulnerabilities")
+                        .withCategory("OWASP-API8")
+                        .withTestCode(testCode)
+                        .withOperation(operation)
+                        .build();
+
+                builder.addTest(test);
+            }
+        }
+    }
+
+    private String generateBrokenObjectLevelAuthTestCode(ApiOperation operation) {
+        return String.format("""
+                @Test
+                public void test_%s_broken_object_level_authorization() {
+                    // Test accessing other users' objects
+                    String[] testIds = {"1", "2", "999", "admin", "../admin", "null"};
+
+                    for (String testId : testIds) {
+                        Response response = given()
+                            .baseUri(baseUrl)
+                            .header("Authorization", "Bearer " + regularUserToken)
+                            .when()
+                            .%s("%s")
+                            .then()
+                            .extract()
+                            .response();
+
+                        // Should not return 200 for other users' resources
+                        if (!testId.equals(currentUserId)) {
+                            assertThat(response.getStatusCode())
+                                .as("Should not allow access to other users' resources")
+                                .isNotEqualTo(200);
+                        }
+                    }
+                }
+                """,
+                operation.getOperationId(),
+                operation.getMethod().toLowerCase(),
+                operation.getPath().replace("{id}", "\" + testId + \""));
+    }
+
+    private String generateBrokenUserAuthTestCode(ApiOperation operation) {
+        return String.format("""
+                @Test
+                public void test_%s_broken_user_authentication() {
+                    // Test with invalid tokens
+                    String[] invalidTokens = {
+                        "",
+                        "invalid-token",
+                        "Bearer invalid",
+                        "Bearer expired-token",
+                        "Bearer " + generateExpiredToken()
+                    };
+
+                    for (String token : invalidTokens) {
+                        Response response = given()
+                            .baseUri(baseUrl)
+                            .header("Authorization", token)
+                            .when()
+                            .%s("%s")
+                            .then()
+                            .extract()
+                            .response();
+
+                        // Should return 401 for invalid authentication
+                        assertThat(response.getStatusCode())
+                            .as("Should return 401 for invalid token: " + token)
+                            .isEqualTo(401);
+                    }
+
+                    // Test without authentication header
+                    given()
+                        .baseUri(baseUrl)
+                        .when()
+                        .%s("%s")
+                        .then()
+                        .statusCode(401);
+                }
+                """,
+                operation.getOperationId(),
+                operation.getMethod().toLowerCase(),
+                operation.getPath(),
+                operation.getMethod().toLowerCase(),
+                operation.getPath());
+    }
+
+    private String generateRateLimitingTestCode(ApiOperation operation) {
+        return String.format("""
+                @Test
+                public void test_%s_rate_limiting() {
+                    // Test rate limiting by making multiple requests
+                    int requestCount = 100;
+                    int rateLimitedResponses = 0;
+
+                    for (int i = 0; i < requestCount; i++) {
+                        Response response = given()
+                            .baseUri(baseUrl)
+                            .header("Authorization", "Bearer " + validToken)
+                            .when()
+                            .%s("%s")
+                            .then()
+                            .extract()
+                            .response();
+
+                        if (response.getStatusCode() == 499 || response.getStatusCode() == 429) {
+                            rateLimitedResponses++;
+                        }
+
+                        // Small delay between requests
+                        try { Thread.sleep(10); } catch (InterruptedException e) {}
+                    }
+
+                    // Should have some rate limiting in place
+                    assertThat(rateLimitedResponses)
+                        .as("Should have rate limiting implemented")
+                        .isGreaterThan(0);
+                }
+                """,
+                operation.getOperationId(),
+                operation.getMethod().toLowerCase(),
+                operation.getPath());
+    }
+
+    private String generateInjectionTestCode(ApiOperation operation) {
+        return String.format("""
+                @Test
+                public void test_%s_injection_vulnerabilities() {
+                    // SQL Injection payloads
+                    String[] sqlPayloads = {
+                        "'; DROP TABLE users; --",
+                        "' OR '1'='1",
+                        "1' UNION SELECT * FROM users --",
+                        "'; INSERT INTO users VALUES ('hacker', 'pass'); --"
+                    };
+
+                    // NoSQL Injection payloads
+                    String[] noSqlPayloads = {
+                        "{\\"$ne\\": null}",
+                        "{\\"$gt\\": \\"\\"}",
+                        "{\\"$where\\": \\"function() { return true; }\\"}"
+                    };
+
+                    // XSS payloads
+                    String[] xssPayloads = {
+                        "<script>alert('XSS')</script>",
+                        "javascript:alert('XSS')",
+                        "<img src=x onerror=alert('XSS')>"
+                    };
+
+                    List<String> allPayloads = new ArrayList<>();
+                    allPayloads.addAll(List.of(sqlPayloads));
+                    allPayloads.addAll(List.of(noSqlPayloads));
+                    allPayloads.addAll(List.of(xssPayloads));
+
+                    for (String payload : allPayloads) {
+                        Response response = given()
+                            .baseUri(baseUrl)
+                            .header("Authorization", "Bearer " + validToken)
+                            .header("Content-Type", "application/json")
+                            %s
+                            .when()
+                            .%s("%s")
+                            .then()
+                            .extract()
+                            .response();
+
+                        // Should not return 200 with error messages that indicate injection
+                        String responseBody = response.getBody().asString().toLowerCase();
+                        assertThat(responseBody)
+                            .as("Should not contain SQL error messages")
+                            .doesNotContain("sql", "mysql", "postgres", "mongodb", "syntax error");
+
+                        assertThat(response.getStatusCode())
+                            .as("Should handle injection attempts gracefully")
+                            .isIn(400, 422, 500); // Should return error, not process injection
+                    }
+                }
+                """,
+                operation.getOperationId(),
+                generateInjectionRequestBody(operation),
+                operation.getMethod().toLowerCase(),
+                operation.getPath());
+    }
+
+    private String generateInjectionRequestBody(ApiOperation operation) {
+        if (operation.getParameters().stream().anyMatch(p -> "body".equals(p.getIn()))) {
+            return ".body(\"{\\\\"malicious\\\": \\\"\" + payload + \"\\\"}\")";
+        } else if (operation.getParameters().stream().anyMatch(p -> "query".equals(p.getIn()))) {
+            return ".queryParam(\"test\", payload)";
+        }
+        return "";
+    }
+
+    private void generateAuthenticationTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        // Generate comprehensive authentication tests
+        String testCode = """
+                @Test
+                public void test_jwt_token_validation() {
+                    // Test with malformed JWT
+                    String malformedJwt = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.malformed.signature";
+
+                    given()
+                        .baseUri(baseUrl)
+                        .header("Authorization", "Bearer " + malformedJwt)
+                        .when()
+                        .get("/protected-endpoint")
+                        .then()
+                        .statusCode(401);
+                }
+
+                @Test
+                public void test_token_expiration() {
+                    // Test with expired token
+                    String expiredToken = generateExpiredToken();
+
+                    given()
+                        .baseUri(baseUrl)
+                        .header("Authorization", "Bearer " + expiredToken)
+                        .when()
+                        .get("/protected-endpoint")
+                        .then()
+                        .statusCode(401);
+                }
+                """;
+
+        SecurityTest test = SecurityTest.builder()
+                .withName("comprehensive_authentication_tests")
+                .withDescription("Comprehensive authentication security tests")
+                .withCategory("Authentication")
+                .withTestCode(testCode)
+                .build();
+
+        builder.addTest(test);
+    }
+
+    private void generateAuthorizationTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        String testCode = """
+                @Test
+                public void test_role_based_access_control() {
+                    // Test different user roles
+                    Map<String, String> roleTokens = Map.of(
+                        "admin", adminToken,
+                        "user", userToken,
+                        "guest", guestToken
+                    );
+
+                    for (Map.Entry<String, String> entry : roleTokens.entrySet()) {
+                        String role = entry.getKey();
+                        String token = entry.getValue();
+
+                        // Test admin-only endpoints
+                        Response adminResponse = given()
+                            .baseUri(baseUrl)
+                            .header("Authorization", "Bearer " + token)
+                            .when()
+                            .get("/admin/users")
+                            .then()
+                            .extract()
+                            .response();
+
+                        if ("admin".equals(role)) {
+                            assertThat(adminResponse.getStatusCode()).isEqualTo(200);
+                        } else {
+                            assertThat(adminResponse.getStatusCode()).isEqualTo(403);
+                        }
+                    }
+                }
+                """;
+
+        SecurityTest test = SecurityTest.builder()
+                .withName("role_based_access_control_tests")
+                .withDescription("Role-based access control tests")
+                .withCategory("Authorization")
+                .withTestCode(testCode)
+                .build();
+
+        builder.addTest(test);
+    }
+
+    private void generateInputValidationTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        String testCode = """
+                @Test
+                public void test_input_validation_boundaries() {
+                    // Test boundary values
+                    String[] boundaryInputs = {
+                        "", // Empty string
+                        "a".repeat(10000), // Very long string
+                        "\\u0000", // Null byte
+                        "\\n\\r\\t", // Control characters
+                        "../../etc/passwd", // Path traversal
+                        "C:\\\\Windows\\\\System32", // Windows path traversal
+                        "<?xml version=\\"1.0\\"?><!DOCTYPE root [<!ENTITY test SYSTEM 'file:///etc/passwd'>]><root>&test;</root>" // XXE
+                    };
+
+                    for (String input : boundaryInputs) {
+                        Response response = given()
+                            .baseUri(baseUrl)
+                            .header("Content-Type", "application/json")
+                            .body("{\\"data\\": \\"" + input.replace("\\"", "\\\\\\"") + "\\"}")
+                            .when()
+                            .post("/api/data")
+                            .then()
+                            .extract()
+                            .response();
+
+                        // Should validate input and return appropriate error
+                        assertThat(response.getStatusCode())
+                            .as("Should validate malicious input: " + input)
+                            .isIn(400, 422);
+                    }
+                }
+                """;
+
+        SecurityTest test = SecurityTest.builder()
+                .withName("input_validation_boundary_tests")
+                .withDescription("Input validation boundary tests")
+                .withCategory("Input Validation")
+                .withTestCode(testCode)
+                .build();
+
+        builder.addTest(test);
+    }
+
+    // Add placeholder methods for other OWASP API tests
+    private void generateExcessiveDataExposureTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        // Implementation for API3: Excessive Data Exposure
+    }
+
+    private void generateBrokenFunctionLevelAuthTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        // Implementation for API5: Broken Function Level Authorization
+    }
+
+    private void generateMassAssignmentTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        // Implementation for API6: Mass Assignment
+    }
+
+    private void generateSecurityMisconfigurationTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        // Implementation for API7: Security Misconfiguration
+    }
+
+    private void generateImproperAssetsManagementTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        // Implementation for API9: Improper Assets Management
+    }
+
+    private void generateLoggingMonitoringTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        // Implementation for API10: Insufficient Logging & Monitoring
+    }
+
+    public TestCategoryResult executeTests(SecurityTestSuite testSuite, TestExecutionContext context) {
+        Log.info("Executing security tests: {}", testSuite.getName());
+
+        TestCategoryResult.Builder resultBuilder = TestCategoryResult.builder()
+                .withCategory("security")
+                .withStartTime(System.currentTimeMillis());
+
+        int passed = 0;
+        int failed = 0;
+        List<String> failures = new ArrayList<>();
+        List<String> securityIssues = new ArrayList<>();
+
+        for (SecurityTest test : testSuite.getTests()) {
+            try {
+                SecurityTestResult result = executeSecurityTest(test, context);
+                if (result.isSuccess()) {
+                    passed++;
+                    if (result.hasSecurityIssues()) {
+                        securityIssues.addAll(result.getSecurityIssues());
+                    }
+                } else {
+                    failed++;
+                    failures.add(test.getName() + ": " + result.getFailureReason());
+                    securityIssues.addAll(result.getSecurityIssues());
+                }
+            } catch (Exception e) {
+                failed++;
+                failures.add(test.getName() + ": " + e.getMessage());
+            }
+        }
+
+        TestCategoryResult result = resultBuilder
+                .withEndTime(System.currentTimeMillis())
+                .withTestsRun(passed + failed)
+                .withTestsPassed(passed)
+                .withTestsFailed(failed)
+                .withFailures(failures)
+                .withSuccess(failed == 0 && securityIssues.isEmpty())
+                .build();
+
+        // Add security issues to result
+        result.addMetadata("securityIssues", securityIssues);
+        result.addMetadata("securityScore", calculateSecurityScore(passed, failed, securityIssues.size()));
+
+        return result;
+    }
+
+    private SecurityTestResult executeSecurityTest(SecurityTest test, TestExecutionContext context) {
+        Log.debug("Executing security test: {}", test.getName());
+
+        // Simulate security test execution
+        boolean hasVulnerability = Math.random() < 0.15; // 15% chance of finding vulnerability
+
+        SecurityTestResult.Builder resultBuilder = SecurityTestResult.builder()
+                .withTestName(test.getName())
+                .withCategory(test.getCategory())
+                .withSuccess(!hasVulnerability);
+
+        if (hasVulnerability) {
+            resultBuilder.addSecurityIssue(
+                    "Potential " + test.getCategory() + " vulnerability detected in " + test.getName());
+        }
+
+        return resultBuilder.build();
+    }
+
+    private double calculateSecurityScore(int passed, int failed, int securityIssues) {
+        int total = passed + failed;
+        if (total == 0)
+            return 100.0;
+
+        double baseScore = (double) passed / total * 100;
+        double penalty = securityIssues * 5; // 5 point penalty per security issue
+
+        return Math.max(0, baseScore - penalty);
+    }
+
+    private String generateExpiredToken() {
+        return "expired_token_" + System.currentTimeMillis();
+    }
+}

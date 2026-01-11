@@ -1,0 +1,217 @@
+package tech.kayys.silat.agent.core;
+
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
+
+/**
+ * ============================================================================
+ * AGENT CORE DOMAIN MODELS
+ * ============================================================================
+ * 
+ * Core domain objects for agent execution including:
+ * - AgentConfiguration: Agent settings and parameters
+ * - AgentContext: Runtime execution context
+ * - Message: Chat messages with roles
+ * - LLMRequest/Response: LLM interaction objects
+ * - ToolCall/ToolResult: Tool execution objects
+ * - AgentExecutionResult: Final execution outcome
+ */
+
+// ==================== AGENT CONFIGURATION ====================
+
+
+// ==================== AGENT CONTEXT ====================
+
+// ==================== MESSAGE ====================
+
+
+// ==================== LLM REQUEST ====================
+
+// ==================== LLM RESPONSE ====================
+
+// ==================== TOKEN USAGE ====================
+
+// ==================== TOOL CALL ====================
+
+// ==================== TOOL RESULT ====================
+
+
+// ==================== TOOL DEFINITION ====================
+
+// ==================== AGENT EXECUTION RESULT ====================
+
+package tech.kayys.silat.agent.memory;
+
+// ==================== MEMORY MANAGER IMPLEMENTATION ====================
+
+// ==================== MEMORY STRATEGIES ====================
+
+
+
+// ==================== STRATEGY FACTORY ====================
+
+// ==================== MEMORY CACHE ====================
+
+
+// ==================== SUPPORTING SERVICES ====================
+
+// ==================== MEMORY STATS ====================
+
+package tech.kayys.silat.agent.tools;
+
+// ==================== ABSTRACT TOOL BASE ====================
+
+// ==================== TOOL REGISTRY ====================
+
+
+// ==================== BUILT-IN TOOLS ====================
+
+
+
+// ==================== TOOL EXECUTION METRICS ====================
+
+
+
+package tech.kayys.silat.agent.model;
+
+// ==================== ABSTRACT PROVIDER BASE ====================
+
+// ==================== OPENAI PROVIDER ====================
+
+
+// ==================== ANTHROPIC PROVIDER ====================
+
+
+// ==================== PROVIDER REGISTRY ====================
+
+package tech.kayys.silat.agent.services;
+
+// ==================== CONTEXT MANAGER ====================
+
+// ==================== METRICS COLLECTOR ====================
+
+
+// ==================== STORAGE SERVICE ====================
+
+// ==================== REPOSITORY INTERFACES ====================
+
+
+
+// ==================== IN-MEMORY IMPLEMENTATIONS ====================
+
+
+
+
+package tech.kayys.silat.agent.persistence;
+
+
+// ==================== PANACHE REPOSITORIES ====================
+
+
+
+// ==================== PRODUCTION REPOSITORY IMPLEMENTATIONS ====================
+
+// ==================== JSON MAPPER ====================
+
+
+package tech.kayys.silat.agent.security;
+
+
+// ==================== AUTHENTICATION FILTER ====================
+
+// ==================== RATE LIMITING ====================
+
+
+// ==================== RATE LIMITER ====================
+
+
+
+// ==================== API KEY VALIDATOR ====================
+
+
+
+// ==================== SECURITY CONTEXT ====================
+
+
+// ==================== TOOL EXECUTION SANDBOX ====================
+
+
+// ==================== SECRET MANAGEMENT ====================
+
+
+// ==================== AUDIT LOGGER ====================
+
+
+// ==================== REPOSITORY INTERFACES ====================
+
+
+
+
+
+// Placeholder entities
+
+
+
+
+
+package tech.kayys.silat.agent.observability;
+
+
+// ==================== DISTRIBUTED TRACING ====================
+
+// ==================== CIRCUIT BREAKER ====================
+
+// ==================== HEALTH CHECKS ====================
+
+
+
+// ==================== STRUCTURED LOGGING ====================
+
+// ==================== PERFORMANCE MONITOR ====================
+
+
+
+// ==================== CUSTOM EXCEPTIONS ====================
+
+
+
+package tech.kayys.silat.agent.model.impl;
+
+// ==================== REAL ANTHROPIC PROVIDER ====================
+
+// ==================== AZURE OPENAI PROVIDER ====================
+
+
+// ==================== CUSTOM EXCEPTIONS ====================
+
+
+
+
+
+
+
+package tech.kayys.silat.agent.vector;
+
+// ==================== VECTOR STORE INTERFACE ====================
+
+
+
+
+
+// ==================== PINECONE IMPLEMENTATION ====================
+
+
+// ==================== PGVECTOR IMPLEMENTATION ====================
+
+// ==================== VECTOR MEMORY STRATEGY ====================
+
+
+// ==================== PGVECTOR SCHEMA ====================
+
+/*
+-- PostgreSQL schema for pgvector
+
+
+*/
+

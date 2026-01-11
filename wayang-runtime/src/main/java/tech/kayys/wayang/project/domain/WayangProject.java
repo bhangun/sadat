@@ -4,6 +4,8 @@ import io.quarkus.hibernate.reactive.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import tech.kayys.wayang.project.dto.ProjectType;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 import java.util.*;
@@ -49,6 +51,7 @@ public class WayangProject extends PanacheEntityBase {
     @Column(name = "is_active")
     public boolean isActive = true;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "metadata", columnDefinition = "jsonb")
     public Map<String, Object> metadata;
 

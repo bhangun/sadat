@@ -23,6 +23,8 @@ import tech.kayys.wayang.project.dto.AgentType;
 import tech.kayys.wayang.project.dto.Guardrail;
 import tech.kayys.wayang.project.dto.LLMConfig;
 import tech.kayys.wayang.project.dto.MemoryConfig;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * AI Agent - Autonomous agent definition
@@ -51,18 +53,23 @@ public class AIAgent extends PanacheEntityBase {
     @Column(name = "agent_type")
     public AgentType agentType;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "llm_config", columnDefinition = "jsonb")
     public LLMConfig llmConfig;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "capabilities", columnDefinition = "jsonb")
     public List<AgentCapability> capabilities;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "tools", columnDefinition = "jsonb")
     public List<AgentTool> tools;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "memory_config", columnDefinition = "jsonb")
     public MemoryConfig memoryConfig;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "guardrails", columnDefinition = "jsonb")
     public List<Guardrail> guardrails;
 

@@ -1,0 +1,1226 @@
+// src/main/java/com/example/generator/template/CustomTemplateManager.java
+package tech.kayys.wayang.mcp.generator.template;
+
+import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+@ApplicationScoped
+public class CustomTemplateManager {
+    
+    private final Map<String, CustomTemplate> templates = new ConcurrentHashMap<>();
+    private final Map<String, TemplateSet> templateSets = new ConcurrentHashMap<>();
+    private final Path templatesDirectory;
+    
+    public CustomTemplateManager() {
+        this.templatesDirectory = Paths.get(System.getProperty("user.home"), ".mcp-generator", "templates");
+        initializeTemplateDirectory();
+        loadBuiltInTemplates();
+        loadUserTemplates();
+    }
+    
+    private void initializeTemplateDirectory() {
+        try {
+            if (!Files.exists(templatesDirectory)) {
+                Files.createDirectories(templatesDirectory);
+                Log.info("Created templates directory: {}", templatesDirectory);
+            }
+        } catch (IOException e) {
+            Log.error("Failed to create templates directory", e);
+        }
+    }
+    
+    private void loadBuiltInTemplates() {
+        Log.info("Loading built-in templates...");
+        
+        // Standard Quarkus templates
+        TemplateSet standardSet = new TemplateSet(
+            "standard",
+            "Standard Quarkus MCP Server",
+            "Default templates for generating Quarkus-based MCP servers",
+            "1.0.0"
+        );
+        
+        standardSet.addTemplate(new CustomTemplate(
+            "mcp-server-main",
+            "Main MCP Server Class",
+            "java",
+            loadBuiltInTemplateContent("mcp-server-main.java"),
+            Map.of("framework", "quarkus", "type", "main-class")
+        ));
+        
+        standardSet.addTemplate(new CustomTemplate(
+            "mcp-tool",
+            "MCP Tool Implementation",
+            "java",
+            loadBuiltInTemplateContent("mcp-tool.java"),
+            Map.of("framework", "quarkus", "type", "tool-class")
+        ));
+        
+        standardSet.addTemplate(new CustomTemplate(
+            "pom-xml",
+            "Maven POM Configuration",
+            "xml",
+            loadBuiltInTemplateContent("generated-pom.xml"),
+            Map.of("build-tool", "maven", "type", "config")
+        ));
+        
+        templateSets.put("standard", standardSet);
+        
+        // Spring Boot templates (example)
+        TemplateSet springBootSet = new TemplateSet(
+            "spring-boot",
+            "Spring Boot MCP Server",
+            "Templates for Spring Boot-based MCP servers",
+            "1.0.0"
+        );
+        
+        springBootSet.addTemplate(new CustomTemplate(
+            "spring-mcp-server",
+            "Spring Boot MCP Server",
+            "java",
+            generateSpringBootMainTemplate(),
+            Map.of("framework", "spring-boot", "type", "main-class")
+        ));
+        
+        springBootSet.addTemplate(new CustomTemplate(
+            "spring-tool",
+            "Spring Boot MCP Tool",
+            "java",
+            generateSpringBootToolTemplate(),
+            Map.of("framework", "spring-boot", "type", "tool-class")
+        ));
+        
+        templateSets.put("spring-boot", springBootSet);
+        
+        Log.info("Loaded {} built-in template sets", templateSets.size());
+    }
+    
+    private void loadUserTemplates() {
+        Log.info("Loading user templates from: {}", templatesDirectory);
+        
+        try {
+            if (Files.exists(templatesDirectory)) {
+                Files.walk(templatesDirectory)
+                    .filter(Files::isRegularFile)
+                    .filter(path -> path.toString().endsWith(".template"))
+                    .forEach(this::loadUserTemplate);
+            }
+        } catch (IOException e) {
+            Log.error("Failed to load user templates", e);
+        }
+    }
+    
+    private void loadUserTemplate(Path templateFile) {
+        try {
+            String content = Files.readString(templateFile);
+            CustomTemplateMetadata metadata = parseTemplateMetadata(content);
+            
+            CustomTemplate template = new CustomTemplate(
+                metadata.id,
+                metadata.name,
+                metadata.fileType,
+                extractTemplateContent(content),
+                metadata.properties
+            );
+            
+            templates.put(template.getId(), template);
+            Log.debug("Loaded user template: {}", template.getId());
+            
+        } catch (Exception e) {
+            Log.error("Failed to load template file: " + templateFile, e);
+        }
+    }
+    
+    public List<TemplateSet> getAvailableTemplateSets() {
+        return new ArrayList<>(templateSets.values());
+    }
+    
+    public Optional<TemplateSet> getTemplateSet(String setId) {
+        return Optional.ofNullable(templateSets.get(setId));
+    }
+    
+    public List<CustomTemplate> getTemplatesForFramework(String framework) {
+        return templates.values().stream()
+            .filter(template -> framework.equals(template.getProperty("framework")))
+            .toList();
+    }
+    
+    public Optional<CustomTemplate> getTemplate(String templateId) {
+        return Optional.ofNullable(templates.get(templateId));
+    }
+    
+    public void saveUserTemplate(CustomTemplate template) throws IOException {
+        Path templateFile = templatesDirectory.resolve(template.getId() + ".template");
+        
+        String templateContent = formatTemplateFile(template);
+        Files.writeString(templateFile, templateContent);
+        
+        templates.put(template.getId(), template);
+        Log.info("Saved user template: {}", template.getId());
+    }
+    
+    public void deleteUserTemplate(String templateId) throws IOException {
+        Path templateFile = templatesDirectory.resolve(templateId + ".template");
+        
+        if (Files.exists(templateFile)) {
+            Files.delete(templateFile);
+            templates.remove(templateId);
+            Log.info("Deleted user template: {}", templateId);
+        }
+    }
+    
+    public TemplateRenderResult renderTemplate(String templateId, Map<String, Object> data) {
+        Optional<CustomTemplate> template = getTemplate(templateId);
+        
+        if (template.isEmpty()) {
+            return TemplateRenderResult.error("Template not found: " + templateId);
+        }
+        
+        try {
+            String rendered = renderTemplateContent(template.get().getContent(), data);
+            return TemplateRenderResult.success(rendered);
+            
+        } catch (Exception e) {
+            Log.error("Template rendering failed", e);
+            return TemplateRenderResult.error("Rendering failed: " + e.getMessage());
+        }
+    }
+    
+    private String loadBuiltInTemplateContent(String templateName) {
+        // In a real implementation, this would load from resources
+        return "Built-in template content for: " + templateName;
+    }
+    
+    private String generateSpringBootMainTemplate() {
+        return """
+            package {model.packageName};
+            
+            import org.springframework.boot.SpringApplication;
+            import org.springframework.boot.autoconfigure.SpringBootApplication;
+            import org.springframework.web.bind.annotation.*;
+            import com.fasterxml.jackson.databind.JsonNode;
+            
+            /**
+             * {model.title}
+             * Spring Boot MCP Server
+             * Version: {model.version}
+             */
+            @SpringBootApplication
+            @RestController
+            public class {model.serverClass} {
+                
+                public static void main(String[] args) {
+                    SpringApplication.run({model.serverClass}.class, args);
+                }
+                
+                @PostMapping("/mcp")
+                public JsonNode handleMcpRequest(@RequestBody JsonNode request) {
+                    // MCP request handling logic
+                    return null;
+                }
+                
+                @GetMapping("/health")
+                public Map<String, Object> health() {
+                    return Map.of(
+                        "status", "UP",
+                        "server", "{model.title}",
+                        "version", "{model.version}"
+                    );
+                }
+            }
+            """;
+    }
+    
+    private String generateSpringBootToolTemplate() {
+        return """
+            package {model.packageName}.tools;
+            
+            import org.springframework.stereotype.Component;
+            import org.springframework.web.client.RestTemplate;
+            import com.fasterxml.jackson.databind.JsonNode;
+            
+            /**
+             * Spring Boot MCP Tool: {tool.name}
+             * {tool.description}
+             */
+            @Component
+            public class {tool.className} {
+                
+                private final RestTemplate restTemplate = new RestTemplate();
+                
+                public JsonNode execute(JsonNode arguments) {
+                    // Tool execution logic
+                    return null;
+                }
+            }
+            """;
+    }
+    
+    private CustomTemplateMetadata parseTemplateMetadata(String content) {
+        // Parse template metadata from content
+        // Format: ---metadata--- at the top of the file
+        CustomTemplateMetadata metadata = new CustomTemplateMetadata();
+        
+        if (content.startsWith("---")) {
+            int endIndex = content.indexOf("---", 3);
+            if (endIndex != -1) {
+                String metadataSection = content.substring(3, endIndex);
+                parseMetadataSection(metadataSection, metadata);
+            }
+        }
+        
+        return metadata;
+    }
+    
+    private void parseMetadataSection(String metadataSection, CustomTemplateMetadata metadata) {
+        String[] lines = metadataSection.split("\n");
+        for (String line : lines) {
+            String[] parts = line.split(":", 2);
+            if (parts.length == 2) {
+                String key = parts[0].trim();
+                String value = parts[1].trim();
+                
+                switch (key) {
+                    case "id" -> metadata.id = value;
+                    case "name" -> metadata.name = value;
+                    case "fileType" -> metadata.fileType = value;
+                    case "framework" -> metadata.properties.put("framework", value);
+                    case "type" -> metadata.properties.put("type", value);
+                    default -> metadata.properties.put(key, value);
+                }
+            }
+        }
+    }
+    
+    private String extractTemplateContent(String content) {
+        if (content.startsWith("---")) {
+            int endIndex = content.indexOf("---", 3);
+            if (endIndex != -1) {
+                return content.substring(endIndex + 3).trim();
+            }
+        }
+        return content;
+    }
+    
+    private String formatTemplateFile(CustomTemplate template) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("---\n");
+        sb.append("id: ").append(template.getId()).append("\n");
+        sb.append("name: ").append(template.getName()).append("\n");
+        sb.append("fileType: ").append(template.getFileType()).append("\n");
+        
+        template.getProperties().forEach((key, value) -> 
+            sb.append(key).append(": ").append(value).append("\n"));
+        
+        sb.append("---\n");
+        sb.append(template.getContent());
+        
+        return sb.toString();
+    }
+    
+    private String renderTemplateContent(String content, Map<String, Object> data) {
+        // Simple template rendering - in production, use a proper template engine
+        String rendered = content;
+        
+        for (Map.Entry<String, Object> entry : data.entrySet()) {
+            String placeholder = "{" + entry.getKey() + "}";
+            String value = entry.getValue() != null ? entry.getValue().toString() : "";
+            rendered = rendered.replace(placeholder, value);
+        }
+        
+        return rendered;
+    }
+    
+    private static class CustomTemplateMetadata {
+        public String id = "";
+        public String name = "";
+        public String fileType = "java";
+        public Map<String, Object> properties = new HashMap<>();
+    }
+}
+
+// src/main/java/com/example/generator/template/CustomTemplate.java
+package tech.kayys.wayang.mcp.generator.template;
+
+import java.util.HashMap;
+import java.util.Map;
+
+public class CustomTemplate {
+    
+    private final String id;
+    private final String name;
+    private final String fileType;
+    private final String content;
+    private final Map<String, Object> properties;
+    
+    public CustomTemplate(String id, String name, String fileType, String content, Map<String, Object> properties) {
+        this.id = id;
+        this.name = name;
+        this.fileType = fileType;
+        this.content = content;
+        this.properties = new HashMap<>(properties);
+    }
+    
+    public String getId() { return id; }
+    public String getName() { return name; }
+    public String getFileType() { return fileType; }
+    public String getContent() { return content; }
+    public Map<String, Object> getProperties() { return new HashMap<>(properties); }
+    
+    public Object getProperty(String key) {
+        return properties.get(key);
+    }
+    
+    public String getPropertyAsString(String key) {
+        Object value = properties.get(key);
+        return value != null ? value.toString() : null;
+    }
+    
+    public boolean hasProperty(String key) {
+        return properties.containsKey(key);
+    }
+}
+
+// src/main/java/com/example/generator/template/TemplateSet.java
+package tech.kayys.wayang.mcp.generator.template;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+public class TemplateSet {
+    
+    private final String id;
+    private final String name;
+    private final String description;
+    private final String version;
+    private final Map<String, CustomTemplate> templates = new HashMap<>();
+    
+    public TemplateSet(String id, String name, String description, String version) {
+        this.id = id;
+        this.name = name;
+        this.description = description;
+        this.version = version;
+    }
+    
+    public void addTemplate(CustomTemplate template) {
+        templates.put(template.getId(), template);
+    }
+    
+    public void removeTemplate(String templateId) {
+        templates.remove(templateId);
+    }
+    
+    public List<CustomTemplate> getTemplates() {
+        return new ArrayList<>(templates.values());
+    }
+    
+    public CustomTemplate getTemplate(String templateId) {
+        return templates.get(templateId);
+    }
+    
+    public String getId() { return id; }
+    public String getName() { return name; }
+    public String getDescription() { return description; }
+    public String getVersion() { return version; }
+    public int getTemplateCount() { return templates.size(); }
+}
+
+// src/main/java/com/example/generator/template/TemplateRenderResult.java
+package tech.kayys.wayang.mcp.generator.template;
+
+public class TemplateRenderResult {
+    
+    private final boolean success;
+    private final String content;
+    private final String error;
+    
+    private TemplateRenderResult(boolean success, String content, String error) {
+        this.success = success;
+        this.content = content;
+        this.error = error;
+    }
+    
+    public static TemplateRenderResult success(String content) {
+        return new TemplateRenderResult(true, content, null);
+    }
+    
+    public static TemplateRenderResult error(String error) {
+        return new TemplateRenderResult(false, null, error);
+    }
+    
+    public boolean isSuccess() { return success; }
+    public String getContent() { return content; }
+    public String getError() { return error; }
+}
+
+// src/main/java/com/example/generator/template/TemplateResource.java
+package tech.kayys.wayang.mcp.generator.template;
+
+import io.quarkus.logging.Log;
+import io.smallrye.mutiny.Uni;
+import jakarta.inject.Inject;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+
+import java.util.List;
+import java.util.Map;
+
+@Path("/api/templates")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+public class TemplateResource {
+    
+    @Inject
+    CustomTemplateManager templateManager;
+    
+    @GET
+    @Path("/sets")
+    public Response getTemplateSets() {
+        Log.info("Listing template sets");
+        
+        try {
+            List<TemplateSet> templateSets = templateManager.getAvailableTemplateSets();
+            
+            List<TemplateSetSummary> summaries = templateSets.stream()
+                .map(set -> new TemplateSetSummary(
+                    set.getId(),
+                    set.getName(),
+                    set.getDescription(),
+                    set.getVersion(),
+                    set.getTemplateCount()
+                ))
+                .toList();
+            
+            return Response.ok(new TemplateSetListResponse(summaries)).build();
+            
+        } catch (Exception e) {
+            Log.error("Failed to list template sets", e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity(new ErrorResponse("Failed to list template sets: " + e.getMessage()))
+                .build();
+        }
+    }
+    
+    @GET
+    @Path("/sets/{setId}")
+    public Response getTemplateSet(@PathParam("setId") String setId) {
+        Log.info("Getting template set: {}", setId);
+        
+        try {
+            var templateSet = templateManager.getTemplateSet(setId);
+            
+            if (templateSet.isPresent()) {
+                TemplateSet set = templateSet.get();
+                
+                List<TemplateSummary> templates = set.getTemplates().stream()
+                    .map(template -> new TemplateSummary(
+                        template.getId(),
+                        template.getName(),
+                        template.getFileType(),
+                        template.getProperties()
+                    ))
+                    .toList();
+                
+                return Response.ok(new TemplateSetDetailsResponse(
+                    set.getId(),
+                    set.getName(),
+                    set.getDescription(),
+                    set.getVersion(),
+                    templates
+                )).build();
+            } else {
+                return Response.status(Response.Status.NOT_FOUND)
+                    .entity(new ErrorResponse("Template set not found: " + setId))
+                    .build();
+            }
+            
+        } catch (Exception e) {
+            Log.error("Failed to get template set", e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity(new ErrorResponse("Failed to get template set: " + e.getMessage()))
+                .build();
+        }
+    }
+    
+    @GET
+    @Path("/{templateId}")
+    public Response getTemplate(@PathParam("templateId") String templateId) {
+        Log.info("Getting template: {}", templateId);
+        
+        try {
+            var template = templateManager.getTemplate(templateId);
+            
+            if (template.isPresent()) {
+                CustomTemplate t = template.get();
+                
+                return Response.ok(new TemplateDetailsResponse(
+                    t.getId(),
+                    t.getName(),
+                    t.getFileType(),
+                    t.getContent(),
+                    t.getProperties()
+                )).build();
+            } else {
+            } else {
+                return Response.status(Response.Status.NOT_FOUND)
+                    .entity(new ErrorResponse("Template not found: " + templateId))
+                    .build();
+            }
+            
+        } catch (Exception e) {
+            Log.error("Failed to get template", e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity(new ErrorResponse("Failed to get template: " + e.getMessage()))
+                .build();
+        }
+    }
+    
+    @POST
+    @Path("/")
+    public Uni<Response> createTemplate(CreateTemplateRequest request) {
+        Log.info("Creating custom template: {}", request.name);
+        
+        return Uni.createFrom().item(() -> {
+            try {
+                CustomTemplate template = new CustomTemplate(
+                    request.id,
+                    request.name,
+                    request.fileType,
+                    request.content,
+                    request.properties != null ? request.properties : Map.of()
+                );
+                
+                templateManager.saveUserTemplate(template);
+                
+                return Response.status(Response.Status.CREATED)
+                    .entity(new SuccessResponse(
+                        "Template created successfully",
+                        Map.of("templateId", template.getId())
+                    ))
+                    .build();
+                
+            } catch (Exception e) {
+                Log.error("Failed to create template", e);
+                return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new ErrorResponse("Failed to create template: " + e.getMessage()))
+                    .build();
+            }
+        });
+    }
+    
+    @PUT
+    @Path("/{templateId}")
+    public Uni<Response> updateTemplate(@PathParam("templateId") String templateId,
+                                      UpdateTemplateRequest request) {
+        Log.info("Updating template: {}", templateId);
+        
+        return Uni.createFrom().item(() -> {
+            try {
+                var existingTemplate = templateManager.getTemplate(templateId);
+                
+                if (existingTemplate.isEmpty()) {
+                    return Response.status(Response.Status.NOT_FOUND)
+                        .entity(new ErrorResponse("Template not found: " + templateId))
+                        .build();
+                }
+                
+                CustomTemplate updatedTemplate = new CustomTemplate(
+                    templateId,
+                    request.name != null ? request.name : existingTemplate.get().getName(),
+                    request.fileType != null ? request.fileType : existingTemplate.get().getFileType(),
+                    request.content != null ? request.content : existingTemplate.get().getContent(),
+                    request.properties != null ? request.properties : existingTemplate.get().getProperties()
+                );
+                
+                templateManager.saveUserTemplate(updatedTemplate);
+                
+                return Response.ok(new SuccessResponse(
+                    "Template updated successfully",
+                    Map.of("templateId", templateId)
+                )).build();
+                
+            } catch (Exception e) {
+                Log.error("Failed to update template", e);
+                return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new ErrorResponse("Failed to update template: " + e.getMessage()))
+                    .build();
+            }
+        });
+    }
+    
+    @DELETE
+    @Path("/{templateId}")
+    public Uni<Response> deleteTemplate(@PathParam("templateId") String templateId) {
+        Log.info("Deleting template: {}", templateId);
+        
+        return Uni.createFrom().item(() -> {
+            try {
+                templateManager.deleteUserTemplate(templateId);
+                
+                return Response.ok(new SuccessResponse(
+                    "Template deleted successfully",
+                    Map.of("templateId", templateId)
+                )).build();
+                
+            } catch (Exception e) {
+                Log.error("Failed to delete template", e);
+                return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new ErrorResponse("Failed to delete template: " + e.getMessage()))
+                    .build();
+            }
+        });
+    }
+    
+    @POST
+    @Path("/{templateId}/render")
+    public Response renderTemplate(@PathParam("templateId") String templateId,
+                                 Map<String, Object> templateData) {
+        Log.info("Rendering template: {}", templateId);
+        
+        try {
+            TemplateRenderResult result = templateManager.renderTemplate(templateId, templateData);
+            
+            if (result.isSuccess()) {
+                return Response.ok(new TemplateRenderResponse(
+                    true,
+                    result.getContent(),
+                    null
+                )).build();
+            } else {
+                return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new TemplateRenderResponse(
+                        false,
+                        null,
+                        result.getError()
+                    ))
+                    .build();
+            }
+            
+        } catch (Exception e) {
+            Log.error("Failed to render template", e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity(new ErrorResponse("Template rendering failed: " + e.getMessage()))
+                .build();
+        }
+    }
+    
+    @GET
+    @Path("/framework/{framework}")
+    public Response getTemplatesForFramework(@PathParam("framework") String framework) {
+        Log.info("Getting templates for framework: {}", framework);
+        
+        try {
+            List<CustomTemplate> templates = templateManager.getTemplatesForFramework(framework);
+            
+            List<TemplateSummary> summaries = templates.stream()
+                .map(template -> new TemplateSummary(
+                    template.getId(),
+                    template.getName(),
+                    template.getFileType(),
+                    template.getProperties()
+                ))
+                .toList();
+            
+            return Response.ok(new FrameworkTemplatesResponse(
+                framework,
+                summaries.size(),
+                summaries
+            )).build();
+            
+        } catch (Exception e) {
+            Log.error("Failed to get templates for framework", e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity(new ErrorResponse("Failed to get framework templates: " + e.getMessage()))
+                .build();
+        }
+    }
+    
+    // Request/Response DTOs
+    public static class CreateTemplateRequest {
+        public String id;
+        public String name;
+        public String fileType;
+        public String content;
+        public Map<String, Object> properties;
+    }
+    
+    public static class UpdateTemplateRequest {
+        public String name;
+        public String fileType;
+        public String content;
+        public Map<String, Object> properties;
+    }
+    
+    public static class TemplateSetListResponse {
+        public final List<TemplateSetSummary> templateSets;
+        public final int count;
+        
+        public TemplateSetListResponse(List<TemplateSetSummary> templateSets) {
+            this.templateSets = templateSets;
+            this.count = templateSets.size();
+        }
+    }
+    
+    public static class TemplateSetSummary {
+        public final String id;
+        public final String name;
+        public final String description;
+        public final String version;
+        public final int templateCount;
+        
+        public TemplateSetSummary(String id, String name, String description, String version, int templateCount) {
+            this.id = id;
+            this.name = name;
+            this.description = description;
+            this.version = version;
+            this.templateCount = templateCount;
+        }
+    }
+    
+    public static class TemplateSetDetailsResponse {
+        public final String id;
+        public final String name;
+        public final String description;
+        public final String version;
+        public final List<TemplateSummary> templates;
+        
+        public TemplateSetDetailsResponse(String id, String name, String description, String version, List<TemplateSummary> templates) {
+            this.id = id;
+            this.name = name;
+            this.description = description;
+            this.version = version;
+            this.templates = templates;
+        }
+    }
+    
+    public static class TemplateSummary {
+        public final String id;
+        public final String name;
+        public final String fileType;
+        public final Map<String, Object> properties;
+        
+        public TemplateSummary(String id, String name, String fileType, Map<String, Object> properties) {
+            this.id = id;
+            this.name = name;
+            this.fileType = fileType;
+            this.properties = properties;
+        }
+    }
+    
+    public static class TemplateDetailsResponse {
+        public final String id;
+        public final String name;
+        public final String fileType;
+        public final String content;
+        public final Map<String, Object> properties;
+        
+        public TemplateDetailsResponse(String id, String name, String fileType, String content, Map<String, Object> properties) {
+            this.id = id;
+            this.name = name;
+            this.fileType = fileType;
+            this.content = content;
+            this.properties = properties;
+        }
+    }
+    
+    public static class TemplateRenderResponse {
+        public final boolean success;
+        public final String content;
+        public final String error;
+        
+        public TemplateRenderResponse(boolean success, String content, String error) {
+            this.success = success;
+            this.content = content;
+            this.error = error;
+        }
+    }
+    
+    public static class FrameworkTemplatesResponse {
+        public final String framework;
+        public final int count;
+        public final List<TemplateSummary> templates;
+        
+        public FrameworkTemplatesResponse(String framework, int count, List<TemplateSummary> templates) {
+            this.framework = framework;
+            this.count = count;
+            this.templates = templates;
+        }
+    }
+    
+    public static class ErrorResponse {
+        public final String error;
+        public final long timestamp;
+        
+        public ErrorResponse(String error) {
+            this.error = error;
+            this.timestamp = System.currentTimeMillis();
+        }
+    }
+    
+    public static class SuccessResponse {
+        public final String message;
+        public final Map<String, Object> data;
+        public final long timestamp;
+        
+        public SuccessResponse(String message, Map<String, Object> data) {
+            this.message = message;
+            this.data = data;
+            this.timestamp = System.currentTimeMillis();
+        }
+    }
+}
+
+// src/main/java/com/example/generator/template/AdvancedTemplateProcessor.java
+package tech.kayys.wayang.mcp.generator.template;
+
+import tech.kayys.wayang.mcp.generator.plugin.*;
+import io.quarkus.qute.Engine;
+import io.quarkus.qute.Template;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+@ApplicationScoped
+public class AdvancedTemplateProcessor implements TemplateProcessor {
+    
+    @Inject
+    Engine quteEngine;
+    
+    @Inject
+    CustomTemplateManager templateManager;
+    
+    private final Map<String, TemplateFunction> customFunctions = new ConcurrentHashMap<>();
+    private final Map<String, Template> compiledTemplates = new ConcurrentHashMap<>();
+    
+    // Advanced template patterns
+    private static final Pattern INCLUDE_PATTERN = Pattern.compile("\\{\\{include\\s+([^}]+)\\}\\}");
+    private static final Pattern CONDITIONAL_PATTERN = Pattern.compile("\\{\\{#if\\s+([^}]+)\\}\\}([\\s\\S]*?)\\{\\{/if\\}\\}");
+    private static final Pattern LOOP_PATTERN = Pattern.compile("\\{\\{#each\\s+([^}]+)\\}\\}([\\s\\S]*?)\\{\\{/each\\}\\}");
+    
+    @Override
+    public String getTemplateType() {
+        return "advanced";
+    }
+    
+    @Override
+    public void initialize() throws PluginException {
+        // Add advanced template functions
+        addCustomFunction("camelCase", args -> toCamelCase(args[0].toString()));
+        addCustomFunction("pascalCase", args -> toPascalCase(args[0].toString()));
+        addCustomFunction("kebabCase", args -> toKebabCase(args[0].toString()));
+        addCustomFunction("snakeCase", args -> toSnakeCase(args[0].toString()));
+        addCustomFunction("upperCase", args -> args[0].toString().toUpperCase());
+        addCustomFunction("lowerCase", args -> args[0].toString().toLowerCase());
+        addCustomFunction("capitalize", args -> capitalize(args[0].toString()));
+        addCustomFunction("pluralize", args -> pluralize(args[0].toString()));
+        addCustomFunction("singularize", args -> singularize(args[0].toString()));
+        
+        // Utility functions
+        addCustomFunction("isEmpty", args -> args[0] == null || args[0].toString().trim().isEmpty());
+        addCustomFunction("isNotEmpty", args -> args[0] != null && !args[0].toString().trim().isEmpty());
+        addCustomFunction("contains", args -> args[0].toString().contains(args[1].toString()));
+        addCustomFunction("startsWith", args -> args[0].toString().startsWith(args[1].toString()));
+        addCustomFunction("endsWith", args -> args[0].toString().endsWith(args[1].toString()));
+        addCustomFunction("replace", args -> args[0].toString().replace(args[1].toString(), args[2].toString()));
+        addCustomFunction("substring", args -> {
+            String str = args[0].toString();
+            int start = Integer.parseInt(args[1].toString());
+            int end = args.length > 2 ? Integer.parseInt(args[2].toString()) : str.length();
+            return str.substring(start, Math.min(end, str.length()));
+        });
+        
+        // Date/time functions
+        addCustomFunction("now", args -> System.currentTimeMillis());
+        addCustomFunction("formatDate", args -> {
+            // Simplified date formatting
+            return new java.util.Date(Long.parseLong(args[0].toString())).toString();
+        });
+        
+        // Math functions
+        addCustomFunction("add", args -> Integer.parseInt(args[0].toString()) + Integer.parseInt(args[1].toString()));
+        addCustomFunction("subtract", args -> Integer.parseInt(args[0].toString()) - Integer.parseInt(args[1].toString()));
+        addCustomFunction("multiply", args -> Integer.parseInt(args[0].toString()) * Integer.parseInt(args[1].toString()));
+        addCustomFunction("divide", args -> Integer.parseInt(args[0].toString()) / Integer.parseInt(args[1].toString()));
+        addCustomFunction("mod", args -> Integer.parseInt(args[0].toString()) % Integer.parseInt(args[1].toString()));
+        
+        // Collection functions
+        addCustomFunction("size", args -> {
+            if (args[0] instanceof java.util.Collection) {
+                return ((java.util.Collection<?>) args[0]).size();
+            }
+            return args[0].toString().length();
+        });
+        addCustomFunction("join", args -> {
+            if (args[0] instanceof java.util.Collection) {
+                return String.join(args[1].toString(), ((java.util.Collection<?>) args[0]).stream()
+                    .map(Object::toString).toArray(String[]::new));
+            }
+            return args[0].toString();
+        });
+    }
+    
+    @Override
+    public boolean supports(String templateType) {
+        return "advanced".equalsIgnoreCase(templateType) || 
+               "custom".equalsIgnoreCase(templateType) ||
+               "enhanced".equalsIgnoreCase(templateType);
+    }
+    
+    @Override
+    public String processTemplate(String templateContent, Map<String, Object> data, 
+                                PluginExecutionContext context) throws PluginException {
+        try {
+            // Pre-process template for advanced features
+            String processedContent = preprocessTemplate(templateContent, data, context);
+            
+            // Use compiled template if available
+            Template template = getCompiledTemplate(processedContent);
+            
+            // Enrich data with custom functions and context
+            Map<String, Object> enrichedData = new HashMap<>(data);
+            enrichedData.putAll(customFunctions);
+            enrichedData.put("context", context);
+            
+            return template.data(enrichedData).render();
+            
+        } catch (Exception e) {
+            throw new PluginException("advanced-template-processor", "process", 
+                "Failed to process advanced template", e);
+        }
+    }
+    
+    @Override
+    public void addCustomFunction(String name, TemplateFunction function) {
+        customFunctions.put(name, function);
+    }
+    
+    private String preprocessTemplate(String content, Map<String, Object> data, PluginExecutionContext context) {
+        // Process includes
+        content = processIncludes(content, data, context);
+        
+        // Process advanced conditionals
+        content = processConditionals(content, data);
+        
+        // Process loops
+        content = processLoops(content, data);
+        
+        return content;
+    }
+    
+    private String processIncludes(String content, Map<String, Object> data, PluginExecutionContext context) {
+        Matcher matcher = INCLUDE_PATTERN.matcher(content);
+        StringBuffer result = new StringBuffer();
+        
+        while (matcher.find()) {
+            String templateId = matcher.group(1).trim().replace("\"", "");
+            
+            try {
+                var includeTemplate = templateManager.getTemplate(templateId);
+                if (includeTemplate.isPresent()) {
+                    String includedContent = processTemplate(includeTemplate.get().getContent(), data, context);
+                    matcher.appendReplacement(result, Matcher.quoteReplacement(includedContent));
+                } else {
+                    matcher.appendReplacement(result, "<!-- Template not found: " + templateId + " -->");
+                }
+            } catch (Exception e) {
+                matcher.appendReplacement(result, "<!-- Include error: " + e.getMessage() + " -->");
+            }
+        }
+        matcher.appendTail(result);
+        
+        return result.toString();
+    }
+    
+    private String processConditionals(String content, Map<String, Object> data) {
+        // Simplified conditional processing
+        Matcher matcher = CONDITIONAL_PATTERN.matcher(content);
+        StringBuffer result = new StringBuffer();
+        
+        while (matcher.find()) {
+            String condition = matcher.group(1).trim();
+            String ifContent = matcher.group(2);
+            
+            boolean conditionMet = evaluateCondition(condition, data);
+            String replacement = conditionMet ? ifContent : "";
+            
+            matcher.appendReplacement(result, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(result);
+        
+        return result.toString();
+    }
+    
+    private String processLoops(String content, Map<String, Object> data) {
+        // Simplified loop processing
+        Matcher matcher = LOOP_PATTERN.matcher(content);
+        StringBuffer result = new StringBuffer();
+        
+        while (matcher.find()) {
+            String iterableExpression = matcher.group(1).trim();
+            String loopContent = matcher.group(2);
+            
+            String replacement = processLoop(iterableExpression, loopContent, data);
+            matcher.appendReplacement(result, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(result);
+        
+        return result.toString();
+    }
+    
+    private boolean evaluateCondition(String condition, Map<String, Object> data) {
+        // Simplified condition evaluation
+        if (condition.contains("!=")) {
+            String[] parts = condition.split("!=", 2);
+            String left = resolveValue(parts[0].trim(), data);
+            String right = resolveValue(parts[1].trim(), data);
+            return !left.equals(right);
+        } else if (condition.contains("==")) {
+            String[] parts = condition.split("==", 2);
+            String left = resolveValue(parts[0].trim(), data);
+            String right = resolveValue(parts[1].trim(), data);
+            return left.equals(right);
+        } else {
+            // Simple truthy evaluation
+            String value = resolveValue(condition, data);
+            return value != null && !value.isEmpty() && !"false".equals(value) && !"0".equals(value);
+        }
+    }
+    
+    private String processLoop(String iterableExpression, String loopContent, Map<String, Object> data) {
+        StringBuilder result = new StringBuilder();
+        
+        // Extract variable name and iterable
+        String[] parts = iterableExpression.split(" in ", 2);
+        if (parts.length != 2) {
+            return "<!-- Invalid loop syntax: " + iterableExpression + " -->";
+        }
+        
+        String itemVar = parts[0].trim();
+        String iterableName = parts[1].trim();
+        
+        Object iterable = data.get(iterableName);
+        if (iterable instanceof java.util.Collection) {
+            java.util.Collection<?> collection = (java.util.Collection<?>) iterable;
+            for (Object item : collection) {
+                Map<String, Object> loopData = new HashMap<>(data);
+                loopData.put(itemVar, item);
+                
+                String processedLoopContent = replaceVariables(loopContent, loopData);
+                result.append(processedLoopContent);
+            }
+        }
+        
+        return result.toString();
+    }
+    
+    private String resolveValue(String expression, Map<String, Object> data) {
+        expression = expression.trim();
+        
+        // Remove quotes if present
+        if (expression.startsWith("\"") && expression.endsWith("\"")) {
+            return expression.substring(1, expression.length() - 1);
+        }
+        
+        // Resolve from data
+        Object value = data.get(expression);
+        return value != null ? value.toString() : "";
+    }
+    
+    private String replaceVariables(String content, Map<String, Object> data) {
+        for (Map.Entry<String, Object> entry : data.entrySet()) {
+            String placeholder = "{{" + entry.getKey() + "}}";
+            String value = entry.getValue() != null ? entry.getValue().toString() : "";
+            content = content.replace(placeholder, value);
+        }
+        return content;
+    }
+    
+    private Template getCompiledTemplate(String content) {
+        String hash = String.valueOf(content.hashCode());
+        return compiledTemplates.computeIfAbsent(hash, k -> quteEngine.parse(content));
+    }
+    
+    // Utility methods for string transformations
+    private String toCamelCase(String input) {
+        if (input == null || input.isEmpty()) return input;
+        
+        String[] parts = input.split("[_\\-\\s]+");
+        StringBuilder result = new StringBuilder(parts[0].toLowerCase());
+        
+        for (int i = 1; i < parts.length; i++) {
+            if (!parts[i].isEmpty()) {
+                result.append(parts[i].substring(0, 1).toUpperCase())
+                      .append(parts[i].substring(1).toLowerCase());
+            }
+        }
+        
+        return result.toString();
+    }
+    
+    private String toPascalCase(String input) {
+        String camelCase = toCamelCase(input);
+        if (camelCase.isEmpty()) return camelCase;
+        return camelCase.substring(0, 1).toUpperCase() + camelCase.substring(1);
+    }
+    
+    private String toKebabCase(String input) {
+        if (input == null || input.isEmpty()) return input;
+        return input.replaceAll("([a-z])([A-Z])", "$1-$2")
+                   .replaceAll("[_\\s]+", "-")
+                   .toLowerCase();
+    }
+    
+    private String toSnakeCase(String input) {
+        if (input == null || input.isEmpty()) return input;
+        return input.replaceAll("([a-z])([A-Z])", "$1_$2")
+                   .replaceAll("[\\-\\s]+", "_")
+                   .toLowerCase();
+    }
+    
+    private String capitalize(String input) {
+        if (input == null || input.isEmpty()) return input;
+        return input.substring(0, 1).toUpperCase() + input.substring(1).toLowerCase();
+    }
+    
+    private String pluralize(String input) {
+        if (input == null || input.isEmpty()) return input;
+        // Simplified pluralization
+        if (input.endsWith("y")) {
+            return input.substring(0, input.length() - 1) + "ies";
+        } else if (input.endsWith("s") || input.endsWith("x") || input.endsWith("z") || 
+                   input.endsWith("ch") || input.endsWith("sh")) {
+            return input + "es";
+        } else {
+            return input + "s";
+        }
+    }
+    
+    private String singularize(String input) {
+        if (input == null || input.isEmpty()) return input;
+        // Simplified singularization
+        if (input.endsWith("ies")) {
+            return input.substring(0, input.length() - 3) + "y";
+        } else if (input.endsWith("es")) {
+            return input.substring(0, input.length() - 2);
+        } else if (input.endsWith("s") && !input.endsWith("ss")) {
+            return input.substring(0, input.length() - 1);
+        }
+        return input;
+    }
+}
+

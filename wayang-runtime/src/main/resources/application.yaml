@@ -4,9 +4,28 @@ quarkus:
     name: silat-control-plane
     version: 1.0.0
   
+  index-dependency:
+    silat-engine:
+      group-id: tech.kayys.silat
+      artifact-id: silat-engine
+    silat-common:
+      group-id: tech.kayys.silat
+      artifact-id: silat-common
+    silat-kafka:
+      group-id: tech.kayys.silat
+      artifact-id: silat-kafka
+    silat-sdk-client:
+      group-id: tech.kayys.silat
+      artifact-id: silat-sdk-client
+  
   # ==================== HTTP Configuration ====================
   http:
     port: 3030
+    # Disable SSL/TLS - IKET gateway handles mTLS
+    insecure-requests: enabled
+    ssl-port: 0
+    test-ssl-port: 0
+    
     cors:
       ~: true
       origins: "*"
@@ -24,7 +43,7 @@ quarkus:
   # ==================== gRPC Configuration ====================
   grpc:
     server:
-      port: 9090
+      port: 9091
       enable-reflection-service: true
   
   # ==================== WebSocket Configuration ====================
@@ -35,6 +54,8 @@ quarkus:
         idle-timeout: 30m
   
   # ==================== Security Configuration ====================
+  devservices:
+    enabled: true
   
   # Keycloak OIDC
   oidc:
@@ -81,12 +102,17 @@ quarkus:
     
     # Reactive datasource
     reactive:
-      url: postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:silat_db}
+      url: postgresql://${DB_HOST:localhost}:${DB_PORT:5434}/${DB_NAME:silat_db}
       max-size: 20
       idle-timeout: 10m
       pool-cleaner-period: 1m
   
+  # Disable regular Hibernate ORM - using Hibernate Reactive instead
   hibernate-orm:
+    active: false
+  
+  # Hibernate Reactive configuration
+  hibernate-reactive:
     database:
       generation: update
     log:
@@ -137,7 +163,7 @@ quarkus:
   redis:
     hosts: ${REDIS_HOST:redis://localhost:6379}
     client-type: standalone
-    password: ${REDIS_PASSWORD:}
+    password: ${REDIS_PASSWORD:silat_redis_pass}
     max-pool-size: 20
   
   # ==================== Observability ====================
@@ -333,12 +359,6 @@ silat:
       timeout: 10000  # ms
       reset-timeout: 30000  # ms
   
-  # API Keys
-  api-key:
-    default-rate-limit: 60  # requests per minute
-    default-expiry-days: 90
-    bcrypt-cost: 12
-  
   # WebSocket
   websocket:
     max-connections-per-tenant: 100
@@ -352,10 +372,24 @@ silat:
     log-sensitive-data: false
     retention-days: 365
 
+# REST Client Configuration
+tech:
+  kayys:
+    wayang:
+      security:
+        service:
+          ConsumerAccessClient/mp-rest/url: ${CONSUMER_ACCESS_URL:http://localhost:8081}
+          ConsumerAccessClient/mp-rest/scope: javax.enterprise.context.Dependent
+
 # ==================== Development Profile ====================
 "%dev":
   quarkus:
     http:
+      port: 3032
+      # Explicitly disable SSL in dev mode to avoid random HTTPS ports
+      ssl-port: 0
+      test-ssl-port: 0
+      insecure-requests: enabled
       cors:
         origins: "http://localhost:3000,http://localhost:5173"
     
@@ -363,15 +397,24 @@ silat:
       level: DEBUG
       category:
         "tech.kayys.silat": TRACE
-    
-    devservices:
-      enabled: false
+        "io.quarkus.arc": TRACE
+        "io.quarkus.vertx.http": TRACE
+        "io.smallrye.reactive.messaging.kafka": TRACE
     
     oidc:
+      enabled: true
       tls:
         verification: none
+    
+    # gRPC uses plain TCP - IKET handles mTLS at gateway level
+    grpc:
+      server:
+        use-separate-server: true
   
   silat:
+    security:
+      mtls:
+        enabled: ${MTLS_ENABLED:false}
     tenant:
       isolation-mode: shared
     
@@ -379,30 +422,13 @@ silat:
       guardrails:
         enabled: false
 
-# ==================== Development Profile ====================
-"%dev":
-  quarkus:
-    http:
-      ssl:
-        certificate:
-          files: ""
-          key-files: ""
-    grpc:
-      server:
-        ssl:
-          certificate: "src/main/resources/certs/server.crt"
-          key: "src/main/resources/certs/server.key"
-          trust-store: "src/main/resources/certs/server.crt"
-
 # ==================== Production Profile ====================
+# Note: TLS/HTTPS disabled - IKET gateway handles mTLS, JWT/OIDC, rate limiting, and AuthZ
+# This avoids double TLS termination, certificate sprawl, and operational overhead
 "%prod":
   quarkus:
     http:
-      ssl-port: 8443
-      ssl:
-        certificate:
-          file: ${SSL_CERT_FILE:/etc/silat/certs/server.crt}
-          key-file: ${SSL_KEY_FILE:/etc/silat/certs/server.key}
+      port: 3030
     
     log:
       level: INFO
@@ -417,11 +443,10 @@ silat:
       tls:
         verification: required
     
+    # gRPC uses plain TCP - IKET handles mTLS at gateway level
     grpc:
       server:
-        ssl:
-          certificate: server.crt
-          key: server.key
+        use-separate-server: true
   
   silat:
     tenant:
@@ -438,12 +463,17 @@ silat:
 "%test":
   quarkus:
     datasource:
-      db-kind: h2
-      jdbc:
-        url: jdbc:h2:mem:test
-    
+      db-kind: postgresql
+      reactive:
+        url: postgresql://${DB_HOST:localhost}:${DB_PORT:5434}/${DB_NAME:silat_db}
+    devservices:
+      enabled: false
+    hibernate-reactive:
+      active: true
+    hibernate-orm:
+      active: false
     log:
-      level: WARN
+      level: INFO
   
   silat:
     agent:

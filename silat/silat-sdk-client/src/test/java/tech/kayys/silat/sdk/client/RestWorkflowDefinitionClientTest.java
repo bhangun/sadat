@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import tech.kayys.silat.model.WorkflowDefinition;
 import tech.kayys.silat.model.WorkflowDefinitionId;
+import tech.kayys.silat.model.TenantId;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import io.vertx.core.json.jackson.DatabindCodec;
@@ -56,7 +57,8 @@ public class RestWorkflowDefinitionClientTest {
         @Test
         void testCreateDefinition() {
                 WorkflowDefinition definition = new WorkflowDefinition(
-                                new WorkflowDefinitionId("def-123"), "Test Workflow", "1.0.0", "Description",
+                                new WorkflowDefinitionId("def-123"), TenantId.of("test-tenant"), "Test Workflow",
+                                "1.0.0", "Description",
                                 Collections.emptyList(), Collections.emptyMap(), Collections.emptyMap(),
                                 null, null, null);
 
@@ -80,7 +82,8 @@ public class RestWorkflowDefinitionClientTest {
         @Test
         void testGetDefinition() {
                 WorkflowDefinition definition = new WorkflowDefinition(
-                                new WorkflowDefinitionId("def-123"), "Test Workflow", "1.0.0", "Description",
+                                new WorkflowDefinitionId("def-123"), TenantId.of("test-tenant"), "Test Workflow",
+                                "1.0.0", "Description",
                                 Collections.emptyList(), Collections.emptyMap(), Collections.emptyMap(),
                                 null, null, null);
 

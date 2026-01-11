@@ -31,6 +31,8 @@
         <module>silat-registry</module>
         <module>silat-grpc</module>
         <module>silat-kafka</module>
+        <module>silat-test-client</module>
+        <module>silat-test-executor</module>
 
     </modules>
 

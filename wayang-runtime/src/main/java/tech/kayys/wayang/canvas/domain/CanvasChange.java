@@ -13,6 +13,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import tech.kayys.wayang.canvas.schema.ChangeOperation;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * Real-time change tracking for collaboration
@@ -38,6 +40,7 @@ public class CanvasChange extends io.quarkus.hibernate.reactive.panache.PanacheE
     @Column(name = "operation")
     public ChangeOperation operation;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "change_data", columnDefinition = "jsonb")
     public Map<String, Object> changeData;
 

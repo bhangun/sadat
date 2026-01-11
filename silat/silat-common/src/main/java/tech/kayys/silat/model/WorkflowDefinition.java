@@ -1,5 +1,6 @@
 package tech.kayys.silat.model;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -17,6 +18,7 @@ import tech.kayys.silat.saga.CompensationPolicy;
  */
 public record WorkflowDefinition(
         WorkflowDefinitionId id,
+        TenantId tenantId,
         String name,
         String version,
         String description,
@@ -29,6 +31,7 @@ public record WorkflowDefinition(
 
     public WorkflowDefinition {
         Objects.requireNonNull(id, "Workflow ID cannot be null");
+        Objects.requireNonNull(tenantId, "Tenant ID cannot be null");
         Objects.requireNonNull(name, "Workflow name cannot be null");
         Objects.requireNonNull(nodes, "Nodes cannot be null");
 
@@ -154,4 +157,116 @@ public record WorkflowDefinition(
                 .map(NodeDefinition::id)
                 .collect(Collectors.toUnmodifiableSet());
     }
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    public static final class Builder {
+        private WorkflowDefinitionId id;
+        private TenantId tenantId;
+        private String name;
+        private String version;
+        private String description;
+        private List<NodeDefinition> nodes = new ArrayList<>();
+        private Map<String, InputDefinition> inputs = new HashMap<>();
+        private Map<String, OutputDefinition> outputs = new HashMap<>();
+        private WorkflowMetadata metadata;
+        private RetryPolicy defaultRetryPolicy;
+        private CompensationPolicy compensationPolicy;
+
+        public Builder id(WorkflowDefinitionId id) {
+            this.id = id;
+            return this;
+        }
+
+        public Builder tenantId(TenantId tenantId) {
+            this.tenantId = tenantId;
+            return this;
+        }
+
+        public Builder name(String name) {
+            this.name = name;
+            return this;
+        }
+
+        public Builder version(String version) {
+            this.version = version;
+            return this;
+        }
+
+        public Builder description(String description) {
+            this.description = description;
+            return this;
+        }
+
+        public Builder nodes(List<NodeDefinition> nodes) {
+            this.nodes = new ArrayList<>(nodes);
+            return this;
+        }
+
+        public Builder addNode(NodeDefinition node) {
+            this.nodes.add(node);
+            return this;
+        }
+
+        public Builder inputs(Map<String, InputDefinition> inputs) {
+            this.inputs = new HashMap<>(inputs);
+            return this;
+        }
+
+        public Builder addInput(String key, InputDefinition value) {
+            this.inputs.put(key, value);
+            return this;
+        }
+
+        public Builder outputs(Map<String, OutputDefinition> outputs) {
+            this.outputs = new HashMap<>(outputs);
+            return this;
+        }
+
+        public Builder addOutput(String key, OutputDefinition value) {
+            this.outputs.put(key, value);
+            return this;
+        }
+
+        public Builder metadata(WorkflowMetadata metadata) {
+            this.metadata = metadata;
+            return this;
+        }
+
+        public Builder defaultRetryPolicy(RetryPolicy defaultRetryPolicy) {
+            this.defaultRetryPolicy = defaultRetryPolicy;
+            return this;
+        }
+
+        public Builder compensationPolicy(CompensationPolicy compensationPolicy) {
+            this.compensationPolicy = compensationPolicy;
+            return this;
+        }
+
+        public WorkflowDefinition build() {
+            return new WorkflowDefinition(
+                    id,
+                    tenantId,
+                    name,
+                    version,
+                    description,
+                    nodes,
+                    inputs,
+                    outputs,
+                    metadata,
+                    defaultRetryPolicy,
+                    compensationPolicy);
+        }
+
+        public WorkflowDefinition buildAndValidate() {
+            WorkflowDefinition workflowDefinition = build();
+            if (!workflowDefinition.isValid()) {
+                throw new IllegalArgumentException("Invalid workflow definition");
+            }
+            return workflowDefinition;
+        }
+    }
+
 }

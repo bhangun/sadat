@@ -1,0 +1,1391 @@
+}
+
+// src/main/java/com/example/generator/testing/SecurityTestGenerator.java
+package tech.kayys.wayang.mcp.generator.testing;
+
+import tech.kayys.wayang.mcp.generator.ApiOperation;
+import tech.kayys.wayang.mcp.generator.ApiSpecification;
+import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.util.ArrayList;
+import java.util.List;
+
+@ApplicationScoped
+public class SecurityTestGenerator {
+    
+    public SecurityTestSuite generateSecurityTests(ApiSpecification apiSpec, TestConfiguration config) {
+        Log.info("Generating security tests for API: {}", apiSpec.getTitle());
+        
+        SecurityTestSuite.Builder suiteBuilder = SecurityTestSuite.builder()
+            .withName(apiSpec.getTitle() + " Security Tests")
+            .withDescription("OWASP API security tests");
+        
+        // Generate OWASP API Security tests
+        generateOwaspApiSecurityTests(apiSpec, suiteBuilder);
+        
+        // Generate authentication tests
+        generateAuthenticationTests(apiSpec, suiteBuilder);
+        
+        // Generate authorization tests
+        generateAuthorizationTests(apiSpec, suiteBuilder);
+        
+        // Generate input validation tests
+        generateInputValidationTests(apiSpec, suiteBuilder);
+        
+        return suiteBuilder.build();
+    }
+    
+    private void generateOwaspApiSecurityTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        // OWASP API Security Top 10 tests
+        
+        // API1: Broken Object Level Authorization
+        generateBrokenObjectLevelAuthTests(apiSpec, builder);
+        
+        // API2: Broken User Authentication
+        generateBrokenUserAuthTests(apiSpec, builder);
+        
+        // API3: Excessive Data Exposure
+        generateExcessiveDataExposureTests(apiSpec, builder);
+        
+        // API4: Lack of Resources & Rate Limiting
+        generateRateLimitingTests(apiSpec, builder);
+        
+        // API5: Broken Function Level Authorization
+        generateBrokenFunctionLevelAuthTests(apiSpec, builder);
+        
+        // API6: Mass Assignment
+        generateMassAssignmentTests(apiSpec, builder);
+        
+        // API7: Security Misconfiguration
+        generateSecurityMisconfigurationTests(apiSpec, builder);
+        
+        // API8: Injection
+        generateInjectionTests(apiSpec, builder);
+        
+        // API9: Improper Assets Management
+        generateImproperAssetsManagementTests(apiSpec, builder);
+        
+        // API10: Insufficient Logging & Monitoring
+        generateLoggingMonitoringTests(apiSpec, builder);
+    }
+    
+    private void generateBrokenObjectLevelAuthTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        for (ApiOperation operation : apiSpec.getOperations()) {
+            if (operation.getPath().contains("{id}") || operation.getPath().contains("{userId}")) {
+                String testCode = generateBrokenObjectLevelAuthTestCode(operation);
+                
+                SecurityTest test = SecurityTest.builder()
+                    .withName("broken_object_level_auth_" + operation.getOperationId())
+                    .withDescription("OWASP API1: Test for broken object level authorization")
+                    .withCategory("OWASP-API1")
+                    .withTestCode(testCode)
+                    .withOperation(operation)
+                    .build();
+                
+                builder.addTest(test);
+            }
+        }
+    }
+    
+    private void generateBrokenUserAuthTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        for (ApiOperation operation : apiSpec.getOperations()) {
+            String testCode = generateBrokenUserAuthTestCode(operation);
+            
+            SecurityTest test = SecurityTest.builder()
+                .withName("broken_user_auth_" + operation.getOperationId())
+                .withDescription("OWASP API2: Test for broken user authentication")
+                .withCategory("OWASP-API2")
+                .withTestCode(testCode)
+                .withOperation(operation)
+                .build();
+            
+            builder.addTest(test);
+        }
+    }
+    
+    private void generateRateLimitingTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        for (ApiOperation operation : apiSpec.getOperations()) {
+            String testCode = generateRateLimitingTestCode(operation);
+            
+            SecurityTest test = SecurityTest.builder()
+                .withName("rate_limiting_" + operation.getOperationId())
+                .withDescription("OWASP API4: Test for lack of rate limiting")
+                .withCategory("OWASP-API4")
+                .withTestCode(testCode)
+                .withOperation(operation)
+                .build();
+            
+            builder.addTest(test);
+        }
+    }
+    
+    private void generateInjectionTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        for (ApiOperation operation : apiSpec.getOperations()) {
+            if (operation.getParameters().stream().anyMatch(p -> "body".equals(p.getIn()) || "query".equals(p.getIn()))) {
+                String testCode = generateInjectionTestCode(operation);
+                
+                SecurityTest test = SecurityTest.builder()
+                    .withName("injection_" + operation.getOperationId())
+                    .withDescription("OWASP API8: Test for injection vulnerabilities")
+                    .withCategory("OWASP-API8")
+                    .withTestCode(testCode)
+                    .withOperation(operation)
+                    .build();
+                
+                builder.addTest(test);
+            }
+        }
+    }
+    
+    private String generateBrokenObjectLevelAuthTestCode(ApiOperation operation) {
+        return String.format("""
+            @Test
+            public void test_%s_broken_object_level_authorization() {
+                // Test accessing other users' objects
+                String[] testIds = {"1", "2", "999", "admin", "../admin", "null"};
+                
+                for (String testId : testIds) {
+                    Response response = given()
+                        .baseUri(baseUrl)
+                        .header("Authorization", "Bearer " + regularUserToken)
+                        .when()
+                        .%s("%s")
+                        .then()
+                        .extract()
+                        .response();
+                    
+                    // Should not return 200 for other users' resources
+                    if (!testId.equals(currentUserId)) {
+                        assertThat(response.getStatusCode())
+                            .as("Should not allow access to other users' resources")
+                            .isNotEqualTo(200);
+                    }
+                }
+            }
+            """,
+            operation.getOperationId(),
+            operation.getMethod().toLowerCase(),
+            operation.getPath().replace("{id}", "\" + testId + \"")
+        );
+    }
+    
+    private String generateBrokenUserAuthTestCode(ApiOperation operation) {
+        return String.format("""
+            @Test
+            public void test_%s_broken_user_authentication() {
+                // Test with invalid tokens
+                String[] invalidTokens = {
+                    "", 
+                    "invalid-token", 
+                    "Bearer invalid", 
+                    "Bearer expired-token",
+                    "Bearer " + generateExpiredToken()
+                };
+                
+                for (String token : invalidTokens) {
+                    Response response = given()
+                        .baseUri(baseUrl)
+                        .header("Authorization", token)
+                        .when()
+                        .%s("%s")
+                        .then()
+                        .extract()
+                        .response();
+                    
+                    // Should return 401 for invalid authentication
+                    assertThat(response.getStatusCode())
+                        .as("Should return 401 for invalid token: " + token)
+                        .isEqualTo(401);
+                }
+                
+                // Test without authentication header
+                given()
+                    .baseUri(baseUrl)
+                    .when()
+                    .%s("%s")
+                    .then()
+                    .statusCode(401);
+            }
+            """,
+            operation.getOperationId(),
+            operation.getMethod().toLowerCase(),
+            operation.getPath(),
+            operation.getMethod().toLowerCase(),
+            operation.getPath()
+        );
+    }
+    
+    private String generateRateLimitingTestCode(ApiOperation operation) {
+        return String.format("""
+            @Test
+            public void test_%s_rate_limiting() {
+                // Test rate limiting by making multiple requests
+                int requestCount = 100;
+                int rateLimitedResponses = 0;
+                
+                for (int i = 0; i < requestCount; i++) {
+                    Response response = given()
+                        .baseUri(baseUrl)
+                        .header("Authorization", "Bearer " + validToken)
+                        .when()
+                        .%s("%s")
+                        .then()
+                        .extract()
+                        .response();
+                    
+                    if (response.getStatusCode() == 429) {
+                        rateLimitedResponses++;
+                    }
+                    
+                    // Small delay between requests
+                    try { Thread.sleep(10); } catch (InterruptedException e) {}
+                }
+                
+                // Should have some rate limiting in place
+                assertThat(rateLimitedResponses)
+                    .as("Should have rate limiting implemented")
+                    .isGreaterThan(0);
+            }
+            """,
+            operation.getOperationId(),
+            operation.getMethod().toLowerCase(),
+            operation.getPath()
+        );
+    }
+    
+    private String generateInjectionTestCode(ApiOperation operation) {
+        return String.format("""
+            @Test
+            public void test_%s_injection_vulnerabilities() {
+                // SQL Injection payloads
+                String[] sqlPayloads = {
+                    "'; DROP TABLE users; --",
+                    "' OR '1'='1",
+                    "1' UNION SELECT * FROM users --",
+                    "'; INSERT INTO users VALUES ('hacker', 'pass'); --"
+                };
+                
+                // NoSQL Injection payloads
+                String[] noSqlPayloads = {
+                    "{\\"$ne\\": null}",
+                    "{\\"$gt\\": \\"\\"}",
+                    "{\\"$where\\": \\"function() { return true; }\\"}"
+                };
+                
+                // XSS payloads
+                String[] xssPayloads = {
+                    "<script>alert('XSS')</script>",
+                    "javascript:alert('XSS')",
+                    "<img src=x onerror=alert('XSS')>"
+                };
+                
+                List<String> allPayloads = new ArrayList<>();
+                allPayloads.addAll(Arrays.asList(sqlPayloads));
+                allPayloads.addAll(Arrays.asList(noSqlPayloads));
+                allPayloads.addAll(Arrays.asList(xssPayloads));
+                
+                for (String payload : allPayloads) {
+                    Response response = given()
+                        .baseUri(baseUrl)
+                        .header("Authorization", "Bearer " + validToken)
+                        .header("Content-Type", "application/json")
+                        %s
+                        .when()
+                        .%s("%s")
+                        .then()
+                        .extract()
+                        .response();
+                    
+                    // Should not return 200 with error messages that indicate injection
+                    String responseBody = response.getBody().asString().toLowerCase();
+                    assertThat(responseBody)
+                        .as("Should not contain SQL error messages")
+                        .doesNotContain("sql", "mysql", "postgres", "mongodb", "syntax error");
+                    
+                    assertThat(response.getStatusCode())
+                        .as("Should handle injection attempts gracefully")
+                        .isIn(400, 422, 500); // Should return error, not process injection
+                }
+            }
+            """,
+            operation.getOperationId(),
+            generateInjectionRequestBody(operation),
+            operation.getMethod().toLowerCase(),
+            operation.getPath()
+        );
+    }
+    
+    private String generateInjectionRequestBody(ApiOperation operation) {
+        if (operation.getParameters().stream().anyMatch(p -> "body".equals(p.getIn()))) {
+            return ".body(\"{\\\\"malicious\\\": \\\"\" + payload + \"\\\"}\")";
+        } else if (operation.getParameters().stream().anyMatch(p -> "query".equals(p.getIn()))) {
+            return ".queryParam(\"test\", payload)";
+        }
+        return "";
+    }
+    
+    private void generateAuthenticationTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        // Generate comprehensive authentication tests
+        String testCode = """
+            @Test
+            public void test_jwt_token_validation() {
+                // Test with malformed JWT
+                String malformedJwt = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.malformed.signature";
+                
+                given()
+                    .baseUri(baseUrl)
+                    .header("Authorization", "Bearer " + malformedJwt)
+                    .when()
+                    .get("/protected-endpoint")
+                    .then()
+                    .statusCode(401);
+            }
+            
+            @Test
+            public void test_token_expiration() {
+                // Test with expired token
+                String expiredToken = generateExpiredToken();
+                
+                given()
+                    .baseUri(baseUrl)
+                    .header("Authorization", "Bearer " + expiredToken)
+                    .when()
+                    .get("/protected-endpoint")
+                    .then()
+                    .statusCode(401);
+            }
+            """;
+        
+        SecurityTest test = SecurityTest.builder()
+            .withName("comprehensive_authentication_tests")
+            .withDescription("Comprehensive authentication security tests")
+            .withCategory("Authentication")
+            .withTestCode(testCode)
+            .build();
+        
+        builder.addTest(test);
+    }
+    
+    private void generateAuthorizationTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        String testCode = """
+            @Test
+            public void test_role_based_access_control() {
+                // Test different user roles
+                Map<String, String> roleTokens = Map.of(
+                    "admin", adminToken,
+                    "user", userToken,
+                    "guest", guestToken
+                );
+                
+                for (Map.Entry<String, String> entry : roleTokens.entrySet()) {
+                    String role = entry.getKey();
+                    String token = entry.getValue();
+                    
+                    // Test admin-only endpoints
+                    Response adminResponse = given()
+                        .baseUri(baseUrl)
+                        .header("Authorization", "Bearer " + token)
+                        .when()
+                        .get("/admin/users")
+                        .then()
+                        .extract()
+                        .response();
+                    
+                    if ("admin".equals(role)) {
+                        assertThat(adminResponse.getStatusCode()).isEqualTo(200);
+                    } else {
+                        assertThat(adminResponse.getStatusCode()).isEqualTo(403);
+                    }
+                }
+            }
+            """;
+        
+        SecurityTest test = SecurityTest.builder()
+            .withName("role_based_access_control_tests")
+            .withDescription("Role-based access control tests")
+            .withCategory("Authorization")
+            .withTestCode(testCode)
+            .build();
+        
+        builder.addTest(test);
+    }
+    
+    private void generateInputValidationTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        String testCode = """
+            @Test
+            public void test_input_validation_boundaries() {
+                // Test boundary values
+                String[] boundaryInputs = {
+                    "", // Empty string
+                    "a".repeat(10000), // Very long string
+                    "\\u0000", // Null byte
+                    "\\n\\r\\t", // Control characters
+                    "../../etc/passwd", // Path traversal
+                    "C:\\\\Windows\\\\System32", // Windows path traversal
+                    "<?xml version=\\"1.0\\"?><!DOCTYPE root [<!ENTITY test SYSTEM 'file:///etc/passwd'>]><root>&test;</root>" // XXE
+                };
+                
+                for (String input : boundaryInputs) {
+                    Response response = given()
+                        .baseUri(baseUrl)
+                        .header("Content-Type", "application/json")
+                        .body("{\\"data\\": \\"" + input.replace("\\"", "\\\\\\"") + "\\"}")
+                        .when()
+                        .post("/api/data")
+                        .then()
+                        .extract()
+                        .response();
+                    
+                    // Should validate input and return appropriate error
+                    assertThat(response.getStatusCode())
+                        .as("Should validate malicious input: " + input)
+                        .isIn(400, 422);
+                }
+            }
+            """;
+        
+        SecurityTest test = SecurityTest.builder()
+            .withName("input_validation_boundary_tests")
+            .withDescription("Input validation boundary tests")
+            .withCategory("Input Validation")
+            .withTestCode(testCode)
+            .build();
+        
+        builder.addTest(test);
+    }
+    
+    // Add placeholder methods for other OWASP API tests
+    private void generateExcessiveDataExposureTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        // Implementation for API3: Excessive Data Exposure
+    }
+    
+    private void generateBrokenFunctionLevelAuthTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        // Implementation for API5: Broken Function Level Authorization
+    }
+    
+    private void generateMassAssignmentTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        // Implementation for API6: Mass Assignment
+    }
+    
+    private void generateSecurityMisconfigurationTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        // Implementation for API7: Security Misconfiguration
+    }
+    
+    private void generateImproperAssetsManagementTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        // Implementation for API9: Improper Assets Management
+    }
+    
+    private void generateLoggingMonitoringTests(ApiSpecification apiSpec, SecurityTestSuite.Builder builder) {
+        // Implementation for API10: Insufficient Logging & Monitoring
+    }
+    
+    public TestCategoryResult executeTests(SecurityTestSuite testSuite, TestExecutionContext context) {
+        Log.info("Executing security tests: {}", testSuite.getName());
+        
+        TestCategoryResult.Builder resultBuilder = TestCategoryResult.builder()
+            .withCategory("security")
+            .withStartTime(System.currentTimeMillis());
+        
+        int passed = 0;
+        int failed = 0;
+        List<String> failures = new ArrayList<>();
+        List<String> securityIssues = new ArrayList<>();
+        
+        for (SecurityTest test : testSuite.getTests()) {
+            try {
+                SecurityTestResult result = executeSecurityTest(test, context);
+                if (result.isSuccess()) {
+                    passed++;
+                    if (result.hasSecurityIssues()) {
+                        securityIssues.addAll(result.getSecurityIssues());
+                    }
+                } else {
+                    failed++;
+                    failures.add(test.getName() + ": " + result.getFailureReason());
+                    securityIssues.addAll(result.getSecurityIssues());
+                }
+            } catch (Exception e) {
+                failed++;
+                failures.add(test.getName() + ": " + e.getMessage());
+            }
+        }
+        
+        TestCategoryResult result = resultBuilder
+            .withEndTime(System.currentTimeMillis())
+            .withTestsRun(passed + failed)
+            .withTestsPassed(passed)
+            .withTestsFailed(failed)
+            .withFailures(failures)
+            .withSuccess(failed == 0 && securityIssues.isEmpty())
+            .build();
+        
+        // Add security issues to result
+        result.addMetadata("securityIssues", securityIssues);
+        result.addMetadata("securityScore", calculateSecurityScore(passed, failed, securityIssues.size()));
+        
+        return result;
+    }
+    
+    private SecurityTestResult executeSecurityTest(SecurityTest test, TestExecutionContext context) {
+        Log.debug("Executing security test: {}", test.getName());
+        
+        // Simulate security test execution
+        boolean hasVulnerability = Math.random() < 0.15; // 15% chance of finding vulnerability
+        
+        SecurityTestResult.Builder resultBuilder = SecurityTestResult.builder()
+            .withTestName(test.getName())
+            .withCategory(test.getCategory())
+            .withSuccess(!hasVulnerability);
+        
+        if (hasVulnerability) {
+            resultBuilder.addSecurityIssue("Potential " + test.getCategory() + " vulnerability detected in " + test.getName());
+        }
+        
+        return resultBuilder.build();
+    }
+    
+    private double calculateSecurityScore(int passed, int failed, int securityIssues) {
+        int total = passed + failed;
+        if (total == 0) return 100.0;
+        
+        double baseScore = (double) passed / total * 100;
+        double penalty = securityIssues * 5; // 5 point penalty per security issue
+        
+        return Math.max(0, baseScore - penalty);
+    }
+}
+
+// src/main/java/com/example/generator/testing/TestConfiguration.java
+package tech.kayys.wayang.mcp.generator.testing;
+
+import java.util.List;
+
+public class TestConfiguration {
+    
+    private boolean enableContractTesting = true;
+    private boolean enableLoadTesting = true;
+    private boolean enableSecurityTesting = true;
+    private boolean enableIntegrationTesting = true;
+    private boolean enableChaosTesting = false;
+    
+    // Contract testing config
+    private List<String> contractTestFramework = List.of("pact", "openapi");
+    
+    // Load testing config
+    private List<String> loadTestFramework = List.of("jmeter", "k6");
+    private int loadTestUsers = 10;
+    private int loadTestDurationSeconds = 60;
+    private int loadTestRampUpSeconds = 10;
+    
+    // Security testing config
+    private List<String> securityTestCategories = List.of("OWASP-API", "Authentication", "Authorization");
+    private boolean enablePenetrationTesting = false;
+    
+    // Integration testing config
+    private String testEnvironment = "staging";
+    private boolean enableDatabaseTesting = true;
+    private boolean enableExternalServiceTesting = true;
+    
+    // Chaos testing config
+    private List<String> chaosExperiments = List.of("network-latency", "service-failure", "resource-exhaustion");
+    
+    // Getters and setters
+    public boolean isEnableContractTesting() { return enableContractTesting; }
+    public void setEnableContractTesting(boolean enableContractTesting) { this.enableContractTesting = enableContractTesting; }
+    
+    public boolean isEnableLoadTesting() { return enableLoadTesting; }
+    public void setEnableLoadTesting(boolean enableLoadTesting) { this.enableLoadTesting = enableLoadTesting; }
+    
+    public boolean isEnableSecurityTesting() { return enableSecurityTesting; }
+    public void setEnableSecurityTesting(boolean enableSecurityTesting) { this.enableSecurityTesting = enableSecurityTesting; }
+    
+    public boolean isEnableIntegrationTesting() { return enableIntegrationTesting; }
+    public void setEnableIntegrationTesting(boolean enableIntegrationTesting) { this.enableIntegrationTesting = enableIntegrationTesting; }
+    
+    public boolean isEnableChaosTesting() { return enableChaosTesting; }
+    public void setEnableChaosTesting(boolean enableChaosTesting) { this.enableChaosTesting = enableChaosTesting; }
+    
+    public List<String> getContractTestFramework() { return contractTestFramework; }
+    public void setContractTestFramework(List<String> contractTestFramework) { this.contractTestFramework = contractTestFramework; }
+    
+    public List<String> getLoadTestFramework() { return loadTestFramework; }
+    public void setLoadTestFramework(List<String> loadTestFramework) { this.loadTestFramework = loadTestFramework; }
+    
+    public int getLoadTestUsers() { return loadTestUsers; }
+    public void setLoadTestUsers(int loadTestUsers) { this.loadTestUsers = loadTestUsers; }
+    
+    public int getLoadTestDurationSeconds() { return loadTestDurationSeconds; }
+    public void setLoadTestDurationSeconds(int loadTestDurationSeconds) { this.loadTestDurationSeconds = loadTestDurationSeconds; }
+    
+    public int getLoadTestRampUpSeconds() { return loadTestRampUpSeconds; }
+    public void setLoadTestRampUpSeconds(int loadTestRampUpSeconds) { this.loadTestRampUpSeconds = loadTestRampUpSeconds; }
+    
+    public List<String> getSecurityTestCategories() { return securityTestCategories; }
+    public void setSecurityTestCategories(List<String> securityTestCategories) { this.securityTestCategories = securityTestCategories; }
+    
+    public boolean isEnablePenetrationTesting() { return enablePenetrationTesting; }
+    public void setEnablePenetrationTesting(boolean enablePenetrationTesting) { this.enablePenetrationTesting = enablePenetrationTesting; }
+    
+    public String getTestEnvironment() { return testEnvironment; }
+    public void setTestEnvironment(String testEnvironment) { this.testEnvironment = testEnvironment; }
+    
+    public boolean isEnableDatabaseTesting() { return enableDatabaseTesting; }
+    public void setEnableDatabaseTesting(boolean enableDatabaseTesting) { this.enableDatabaseTesting = enableDatabaseTesting; }
+    
+    public boolean isEnableExternalServiceTesting() { return enableExternalServiceTesting; }
+    public void setEnableExternalServiceTesting(boolean enableExternalServiceTesting) { this.enableExternalServiceTesting = enableExternalServiceTesting; }
+    
+    public List<String> getChaosExperiments() { return chaosExperiments; }
+    public void setChaosExperiments(List<String> chaosExperiments) { this.chaosExperiments = chaosExperiments; }
+}// src/main/java/com/example/generator/testing/TestFrameworkManager.java
+package tech.kayys.wayang.mcp.generator.testing;
+
+import tech.kayys.wayang.mcp.generator.ApiSpecification;
+import tech.kayys.wayang.mcp.generator.McpServerModel;
+import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+
+@ApplicationScoped
+public class TestFrameworkManager {
+    
+    @Inject
+    ContractTestGenerator contractGenerator;
+    
+    @Inject
+    LoadTestGenerator loadTestGenerator;
+    
+    @Inject
+    SecurityTestGenerator securityGenerator;
+    
+    @Inject
+    IntegrationTestGenerator integrationGenerator;
+    
+    @Inject
+    ChaosTestGenerator chaosGenerator;
+    
+    public TestSuite generateComprehensiveTestSuite(McpServerModel serverModel, 
+                                                   ApiSpecification apiSpec,
+                                                   TestConfiguration config) {
+        Log.info("Generating comprehensive test suite for: {}", serverModel.getTitle());
+        
+        TestSuite.Builder suiteBuilder = TestSuite.builder()
+            .withName(serverModel.getTitle() + " Test Suite")
+            .withDescription("Comprehensive test suite for " + serverModel.getTitle())
+            .withConfiguration(config);
+        
+        // Generate different types of tests based on configuration
+        if (config.isEnableContractTesting()) {
+            ContractTestSuite contractTests = contractGenerator.generateContractTests(apiSpec, config);
+            suiteBuilder.addTestSuite("contract", contractTests);
+        }
+        
+        if (config.isEnableLoadTesting()) {
+            LoadTestSuite loadTests = loadTestGenerator.generateLoadTests(apiSpec, config);
+            suiteBuilder.addTestSuite("load", loadTests);
+        }
+        
+        if (config.isEnableSecurityTesting()) {
+            SecurityTestSuite securityTests = securityGenerator.generateSecurityTests(apiSpec, config);
+            suiteBuilder.addTestSuite("security", securityTests);
+        }
+        
+        if (config.isEnableIntegrationTesting()) {
+            IntegrationTestSuite integrationTests = integrationGenerator.generateIntegrationTests(serverModel, config);
+            suiteBuilder.addTestSuite("integration", integrationTests);
+        }
+        
+        if (config.isEnableChaosTesting()) {
+            ChaosTestSuite chaosTests = chaosGenerator.generateChaosTests(apiSpec, config);
+            suiteBuilder.addTestSuite("chaos", chaosTests);
+        }
+        
+        TestSuite suite = suiteBuilder.build();
+        Log.info("Generated test suite with {} test categories and {} total tests", 
+            suite.getTestSuites().size(), suite.getTotalTestCount());
+        
+        return suite;
+    }
+    
+    public CompletableFuture<TestExecutionResult> executeTestSuite(TestSuite testSuite, 
+                                                                  TestExecutionContext context) {
+        Log.info("Executing test suite: {}", testSuite.getName());
+        
+        return CompletableFuture.supplyAsync(() -> {
+            TestExecutionResult.Builder resultBuilder = TestExecutionResult.builder()
+                .withTestSuite(testSuite)
+                .withExecutionContext(context)
+                .withStartTime(System.currentTimeMillis());
+            
+            try {
+                for (Map.Entry<String, Object> entry : testSuite.getTestSuites().entrySet()) {
+                    String category = entry.getKey();
+                    Object tests = entry.getValue();
+                    
+                    Log.info("Executing {} tests", category);
+                    TestCategoryResult categoryResult = executeTestCategory(category, tests, context);
+                    resultBuilder.addCategoryResult(category, categoryResult);
+                }
+                
+                return resultBuilder
+                    .withEndTime(System.currentTimeMillis())
+                    .withSuccess(true)
+                    .build();
+                
+            } catch (Exception e) {
+                Log.error("Test suite execution failed", e);
+                return resultBuilder
+                    .withEndTime(System.currentTimeMillis())
+                    .withSuccess(false)
+                    .withError(e.getMessage())
+                    .build();
+            }
+        });
+    }
+    
+    private TestCategoryResult executeTestCategory(String category, Object tests, TestExecutionContext context) {
+        // Delegate to specific test executors based on category
+        return switch (category) {
+            case "contract" -> executeContractTests((ContractTestSuite) tests, context);
+            case "load" -> executeLoadTests((LoadTestSuite) tests, context);
+            case "security" -> executeSecurityTests((SecurityTestSuite) tests, context);
+            case "integration" -> executeIntegrationTests((IntegrationTestSuite) tests, context);
+            case "chaos" -> executeChaosTests((ChaosTestSuite) tests, context);
+            default -> TestCategoryResult.builder()
+                .withCategory(category)
+                .withSuccess(false)
+                .withMessage("Unknown test category: " + category)
+                .build();
+        };
+    }
+    
+    private TestCategoryResult executeContractTests(ContractTestSuite tests, TestExecutionContext context) {
+        return contractGenerator.executeTests(tests, context);
+    }
+    
+    private TestCategoryResult executeLoadTests(LoadTestSuite tests, TestExecutionContext context) {
+        return loadTestGenerator.executeTests(tests, context);
+    }
+    
+    private TestCategoryResult executeSecurityTests(SecurityTestSuite tests, TestExecutionContext context) {
+        return securityGenerator.executeTests(tests, context);
+    }
+    
+    private TestCategoryResult executeIntegrationTests(IntegrationTestSuite tests, TestExecutionContext context) {
+        return integrationGenerator.executeTests(tests, context);
+    }
+    
+    private TestCategoryResult executeChaosTests(ChaosTestSuite tests, TestExecutionContext context) {
+        return chaosGenerator.executeTests(tests, context);
+    }
+}
+
+// src/main/java/com/example/generator/testing/ContractTestGenerator.java
+package tech.kayys.wayang.mcp.generator.testing;
+
+import tech.kayys.wayang.mcp.generator.ApiOperation;
+import tech.kayys.wayang.mcp.generator.ApiSpecification;
+import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.util.*;
+
+@ApplicationScoped
+public class ContractTestGenerator {
+    
+    public ContractTestSuite generateContractTests(ApiSpecification apiSpec, TestConfiguration config) {
+        Log.info("Generating contract tests for API: {}", apiSpec.getTitle());
+        
+        ContractTestSuite.Builder suiteBuilder = ContractTestSuite.builder()
+            .withName(apiSpec.getTitle() + " Contract Tests")
+            .withDescription("OpenAPI contract validation tests");
+        
+        // Generate Pact consumer tests
+        if (config.getContractTestFramework().contains("pact")) {
+            generatePactConsumerTests(apiSpec, suiteBuilder);
+        }
+        
+        // Generate OpenAPI validation tests
+        if (config.getContractTestFramework().contains("openapi")) {
+            generateOpenApiValidationTests(apiSpec, suiteBuilder);
+        }
+        
+        // Generate schema validation tests
+        generateSchemaValidationTests(apiSpec, suiteBuilder);
+        
+        return suiteBuilder.build();
+    }
+    
+    private void generatePactConsumerTests(ApiSpecification apiSpec, ContractTestSuite.Builder builder) {
+        for (ApiOperation operation : apiSpec.getOperations()) {
+            String testName = "pact_consumer_" + operation.getOperationId();
+            
+            String testCode = generatePactConsumerTestCode(operation, apiSpec);
+            
+            ContractTest test = ContractTest.builder()
+                .withName(testName)
+                .withDescription("Pact consumer test for " + operation.getOperationId())
+                .withFramework("pact")
+                .withTestCode(testCode)
+                .withOperation(operation)
+                .build();
+            
+            builder.addTest(test);
+        }
+    }
+    
+    private void generateOpenApiValidationTests(ApiSpecification apiSpec, ContractTestSuite.Builder builder) {
+        for (ApiOperation operation : apiSpec.getOperations()) {
+            String testName = "openapi_validation_" + operation.getOperationId();
+            
+            String testCode = generateOpenApiValidationTestCode(operation, apiSpec);
+            
+            ContractTest test = ContractTest.builder()
+                .withName(testName)
+                .withDescription("OpenAPI validation test for " + operation.getOperationId())
+                .withFramework("openapi-validator")
+                .withTestCode(testCode)
+                .withOperation(operation)
+                .build();
+            
+            builder.addTest(test);
+        }
+    }
+    
+    private void generateSchemaValidationTests(ApiSpecification apiSpec, ContractTestSuite.Builder builder) {
+        for (ApiOperation operation : apiSpec.getOperations()) {
+            String testName = "schema_validation_" + operation.getOperationId();
+            
+            String testCode = generateSchemaValidationTestCode(operation, apiSpec);
+            
+            ContractTest test = ContractTest.builder()
+                .withName(testName)
+                .withDescription("Schema validation test for " + operation.getOperationId())
+                .withFramework("json-schema")
+                .withTestCode(testCode)
+                .withOperation(operation)
+                .build();
+            
+            builder.addTest(test);
+        }
+    }
+    
+    private String generatePactConsumerTestCode(ApiOperation operation, ApiSpecification apiSpec) {
+        return String.format("""
+            @Test
+            @PactTestFor(providerName = "%s")
+            public void test_%s_contract(MockServer mockServer) {
+                // Given
+                String baseUrl = mockServer.getUrl();
+                RestTemplate restTemplate = new RestTemplate();
+                
+                // When
+                ResponseEntity<String> response = restTemplate.exchange(
+                    baseUrl + "%s",
+                    HttpMethod.%s,
+                    createRequestEntity(),
+                    String.class
+                );
+                
+                // Then
+                assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+                assertThat(response.getBody()).isNotNull();
+            }
+            
+            private HttpEntity<?> createRequestEntity() {
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                %s
+                return new HttpEntity<>(requestBody, headers);
+            }
+            """, 
+            apiSpec.getTitle().replaceAll("[^a-zA-Z0-9]", "_"),
+            operation.getOperationId(),
+            operation.getPath(),
+            operation.getMethod(),
+            generateRequestBodyCode(operation)
+        );
+    }
+    
+    private String generateOpenApiValidationTestCode(ApiOperation operation, ApiSpecification apiSpec) {
+        return String.format("""
+            @Test
+            public void test_%s_openapi_validation() {
+                // Given
+                OpenApiValidator validator = OpenApiValidator.createFor("%s");
+                
+                // When
+                ValidatableResponse response = given()
+                    .spec(validator.createRequestSpecification())
+                    %s
+                    .when()
+                    .%s("%s")
+                    .then()
+                    .spec(validator.createResponseSpecification());
+                
+                // Then
+                response.statusCode(anyOf(equalTo(200), equalTo(201), equalTo(204)));
+            }
+            """,
+            operation.getOperationId(),
+            apiSpec.getBaseUrl() + "/openapi.json",
+            generateRequestSpecCode(operation),
+            operation.getMethod().toLowerCase(),
+            operation.getPath()
+        );
+    }
+    
+    private String generateSchemaValidationTestCode(ApiOperation operation, ApiSpecification apiSpec) {
+        return String.format("""
+            @Test
+            public void test_%s_response_schema() throws Exception {
+                // Given
+                JsonSchema schema = JsonSchemaFactory.getInstance()
+                    .getSchema(getClass().getResourceAsStream("/schemas/%s-response.json"));
+                
+                // When
+                String response = given()
+                    .baseUri("%s")
+                    %s
+                    .when()
+                    .%s("%s")
+                    .then()
+                    .statusCode(200)
+                    .extract()
+                    .asString();
+                
+                // Then
+                JsonNode responseNode = objectMapper.readTree(response);
+                Set<ValidationMessage> errors = schema.validate(responseNode);
+                assertThat(errors).isEmpty();
+            }
+            """,
+            operation.getOperationId(),
+            operation.getOperationId(),
+            apiSpec.getBaseUrl(),
+            generateRequestSpecCode(operation),
+            operation.getMethod().toLowerCase(),
+            operation.getPath()
+        );
+    }
+    
+    private String generateRequestBodyCode(ApiOperation operation) {
+        if (operation.getParameters().stream().anyMatch(p -> "body".equals(p.getIn()))) {
+            return """
+                String requestBody = "{\\"example\\": \\"data\\"}";
+                """;
+        }
+        return "String requestBody = null;";
+    }
+    
+    private String generateRequestSpecCode(ApiOperation operation) {
+        StringBuilder spec = new StringBuilder();
+        
+        // Add headers
+        operation.getParameters().stream()
+            .filter(p -> "header".equals(p.getIn()))
+            .forEach(p -> spec.append(String.format(".header(\"%s\", \"test-value\")\n                    ", p.getName())));
+        
+        // Add query parameters
+        operation.getParameters().stream()
+            .filter(p -> "query".equals(p.getIn()))
+            .forEach(p -> spec.append(String.format(".queryParam(\"%s\", \"test-value\")\n                    ", p.getName())));
+        
+        // Add body
+        if (operation.getParameters().stream().anyMatch(p -> "body".equals(p.getIn()))) {
+            spec.append(".body(\"{\\\"example\\\": \\\"data\\\"}\")");
+        }
+        
+        return spec.toString();
+    }
+    
+    public TestCategoryResult executeTests(ContractTestSuite testSuite, TestExecutionContext context) {
+        Log.info("Executing contract tests: {}", testSuite.getName());
+        
+        TestCategoryResult.Builder resultBuilder = TestCategoryResult.builder()
+            .withCategory("contract")
+            .withStartTime(System.currentTimeMillis());
+        
+        int passed = 0;
+        int failed = 0;
+        List<String> failures = new ArrayList<>();
+        
+        for (ContractTest test : testSuite.getTests()) {
+            try {
+                boolean success = executeContractTest(test, context);
+                if (success) {
+                    passed++;
+                } else {
+                    failed++;
+                    failures.add(test.getName() + ": Contract validation failed");
+                }
+            } catch (Exception e) {
+                failed++;
+                failures.add(test.getName() + ": " + e.getMessage());
+            }
+        }
+        
+        return resultBuilder
+            .withEndTime(System.currentTimeMillis())
+            .withTestsRun(passed + failed)
+            .withTestsPassed(passed)
+            .withTestsFailed(failed)
+            .withFailures(failures)
+            .withSuccess(failed == 0)
+            .build();
+    }
+    
+    private boolean executeContractTest(ContractTest test, TestExecutionContext context) {
+        // In a real implementation, this would execute the actual test
+        // For now, simulate test execution
+        Log.debug("Executing contract test: {}", test.getName());
+        
+        // Simulate random success/failure for demonstration
+        return Math.random() > 0.1; // 90% success rate
+    }
+}
+
+// src/main/java/com/example/generator/testing/LoadTestGenerator.java
+package tech.kayys.wayang.mcp.generator.testing;
+
+import tech.kayys.wayang.mcp.generator.ApiOperation;
+import tech.kayys.wayang.mcp.generator.ApiSpecification;
+import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.util.ArrayList;
+import java.util.List;
+
+@ApplicationScoped
+public class LoadTestGenerator {
+    
+    public LoadTestSuite generateLoadTests(ApiSpecification apiSpec, TestConfiguration config) {
+        Log.info("Generating load tests for API: {}", apiSpec.getTitle());
+        
+        LoadTestSuite.Builder suiteBuilder = LoadTestSuite.builder()
+            .withName(apiSpec.getTitle() + " Load Tests")
+            .withDescription("Performance and load tests");
+        
+        // Generate JMeter tests
+        if (config.getLoadTestFramework().contains("jmeter")) {
+            generateJMeterTests(apiSpec, suiteBuilder, config);
+        }
+        
+        // Generate K6 tests
+        if (config.getLoadTestFramework().contains("k6")) {
+            generateK6Tests(apiSpec, suiteBuilder, config);
+        }
+        
+        // Generate Gatling tests
+        if (config.getLoadTestFramework().contains("gatling")) {
+            generateGatlingTests(apiSpec, suiteBuilder, config);
+        }
+        
+        return suiteBuilder.build();
+    }
+    
+    private void generateJMeterTests(ApiSpecification apiSpec, LoadTestSuite.Builder builder, TestConfiguration config) {
+        String testPlan = generateJMeterTestPlan(apiSpec, config);
+        
+        LoadTest test = LoadTest.builder()
+            .withName("jmeter_load_test")
+            .withDescription("JMeter load test for " + apiSpec.getTitle())
+            .withFramework("jmeter")
+            .withTestPlan(testPlan)
+            .withVirtualUsers(config.getLoadTestUsers())
+            .withDurationSeconds(config.getLoadTestDurationSeconds())
+            .withRampUpSeconds(config.getLoadTestRampUpSeconds())
+            .build();
+        
+        builder.addTest(test);
+    }
+    
+    private void generateK6Tests(ApiSpecification apiSpec, LoadTestSuite.Builder builder, TestConfiguration config) {
+        String testScript = generateK6TestScript(apiSpec, config);
+        
+        LoadTest test = LoadTest.builder()
+            .withName("k6_load_test")
+            .withDescription("K6 load test for " + apiSpec.getTitle())
+            .withFramework("k6")
+            .withTestScript(testScript)
+            .withVirtualUsers(config.getLoadTestUsers())
+            .withDurationSeconds(config.getLoadTestDurationSeconds())
+            .build();
+        
+        builder.addTest(test);
+    }
+    
+    private void generateGatlingTests(ApiSpecification apiSpec, LoadTestSuite.Builder builder, TestConfiguration config) {
+        String testScript = generateGatlingTestScript(apiSpec, config);
+        
+        LoadTest test = LoadTest.builder()
+            .withName("gatling_load_test")
+            .withDescription("Gatling load test for " + apiSpec.getTitle())
+            .withFramework("gatling")
+            .withTestScript(testScript)
+            .withVirtualUsers(config.getLoadTestUsers())
+            .withDurationSeconds(config.getLoadTestDurationSeconds())
+            .build();
+        
+        builder.addTest(test);
+    }
+    
+    private String generateJMeterTestPlan(ApiSpecification apiSpec, TestConfiguration config) {
+        StringBuilder testPlan = new StringBuilder();
+        testPlan.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+        testPlan.append("<jmeterTestPlan version=\"1.2\">\n");
+        testPlan.append("  <hashTree>\n");
+        testPlan.append("    <TestPlan guiclass=\"TestPlanGui\" testclass=\"TestPlan\" testname=\"").append(apiSpec.getTitle()).append(" Load Test\">\n");
+        testPlan.append("      <stringProp name=\"TestPlan.comments\">Generated load test</stringProp>\n");
+        testPlan.append("    </TestPlan>\n");
+        testPlan.append("    <hashTree>\n");
+        
+        // Thread Group
+        testPlan.append("      <ThreadGroup guiclass=\"ThreadGroupGui\" testclass=\"ThreadGroup\" testname=\"Load Test Users\">\n");
+        testPlan.append("        <stringProp name=\"ThreadGroup.num_threads\">").append(config.getLoadTestUsers()).append("</stringProp>\n");
+        testPlan.append("        <stringProp name=\"ThreadGroup.ramp_time\">").append(config.getLoadTestRampUpSeconds()).append("</stringProp>\n");
+        testPlan.append("        <longProp name=\"ThreadGroup.start_time\">1</longProp>\n");
+        testPlan.append("        <longProp name=\"ThreadGroup.end_time\">1</longProp>\n");
+        testPlan.append("        <boolProp name=\"ThreadGroup.scheduler\">false</boolProp>\n");
+        testPlan.append("        <stringProp name=\"ThreadGroup.duration\">").append(config.getLoadTestDurationSeconds()).append("</stringProp>\n");
+        testPlan.append("      </ThreadGroup>\n");
+        testPlan.append("      <hashTree>\n");
+        
+        // Add samplers for each operation
+        for (ApiOperation operation : apiSpec.getOperations()) {
+            testPlan.append(generateJMeterSampler(operation, apiSpec));
+        }
+        
+        testPlan.append("      </hashTree>\n");
+        testPlan.append("    </hashTree>\n");
+        testPlan.append("  </hashTree>\n");
+        testPlan.append("</jmeterTestPlan>\n");
+        
+        return testPlan.toString();
+    }
+    
+    private String generateJMeterSampler(ApiOperation operation, ApiSpecification apiSpec) {
+        return String.format("""
+                <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="%s">
+                  <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                    <collectionProp name="Arguments.arguments"/>
+                  </elementProp>
+                  <stringProp name="HTTPSampler.domain">%s</stringProp>
+                  <stringProp name="HTTPSampler.port">%s</stringProp>
+                  <stringProp name="HTTPSampler.protocol">%s</stringProp>
+                  <stringProp name="HTTPSampler.path">%s</stringProp>
+                  <stringProp name="HTTPSampler.method">%s</stringProp>
+                  <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+                  <boolProp name="HTTPSampler.auto_redirects">false</boolProp>
+                </HTTPSamplerProxy>
+                """,
+                operation.getOperationId(),
+                extractDomain(apiSpec.getBaseUrl()),
+                extractPort(apiSpec.getBaseUrl()),
+                extractProtocol(apiSpec.getBaseUrl()),
+                operation.getPath(),
+                operation.getMethod()
+        );
+    }
+    
+    private String generateK6TestScript(ApiSpecification apiSpec, TestConfiguration config) {
+        StringBuilder script = new StringBuilder();
+        
+        script.append("import http from 'k6/http';\n");
+        script.append("import { check, sleep } from 'k6';\n\n");
+        
+        script.append("export let options = {\n");
+        script.append("  vus: ").append(config.getLoadTestUsers()).append(",\n");
+        script.append("  duration: '").append(config.getLoadTestDurationSeconds()).append("s',\n");
+        script.append("  rampingVus: {\n");
+        script.append("    stages: [\n");
+        script.append("      { duration: '").append(config.getLoadTestRampUpSeconds()).append("s', target: ").append(config.getLoadTestUsers()).append(" },\n");
+        script.append("      { duration: '").append(config.getLoadTestDurationSeconds() - config.getLoadTestRampUpSeconds()).append("s', target: ").append(config.getLoadTestUsers()).append(" },\n");
+        script.append("    ],\n");
+        script.append("  },\n");
+        script.append("};\n\n");
+        
+        script.append("export default function () {\n");
+        script.append("  const baseUrl = '").append(apiSpec.getBaseUrl()).append("';\n\n");
+        
+        for (ApiOperation operation : apiSpec.getOperations()) {
+            script.append(generateK6Operation(operation));
+            script.append("\n");
+        }
+        
+        script.append("  sleep(1);\n");
+        script.append("}\n");
+        
+        return script.toString();
+    }
+    
+    private String generateK6Operation(ApiOperation operation) {
+        return String.format("""
+          // %s - %s
+          let %s_response = http.%s(`${baseUrl}%s`);
+          check(%s_response, {
+            '%s status is 200': (r) => r.status === 200,
+            '%s response time < 500ms': (r) => r.timings.duration < 500,
+          });
+          """,
+          operation.getOperationId(),
+          operation.getDescription(),
+          operation.getOperationId(),
+          operation.getMethod().toLowerCase(),
+          operation.getPath(),
+          operation.getOperationId(),
+          operation.getOperationId(),
+          operation.getOperationId()
+        );
+    }
+    
+    private String generateGatlingTestScript(ApiSpecification apiSpec, TestConfiguration config) {
+        String className = apiSpec.getTitle().replaceAll("[^a-zA-Z0-9]", "") + "LoadTest";
+        
+        return String.format("""
+            package simulations
+            
+            import io.gatling.core.Predef._
+            import io.gatling.http.Predef._
+            import scala.concurrent.duration._
+            
+            class %s extends Simulation {
+            
+              val httpProtocol = http
+                .baseUrl("%s")
+                .acceptHeader("application/json")
+                .contentTypeHeader("application/json")
+            
+              val scn = scenario("%s Load Test")
+            %s
+            
+              setUp(
+                scn.inject(
+                  rampUsers(%d) during (%d seconds)
+                )
+              ).protocols(httpProtocol)
+              .maxDuration(%d seconds)
+              .assertions(
+                global.responseTime.max.lt(5000),
+                global.responseTime.mean.lt(1000),
+                global.successfulRequests.percent.gt(95)
+              )
+            }
+            """,
+            className,
+            apiSpec.getBaseUrl(),
+            apiSpec.getTitle(),
+            generateGatlingScenario(apiSpec),
+            config.getLoadTestUsers(),
+            config.getLoadTestRampUpSeconds(),
+            config.getLoadTestDurationSeconds()
+        );
+    }
+    
+    private String generateGatlingScenario(ApiSpecification apiSpec) {
+        StringBuilder scenario = new StringBuilder();
+        
+        for (int i = 0; i < apiSpec.getOperations().size(); i++) {
+            ApiOperation operation = apiSpec.getOperations().get(i);
+            
+            scenario.append(String.format("""
+                    .exec(http("%s")
+                      .%s("%s")
+                      .check(status.is(200))
+                    )
+                    .pause(1)
+                """,
+                operation.getOperationId(),
+                operation.getMethod().toLowerCase(),
+                operation.getPath()
+            ));
+        }
+        
+        return scenario.toString();
+    }
+    
+    private String extractDomain(String url) {
+        try {
+            java.net.URL parsedUrl = new java.net.URL(url);
+            return parsedUrl.getHost();
+        } catch (Exception e) {
+            return "localhost";
+        }
+    }
+    
+    private String extractPort(String url) {
+        try {
+            java.net.URL parsedUrl = new java.net.URL(url);
+            int port = parsedUrl.getPort();
+            return port != -1 ? String.valueOf(port) : "80";
+        } catch (Exception e) {
+            return "8080";
+        }
+    }
+    
+    private String extractProtocol(String url) {
+        try {
+            java.net.URL parsedUrl = new java.net.URL(url);
+            return parsedUrl.getProtocol();
+        } catch (Exception e) {
+            return "http";
+        }
+    }
+    
+    public TestCategoryResult executeTests(LoadTestSuite testSuite, TestExecutionContext context) {
+        Log.info("Executing load tests: {}", testSuite.getName());
+        
+        TestCategoryResult.Builder resultBuilder = TestCategoryResult.builder()
+            .withCategory("load")
+            .withStartTime(System.currentTimeMillis());
+        
+        int passed = 0;
+        int failed = 0;
+        List<String> failures = new ArrayList<>();
+        
+        for (LoadTest test : testSuite.getTests()) {
+            try {
+                LoadTestResult result = executeLoadTest(test, context);
+                if (result.isSuccess()) {
+                    passed++;
+                } else {
+                    failed++;
+                    failures.add(test.getName() + ": " + result.getFailureReason());
+                }
+            } catch (Exception e) {
+                failed++;
+                failures.add(test.getName() + ": " + e.getMessage());
+            }
+        }
+        
+        return resultBuilder
+            .withEndTime(System.currentTimeMillis())
+            .withTestsRun(passed + failed)
+            .withTestsPassed(passed)
+            .withTestsFailed(failed)
+            .withFailures(failures)
+            .withSuccess(failed == 0)
+            .build();
+    }
+    
+    private LoadTestResult executeLoadTest(LoadTest test, TestExecutionContext context) {
+        // In a real implementation, this would execute the actual load test
+        Log.debug("Executing load test: {}", test.getName());
+        
+        // Simulate load test execution
+        return LoadTestResult.builder()
+            .withTestName(test.getName())
+            .withSuccess(Math.random() > 0.2) // 80% success rate
+            .withAverageResponseTime(Math.random() * 1000) // Random response time
+            .withThroughput(Math.random() * 100) // Random throughput
+            .withErrorRate(Math.random() * 0.05) // Random error rate up to 5%
+            .build();
+    }
+}
+
+

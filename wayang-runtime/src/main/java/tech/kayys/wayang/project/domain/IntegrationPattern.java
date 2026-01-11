@@ -19,6 +19,8 @@ import tech.kayys.wayang.project.dto.EndpointConfig;
 import tech.kayys.wayang.project.dto.EIPPatternType;
 import tech.kayys.wayang.project.dto.ErrorHandlingConfig;
 import tech.kayys.wayang.project.dto.TransformationConfig;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * Integration Pattern - EIP template
@@ -47,15 +49,19 @@ public class IntegrationPattern extends PanacheEntityBase {
     @Column(name = "pattern_type")
     public EIPPatternType patternType;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "source_config", columnDefinition = "jsonb")
     public EndpointConfig sourceConfig;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "target_config", columnDefinition = "jsonb")
     public EndpointConfig targetConfig;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "transformation", columnDefinition = "jsonb")
     public TransformationConfig transformation;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "error_handling", columnDefinition = "jsonb")
     public ErrorHandlingConfig errorHandling;
 

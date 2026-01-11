@@ -7,6 +7,7 @@ import io.quarkus.security.runtime.QuarkusPrincipal;
 import io.quarkus.security.runtime.QuarkusSecurityIdentity;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,17 +28,19 @@ public class MtlsIdentityAugmentor implements SecurityIdentityAugmentor {
     MtlsSecurityConfig config;
 
     @Inject
-    jakarta.ws.rs.core.HttpHeaders httpHeaders;
+    Instance<io.vertx.ext.web.RoutingContext> routingContextInstance;
 
     @Override
     public Uni<SecurityIdentity> augment(SecurityIdentity identity, AuthenticationRequestContext context) {
-        if (!config.enabled()) {
+        if (!config.enabled() || !routingContextInstance.isResolvable()) {
             return Uni.createFrom().item(identity);
         }
 
+        io.vertx.ext.web.RoutingContext routingContext = routingContextInstance.get();
+
         // Try to extract identity from headers (sent by API Gateway)
-        String clientCn = httpHeaders.getHeaderString(config.headerName());
-        String tenantId = httpHeaders.getHeaderString(config.tenantIdHeader());
+        String clientCn = routingContext.request().getHeader(config.headerName());
+        String tenantId = routingContext.request().getHeader(config.tenantIdHeader());
 
         if (clientCn != null && !clientCn.isBlank()) {
             LOG.debug("Augmenting identity with mTLS CN: {} and Tenant: {}", clientCn, tenantId);

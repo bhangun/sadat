@@ -18,6 +18,8 @@ import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotNull;
 import tech.kayys.wayang.domain.CanvasDefinition;
 import tech.kayys.wayang.project.dto.TemplateType;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * Workflow Template - Visual workflow definition
@@ -49,6 +51,7 @@ public class WorkflowTemplate extends PanacheEntityBase {
     @Column(name = "template_type")
     public TemplateType templateType;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "canvas_definition", columnDefinition = "jsonb")
     public CanvasDefinition canvasDefinition;
 
@@ -58,6 +61,7 @@ public class WorkflowTemplate extends PanacheEntityBase {
     @Column(name = "is_published")
     public boolean isPublished = false;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "tags", columnDefinition = "jsonb")
     public List<String> tags;
 

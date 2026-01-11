@@ -18,6 +18,8 @@ import tech.kayys.wayang.canvas.schema.CanvasMetadata;
 import tech.kayys.wayang.canvas.schema.CanvasStatus;
 import tech.kayys.wayang.canvas.schema.CanvasValidationResult;
 import io.quarkus.hibernate.reactive.panache.PanacheEntityBase;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * ============================================================================
@@ -71,12 +73,15 @@ public class CanvasDefinition extends PanacheEntityBase {
     @Column(name = "branch_name")
     public String branchName = "main";
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "canvas_data", columnDefinition = "jsonb", nullable = false)
     public CanvasData canvasData;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "metadata", columnDefinition = "jsonb")
     public CanvasMetadata metadata;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "validation_result", columnDefinition = "jsonb")
     public CanvasValidationResult validationResult;
 
@@ -111,6 +116,7 @@ public class CanvasDefinition extends PanacheEntityBase {
     @Column(name = "locked_at")
     public Instant lockedAt;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "tags", columnDefinition = "jsonb")
     public List<String> tags = new ArrayList<>();
 }

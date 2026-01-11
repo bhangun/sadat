@@ -16,6 +16,7 @@ import tech.kayys.wayang.canvas.schema.CanvasNode;
 import tech.kayys.wayang.domain.CanvasDefinition;
 import tech.kayys.silat.model.WorkflowDefinition;
 import tech.kayys.silat.model.WorkflowDefinitionId;
+import tech.kayys.silat.model.TenantId;
 import tech.kayys.silat.model.WorkflowMetadata;
 import tech.kayys.silat.model.NodeDefinition;
 import tech.kayys.silat.model.NodeType;
@@ -66,6 +67,7 @@ public class CanvasToWorkflowConverter {
             // Create workflow definition
             return new WorkflowDefinition(
                     WorkflowDefinitionId.of(name + "-" + version.replace(".", "-")),
+                    TenantId.of(canvas.tenantId),
                     name,
                     version,
                     canvas.description != null ? canvas.description : "",
@@ -183,6 +185,9 @@ public class CanvasToWorkflowConverter {
      * Extract inputs from canvas
      */
     private Map<String, InputDefinition> extractInputs(CanvasDefinition canvas) {
+        if (canvas.metadata == null || canvas.metadata.customFields == null) {
+            return Map.of();
+        }
         @SuppressWarnings("unchecked")
         Map<String, Map<String, Object>> inputsConfig = (Map<String, Map<String, Object>>) canvas.metadata.customFields
                 .getOrDefault("inputs", Map.of());
@@ -205,6 +210,9 @@ public class CanvasToWorkflowConverter {
      * Extract outputs from canvas
      */
     private Map<String, OutputDefinition> extractOutputs(CanvasDefinition canvas) {
+        if (canvas.metadata == null || canvas.metadata.customFields == null) {
+            return Map.of();
+        }
         @SuppressWarnings("unchecked")
         Map<String, Map<String, Object>> outputsConfig = (Map<String, Map<String, Object>>) canvas.metadata.customFields
                 .getOrDefault("outputs", Map.of());
