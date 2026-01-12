@@ -16,7 +16,7 @@ import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import tech.kayys.wayang.security.domain.SecurityAuditLog;
 import tech.kayys.wayang.security.service.AuthenticatedUser;
-import tech.kayys.wayang.security.service.KeycloakSecurityService;
+import tech.kayys.wayang.security.service.IketSecurityService;
 
 @Path("/api/v1/audit-logs")
 @Produces(MediaType.APPLICATION_JSON)
@@ -26,7 +26,7 @@ import tech.kayys.wayang.security.service.KeycloakSecurityService;
 public class AuditLogResource {
 
     @Inject
-    KeycloakSecurityService keycloakSecurity;
+    IketSecurityService iketSecurity;
 
     @GET
     @Operation(summary = "Query audit logs")
@@ -38,7 +38,7 @@ public class AuditLogResource {
             @QueryParam("page") @DefaultValue("0") int page,
             @QueryParam("size") @DefaultValue("50") int size) {
 
-        AuthenticatedUser user = keycloakSecurity.getCurrentUser();
+        AuthenticatedUser user = iketSecurity.getCurrentUser();
 
         // Build query
         StringBuilder query = new StringBuilder("tenantId = ?1");

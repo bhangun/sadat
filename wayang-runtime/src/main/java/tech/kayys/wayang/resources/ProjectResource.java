@@ -30,7 +30,7 @@ import tech.kayys.wayang.project.dto.ProjectType;
 import tech.kayys.wayang.project.service.ControlPlaneService;
 import tech.kayys.wayang.security.service.AuthenticatedUser;
 import tech.kayys.wayang.security.service.AuthorizationPolicyEngine;
-import tech.kayys.wayang.security.service.KeycloakSecurityService;
+import tech.kayys.wayang.security.service.IketSecurityService;
 import tech.kayys.wayang.websocket.service.WebSocketEventBroadcaster;
 
 @Path("/api/v1/projects")
@@ -44,7 +44,7 @@ public class ProjectResource {
     ControlPlaneService controlPlaneService;
 
     @Inject
-    KeycloakSecurityService keycloakSecurity;
+    IketSecurityService iketSecurity;
 
     @Inject
     AuthorizationPolicyEngine authzEngine;
@@ -61,7 +61,7 @@ public class ProjectResource {
     public Uni<RestResponse<WayangProject>> createProject(
             @Valid CreateProjectRequest request) {
 
-        AuthenticatedUser user = keycloakSecurity.getCurrentUser();
+        AuthenticatedUser user = iketSecurity.getCurrentUser();
 
         // Check authorization
         if (!authzEngine.authorize(user, "project", "create")) {
@@ -98,7 +98,7 @@ public class ProjectResource {
     public Uni<RestResponse<WayangProject>> getProject(
             @PathParam("projectId") UUID projectId) {
 
-        AuthenticatedUser user = keycloakSecurity.getCurrentUser();
+        AuthenticatedUser user = iketSecurity.getCurrentUser();
 
         return controlPlaneService.getProject(projectId, user.tenantId())
                 .map(project -> {
@@ -124,7 +124,7 @@ public class ProjectResource {
     public Uni<List<WayangProject>> listProjects(
             @QueryParam("type") ProjectType projectType) {
 
-        AuthenticatedUser user = keycloakSecurity.getCurrentUser();
+        AuthenticatedUser user = iketSecurity.getCurrentUser();
         return controlPlaneService.listProjects(user.tenantId(), projectType);
     }
 

@@ -22,9 +22,12 @@ quarkus:
   http:
     port: 3030
     # Disable SSL/TLS - IKET gateway handles mTLS
-    insecure-requests: enabled
-    ssl-port: 0
-    test-ssl-port: 0
+    insecure-requests: ${INSECURE_REQUESTS:enabled}
+    ssl:
+      client-auth: none
+      certificate:
+        files: ""
+        key-files: ""
     
     cors:
       ~: true
@@ -57,32 +60,11 @@ quarkus:
   devservices:
     enabled: true
   
-  # Keycloak OIDC
-  oidc:
-    enabled: true
-    auth-server-url: ${KEYCLOAK_URL:http://localhost:8180}
-    realm: silat
-    client-id: silat-control-plane
-    credentials:
-      secret: ${KEYCLOAK_CLIENT_SECRET}
-    tls:
-      verification: none  # Set to 'required' in production
-    
-    # Token configuration
-    token:
-      issuer: ${quarkus.oidc.auth-server-url}/realms/silat
-      audience: silat-control-plane
-      
-    # Claims mapping
-    roles:
-      role-claim-path: realm_access/roles
-      source: accesstoken
-    
-    # Authentication
-    authentication:
-      user-info-required: true
-      extra-params:
-        tenant_id: ${TENANT_ID:default}
+  
+  # SmallRye JWT - Trust IKET-issued tokens
+  jwt:
+    auth-mechanism: MP-JWT
+    # Note: Configure mp.jwt.verify.publickey.location if signature verification is required by control plane
   
   # Security policies
   security:
@@ -121,6 +103,8 @@ quarkus:
   
   # ==================== Kafka Configuration ====================
   kafka:
+    devservices:
+      image-name: docker.redpanda.com/redpandadata/redpanda:v23.3.1
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     
     # Producer config
@@ -175,6 +159,17 @@ quarkus:
       "tech.kayys.silat": DEBUG
       "io.quarkus": INFO
       "org.hibernate": WARN
+      "io.grpc": WARN
+      "io.opentelemetry": INFO
+    
+    # "Radical" log filter to silence the persistent Census noise
+    filter:
+      "census-noise":
+        if-starts-with: "Unable to apply census"
+        target: console
+      "epoll-noise":
+        if-starts-with: "Epoll is not available"
+        target: console
     
     # Console output
     console:
@@ -216,13 +211,15 @@ quarkus:
     ui:
       enable: true
   
-  # OpenTelemetry
+  # OpenTelemetry - Disabled temporarily to debug NPE
   opentelemetry:
-    enabled: ${OTEL_ENABLED:false}
-    tracer:
-      exporter:
-        otlp:
-          endpoint: ${OTEL_ENDPOINT:http://localhost:4317}
+    enabled: false
+    propagators: b3,tracecontext,baggage
+    
+  # OTLP Exporter
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4317}
   
   # ==================== OpenAPI / Swagger ====================
   swagger-ui:
@@ -254,7 +251,7 @@ quarkus:
           type: http
           scheme: bearer
           bearer-format: JWT
-          description: JWT token from Keycloak
+          description: JWT token verified by IKET
         api-key:
           type: apiKey
           name: X-API-Key
@@ -387,24 +384,25 @@ tech:
     http:
       port: 3032
       # Explicitly disable SSL in dev mode to avoid random HTTPS ports
-      ssl-port: 0
-      test-ssl-port: 0
-      insecure-requests: enabled
+      insecure-requests: ${INSECURE_REQUESTS:enabled}
+      ssl:
+        client-auth: none
+        certificate:
+          files: ""
+          key-files: ""
       cors:
         origins: "http://localhost:3000,http://localhost:5173"
     
     log:
-      level: DEBUG
+      level: INFO
       category:
         "tech.kayys.silat": TRACE
         "io.quarkus.arc": TRACE
         "io.quarkus.vertx.http": TRACE
         "io.smallrye.reactive.messaging.kafka": TRACE
+        "io.grpc": WARN
+        "io.opentelemetry": INFO
     
-    oidc:
-      enabled: true
-      tls:
-        verification: none
     
     # gRPC uses plain TCP - IKET handles mTLS at gateway level
     grpc:
@@ -439,9 +437,6 @@ tech:
       console:
         json: true
     
-    oidc:
-      tls:
-        verification: required
     
     # gRPC uses plain TCP - IKET handles mTLS at gateway level
     grpc:

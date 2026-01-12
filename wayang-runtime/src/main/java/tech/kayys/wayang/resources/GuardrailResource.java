@@ -17,7 +17,7 @@ import tech.kayys.wayang.dto.GuardrailTestRequest;
 import tech.kayys.wayang.dto.GuardrailTestResponse;
 import tech.kayys.wayang.guardrails.service.GuardrailEngine;
 import tech.kayys.wayang.security.service.AuthenticatedUser;
-import tech.kayys.wayang.security.service.KeycloakSecurityService;
+import tech.kayys.wayang.security.service.IketSecurityService;
 
 @Path("/api/v1/guardrails")
 @Produces(MediaType.APPLICATION_JSON)
@@ -30,7 +30,7 @@ public class GuardrailResource {
         GuardrailEngine guardrailEngine;
 
         @Inject
-        KeycloakSecurityService keycloakSecurity;
+        IketSecurityService iketSecurity;
 
         @POST
         @Path("/test")
@@ -39,7 +39,7 @@ public class GuardrailResource {
         public Uni<GuardrailTestResponse> testGuardrails(
                         @Valid GuardrailTestRequest request) {
 
-                AuthenticatedUser user = keycloakSecurity.getCurrentUser();
+                AuthenticatedUser user = iketSecurity.getCurrentUser();
 
                 return guardrailEngine.checkInput(
                                 request.content(),

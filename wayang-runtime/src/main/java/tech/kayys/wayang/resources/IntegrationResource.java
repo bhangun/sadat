@@ -21,6 +21,7 @@ import tech.kayys.wayang.project.domain.IntegrationPattern;
 import tech.kayys.wayang.project.dto.CreatePatternRequest;
 import tech.kayys.wayang.project.dto.IntegrationExecutionResult;
 import tech.kayys.wayang.project.service.ControlPlaneService;
+import tech.kayys.wayang.security.service.IketSecurityService;
 
 @Path("/api/v1/control-plane/integrations")
 @Produces(MediaType.APPLICATION_JSON)
@@ -30,6 +31,9 @@ public class IntegrationResource {
 
         @Inject
         ControlPlaneService controlPlaneService;
+
+        @Inject
+        IketSecurityService iketSecurity;
 
         @POST
         @Operation(summary = "Create integration pattern")

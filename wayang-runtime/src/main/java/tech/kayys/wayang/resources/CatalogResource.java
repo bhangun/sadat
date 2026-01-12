@@ -21,6 +21,7 @@ import tech.kayys.wayang.project.domain.WorkflowTemplate;
 import tech.kayys.wayang.project.dto.CatalogTemplate;
 import tech.kayys.wayang.project.dto.PatternCatalogEntry;
 import tech.kayys.wayang.project.service.TemplateCatalogService;
+import tech.kayys.wayang.security.service.IketSecurityService;
 
 @Path("/api/v1/control-plane/catalog")
 @Produces(MediaType.APPLICATION_JSON)
@@ -30,6 +31,9 @@ public class CatalogResource {
 
     @Inject
     TemplateCatalogService catalogService;
+
+    @Inject
+    IketSecurityService iketSecurity;
 
     @GET
     @Path("/templates")
@@ -43,7 +47,7 @@ public class CatalogResource {
 
     @GET
     @Path("/templates/{templateId}")
-    @Operation(summary = "Get catalog template")
+    @Operation(summary = "Get template details")
     public Uni<RestResponse<CatalogTemplate>> getCatalogTemplate(
             @PathParam("templateId") String templateId) {
 

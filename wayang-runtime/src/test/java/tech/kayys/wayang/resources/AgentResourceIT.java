@@ -22,7 +22,7 @@ import tech.kayys.wayang.project.dto.AgentType;
 import tech.kayys.wayang.project.dto.CreateAgentRequest;
 import tech.kayys.wayang.project.service.ControlPlaneService;
 import tech.kayys.wayang.security.service.AuthenticatedUser;
-import tech.kayys.wayang.security.service.KeycloakSecurityService;
+import tech.kayys.wayang.security.service.IketSecurityService;
 import tech.kayys.wayang.websocket.service.WebSocketEventBroadcaster;
 import tech.kayys.wayang.guardrails.service.GuardrailEngine;
 
@@ -33,7 +33,7 @@ public class AgentResourceIT {
     ControlPlaneService controlPlaneService;
 
     @InjectMock
-    KeycloakSecurityService keycloakSecurity;
+    IketSecurityService iketSecurity;
 
     @InjectMock
     GuardrailEngine guardrailEngine;
@@ -48,7 +48,7 @@ public class AgentResourceIT {
         testUser = new AuthenticatedUser(
                 "user-1", "Test User", "test@example.com", "tenant-1",
                 Set.of("admin"), Set.of(), new HashMap<>());
-        when(keycloakSecurity.getCurrentUser()).thenReturn(testUser);
+        when(iketSecurity.getCurrentUser()).thenReturn(testUser);
     }
 
     @Test

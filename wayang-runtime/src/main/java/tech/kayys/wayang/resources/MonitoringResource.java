@@ -15,7 +15,7 @@ import jakarta.ws.rs.core.MediaType;
 import tech.kayys.wayang.dto.HealthStatus;
 import tech.kayys.wayang.dto.TenantMetrics;
 import tech.kayys.wayang.security.service.AuthenticatedUser;
-import tech.kayys.wayang.security.service.KeycloakSecurityService;
+import tech.kayys.wayang.security.service.IketSecurityService;
 
 @Path("/api/v1/monitoring")
 @Produces(MediaType.APPLICATION_JSON)
@@ -24,7 +24,7 @@ import tech.kayys.wayang.security.service.KeycloakSecurityService;
 public class MonitoringResource {
 
     @Inject
-    KeycloakSecurityService keycloakSecurity;
+    IketSecurityService iketSecurity;
 
     @GET
     @Path("/health")
@@ -39,7 +39,7 @@ public class MonitoringResource {
     @Operation(summary = "Tenant metrics")
     @RolesAllowed({ "admin" })
     public Uni<TenantMetrics> getTenantMetrics() {
-        AuthenticatedUser user = keycloakSecurity.getCurrentUser();
+        AuthenticatedUser user = iketSecurity.getCurrentUser();
 
         // Gather metrics
         return Uni.createFrom().item(

@@ -39,7 +39,7 @@ import tech.kayys.wayang.project.dto.CreateAgentRequest;
 import tech.kayys.wayang.project.dto.Guardrail;
 import tech.kayys.wayang.project.service.ControlPlaneService;
 import tech.kayys.wayang.security.service.AuthenticatedUser;
-import tech.kayys.wayang.security.service.KeycloakSecurityService;
+import tech.kayys.wayang.security.service.IketSecurityService;
 import tech.kayys.wayang.websocket.dto.AgentEvent;
 import tech.kayys.wayang.websocket.service.WebSocketEventBroadcaster;
 
@@ -54,7 +54,7 @@ public class AgentResource {
         ControlPlaneService controlPlaneService;
 
         @Inject
-        KeycloakSecurityService keycloakSecurity;
+        IketSecurityService iketSecurity;
 
         @Inject
         GuardrailEngine guardrailEngine;
@@ -69,7 +69,7 @@ public class AgentResource {
                         @QueryParam("projectId") UUID projectId,
                         @Valid CreateAgentRequest request) {
 
-                AuthenticatedUser user = keycloakSecurity.getCurrentUser();
+                AuthenticatedUser user = iketSecurity.getCurrentUser();
 
                 return controlPlaneService.createAgent(projectId, request)
                                 .flatMap(agent -> wsEventBroadcaster.broadcastToTenant(
@@ -91,7 +91,7 @@ public class AgentResource {
                         @PathParam("agentId") UUID agentId,
                         @Valid AgentTaskRequest taskRequest) {
 
-                AuthenticatedUser user = keycloakSecurity.getCurrentUser();
+                AuthenticatedUser user = iketSecurity.getCurrentUser();
 
                 // Get agent to retrieve guardrail policy
                 return AIAgent.<AIAgent>findById(agentId)

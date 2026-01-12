@@ -11,7 +11,7 @@ import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import tech.kayys.wayang.security.service.AuthenticatedUser;
-import tech.kayys.wayang.security.service.KeycloakSecurityService;
+import tech.kayys.wayang.security.service.IketSecurityService;
 import tech.kayys.wayang.websocket.dto.WebSocketSession;
 
 /**
@@ -23,7 +23,7 @@ public class WebSocketAuthenticator {
     private static final Logger LOG = LoggerFactory.getLogger(WebSocketAuthenticator.class);
 
     @Inject
-    KeycloakSecurityService keycloakService;
+    IketSecurityService iketSecurity;
 
     public Uni<WebSocketSession> authenticate(String token) {
         LOG.debug("Authenticating WebSocket connection with token: {}", token);
@@ -41,7 +41,7 @@ public class WebSocketAuthenticator {
         // For now, create session from current security context
         return Uni.createFrom().item(() -> {
             try {
-                AuthenticatedUser user = keycloakService.getCurrentUser();
+                AuthenticatedUser user = iketSecurity.getCurrentUser();
                 return new WebSocketSession(
                         UUID.randomUUID().toString(),
                         user.tenantId(),

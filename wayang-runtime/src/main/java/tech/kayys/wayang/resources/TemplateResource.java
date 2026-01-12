@@ -22,6 +22,7 @@ import tech.kayys.wayang.project.dto.CreateTemplateRequest;
 import tech.kayys.wayang.project.dto.ExecutionResponse;
 import tech.kayys.wayang.project.dto.PublishResponse;
 import tech.kayys.wayang.project.service.ControlPlaneService;
+import tech.kayys.wayang.security.service.IketSecurityService;
 
 @Path("/api/v1/control-plane/templates")
 @Produces(MediaType.APPLICATION_JSON)
@@ -31,6 +32,9 @@ public class TemplateResource {
 
         @Inject
         ControlPlaneService controlPlaneService;
+
+        @Inject
+        IketSecurityService iketSecurity;
 
         @POST
         @Operation(summary = "Create workflow template")
