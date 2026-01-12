@@ -94,3 +94,5 @@ application-dev.properties
 
 # Windows files
 Thumbs.db
+.quarkus/
+.DS_Store
